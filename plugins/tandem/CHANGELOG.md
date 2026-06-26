@@ -7,6 +7,8 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/); versionado se
 ### Security
 - `hook-inject-profile.mjs`: sanitiza `session_id` del JSON de entrada antes de usarlo como
   componente de path (`rmSync`). Cierra path traversal via `session_id` con `..`.
+- `fingerprint.mjs`: atomic write (`writeFileSync` a `.tmp` + `renameSync`) para evitar pérdida
+  silenciosa de fingerprints por write interrumpido.
 
 ## [0.5.0] — 2026-06-22
 

@@ -20,7 +20,8 @@
 
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
+import { normalizeHost } from './host.mjs';
 
 const dataDir = process.env.TANDEM_DATA_DIR || join(homedir(), '.claude', 'tandem');
 const sitesDir = join(dataDir, 'sites');
@@ -31,15 +32,11 @@ if (!mode || !rawHost || !routeKey || !['capture', 'check'].includes(mode)) {
   process.exit(2);
 }
 
-// Normaliza el host igual que map.sh (quita esquema, corta en la primera '/', minúsculas) y
-// EXIGE un hostname plausible. Sin esto, `host` entra crudo en el path del store y un
-// '../..' permitiría escribir/leer fuera de sites/ (path traversal). Acepta una URL entera.
-const host = rawHost
-  .replace(/^[a-zA-Z]+:\/\//, '')
-  .replace(/\/.*$/, '')
-  .toLowerCase();
-if (!/^[a-z0-9.-]+$/.test(host) || host.includes('..')) {
-  process.stderr.write(`fingerprint: host inválido tras normalizar: '${host}'\n`);
+// Normaliza y valida el host con la fuente única (host.mjs): entra en el path del store, sin
+// validar permitiría path traversal. normalizeHost lanza si no es un hostname plausible.
+let host;
+try { host = normalizeHost(rawHost); } catch (e) {
+  process.stderr.write(`fingerprint: ${e.message}\n`);
   process.exit(2);
 }
 
@@ -66,7 +63,9 @@ function loadStore() {
 }
 function saveStore(obj) {
   mkdirSync(sitesDir, { recursive: true });
-  writeFileSync(fpPath, `${JSON.stringify(obj, null, 2)}\n`);
+  const tmp = fpPath + '.tmp';
+  writeFileSync(tmp, `${JSON.stringify(obj, null, 2)}\n`);
+  renameSync(tmp, fpPath);
 }
 
 const signals = readStdinJson();
