@@ -1,0 +1,19 @@
+# Datos de runtime / perfiles de navegador (cookies+tokens de login = secreto)
+data/
+**/data/
+*.profile/
+
+# Estado local y caches
+.DS_Store
+*.log
+*.pid
+*.lock
+
+# Node
+node_modules/
+
+# Nada de credenciales
+*.pem
+*.key
+.env
+.env.*

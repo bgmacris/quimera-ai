@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "tandem": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/mcp-launch.sh"
+    }
+  }
+}

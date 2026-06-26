@@ -1,0 +1,11 @@
+{
+  "name": "quimera",
+  "owner": { "name": "bgmacris" },
+  "plugins": [
+    {
+      "name": "tandem",
+      "source": "./plugins/tandem",
+      "description": "Navegador Chrome compartido humano+Claude (CDP + Playwright MCP) que APRENDE cómo se navega cada sitio: memoria de navegación por-sitio (tandem:map) con locators durables, detección de drift y auto-inyección del perfil al navegar."
+    }
+  ]
+}

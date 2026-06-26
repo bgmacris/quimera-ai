@@ -1,0 +1,7 @@
+{
+  "name": "tandem",
+  "version": "0.5.0",
+  "description": "Navegador Chrome compartido humano+Claude (CDP + Playwright MCP) que aprende cómo se navega cada sitio: el humano conduce con ratón y pasa captchas/logins, Claude opera por CDP, y tandem:map persiste una memoria de navegación por-sitio (locators durables, drift, auto-inyección).",
+  "author": { "name": "bgmacris" },
+  "keywords": ["browser", "cdp", "playwright", "mcp", "automation", "site-memory", "recon", "navigation"]
+}

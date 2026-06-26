@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# tandem-browser — wrapper en bin/ (se añade al PATH del plugin) para invocar el daemon de
+# Chrome por nombre desde los slash commands, sin depender de ${CLAUDE_PLUGIN_ROOT} (que no
+# se expande en el cuerpo de los commands). Resuelve su propia ubicación.
+set -u
+# Resolver la cadena de symlinks para localizar la ubicación REAL del wrapper. Necesario
+# porque se invoca por nombre desde un symlink en PATH (p.ej. /opt/homebrew/bin/tandem):
+# sin esto, dirname daría el dir del symlink y "../scripts" apuntaría al sitio equivocado.
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [ "${SOURCE#/}" = "$SOURCE" ] && SOURCE="$DIR/$SOURCE"
+done
+HERE="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+exec "$HERE/../scripts/chrome-daemon.sh" "$@"
