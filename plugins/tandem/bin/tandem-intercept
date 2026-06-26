@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# tandem-intercept — wrapper bin/ para invocar cdp-intercept.mjs por nombre desde slash commands.
+set -u
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [ "${SOURCE#/}" = "$SOURCE" ] && SOURCE="$DIR/$SOURCE"
+done
+HERE="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+exec node "$HERE/../scripts/cdp-intercept.mjs" "$@"

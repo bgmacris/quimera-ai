@@ -9,6 +9,10 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/); versionado se
   cookies del Chrome de tandem via CDP directo (`Network.getAllCookies`), incluyendo HttpOnly y
   Secure (inaccesibles desde JS de página). Formatos: `list` (tabla), `json`, `curl`, `headers`,
   `netscape`. Filtro por `--domain`. Sin dependencias externas (WebSocket + fetch nativos Node 22+).
+- `scripts/cdp-intercept.mjs` + `bin/tandem-intercept` + `commands/intercept.md`: sniffer HTTP
+  que captura request+response bodies del tab activo via CDP (`Network.enable` + `getResponseBody`
+  + `getRequestPostData`). Subcomandos `start/show/clear/count`. Filtros por URL, método, status,
+  mime. Cap de 32KB por body. Persistencia NDJSON en `~/.claude/tandem/intercept.ndjson`.
 
 ### Security
 - `norm()` en `page-signals.mjs`: añadido filtro ASCII imprimible (`\x20-\x7E`) y cap de 120
