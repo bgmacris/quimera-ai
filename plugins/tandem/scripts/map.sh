@@ -9,18 +9,19 @@
 #  - Ruta de datos FIJA (igual que lib.sh): ${CLAUDE_PLUGIN_DATA} no se expande en la
 #    inyección bash de los slash commands. Override con TANDEM_DATA_DIR.
 set -u
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 tandem_data_dir() { printf '%s\n' "${TANDEM_DATA_DIR:-$HOME/.claude/tandem}"; }
 SITES="$(tandem_data_dir)/sites"
 
-# host normalizado: quita esquema, deja solo el host, minúsculas. Acepta una URL entera.
-norm_host() {
-  printf '%s\n' "$1" \
-    | sed -E 's#^[a-zA-Z]+://##; s#/.*$##' \
-    | tr '[:upper:]' '[:lower:]'
-}
+# host normalizado — FUENTE ÚNICA: host.mjs (mismo criterio que recipe/fingerprint/hook).
+# exit≠0 + error en stderr si el host no valida; los llamadores propagan el fallo.
+norm_host() { node "$HERE/host.mjs" "$1"; }
 
-profile_path() { printf '%s\n' "$SITES/$(norm_host "$1").md"; }
+profile_path() {
+  local h; h="$(norm_host "$1")" || return 1
+  printf '%s\n' "$SITES/$h.md"
+}
 
 # Lee un valor del frontmatter YAML (entre el primer par de '---'). Uso: fm_get <file> <clave>
 fm_get() {
@@ -47,7 +48,7 @@ cmd_path() {
 
 cmd_show() {
   [ -n "${1:-}" ] || { echo "uso: map.sh show <host>" >&2; return 2; }
-  local f; f="$(profile_path "$1")"
+  local f; f="$(profile_path "$1")" || return 1
   if [ -f "$f" ]; then cat "$f"; else
     echo "map: no hay perfil para '$(norm_host "$1")' (esperado en $f)." >&2
     return 1

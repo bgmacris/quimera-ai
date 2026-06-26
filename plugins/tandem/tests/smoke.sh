@@ -183,6 +183,16 @@ else
   bad "recipe.test.mjs"
 fi
 
+# --- 9. host.mjs: normalización única de host (test JS dedicado) --------------------
+# Fuente única que recipe/fingerprint/hook/map usan para "URL o host" → clave del store; el test
+# cubre URLs/hosts pelados, esquema en mayúscula, userinfo/puerto, IDN, y el rechazo de traversal.
+echo "[9] host.mjs (node tests/host.test.mjs)"
+if node "$HERE/host.test.mjs" 2>&1 | sed 's/^/  /'; then
+  ok "host.test.mjs verde"
+else
+  bad "host.test.mjs"
+fi
+
 # --- resumen ------------------------------------------------------------------------
 echo ""
 echo "resultado: $PASS ok, $FAIL fallos"
