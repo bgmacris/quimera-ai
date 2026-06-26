@@ -4,6 +4,12 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/); versionado se
 
 ## [Unreleased] — 2026-06-26
 
+### Added
+- `scripts/cdp-cookies.mjs` + `bin/tandem-cookies` + `commands/cookies.md`: exporta todas las
+  cookies del Chrome de tandem via CDP directo (`Network.getAllCookies`), incluyendo HttpOnly y
+  Secure (inaccesibles desde JS de página). Formatos: `list` (tabla), `json`, `curl`, `headers`,
+  `netscape`. Filtro por `--domain`. Sin dependencias externas (WebSocket + fetch nativos Node 22+).
+
 ### Security
 - `norm()` en `page-signals.mjs`: añadido filtro ASCII imprimible (`\x20-\x7E`) y cap de 120
   caracteres por señal. Cierra el vector de stored prompt injection via DOM → perfil → contexto.

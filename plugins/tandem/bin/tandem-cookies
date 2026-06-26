@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# tandem-cookies — wrapper bin/ para invocar cdp-cookies.mjs por nombre desde slash commands.
+# Resuelve la cadena de symlinks para localizar la ubicación real del wrapper.
+set -u
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [ "${SOURCE#/}" = "$SOURCE" ] && SOURCE="$DIR/$SOURCE"
+done
+HERE="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+exec node "$HERE/../scripts/cdp-cookies.mjs" "$@"
