@@ -35,8 +35,8 @@ auth: { muro: "ninguno", lo_pasa: ninguno }
 - detalle-descripcion: sel: #product_description ~ p              | verificado 2026-06-26
 
 ## Recetas
-extraer-pagina-catalogo():
-  - navigate: "{url-pagina}"
+extraer-pagina-catalogo(url-pagina):
+  - navigate: <- {url-pagina}
   - extract:  item-catalogo
 
 ## Gotchas

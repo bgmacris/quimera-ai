@@ -26,6 +26,8 @@ const MD = `## Locators (multi-ancla)
     sel:       role=row[name=/^{id}/]
 - sin-sel:
     primario:  solo legible
+- item-pod:
+    sel:       article.product_pod
 
 ## Recetas
 abrir-ticket-por-id(id):
@@ -33,6 +35,10 @@ abrir-ticket-por-id(id):
   - click:    fila-de-ticket    <- {id}
   - wait-url: /tickets/
   - return:   url
+
+navegar-a(url):
+  - navigate: <- {url}
+  - extract:  item-pod
 
 mala-accion():
   - clik:     busqueda-tickets
@@ -43,6 +49,12 @@ loc-inexistente():
 usa-sin-sel():
   - click:    sin-sel
 
+extract-loc-inexistente():
+  - extract:  no-existe
+
+navigate-con-hueco():
+  - navigate: "{url}"
+
 ## Otra cosa
 - ignorar esto
 `;
@@ -50,11 +62,11 @@ usa-sin-sel():
 // --- parseo -----------------------------------------------------------------------
 process.stdout.write('[parseo]\n');
 const { locators, recipes } = parseProfile(MD);
-ok('parsea 4 locators', locators.size === 4);
+ok('parsea 5 locators', locators.size === 5);
 t('sel de busqueda-tickets', locators.get('busqueda-tickets').sel, 'role=textbox[name=/Buscar por número/]');
 t('detecta plantilla (holes)', locators.get('fila-de-ticket').holes, ['id']);
 ok('locator sin sel: → sel null', locators.get('sin-sel').sel === null);
-ok('parsea 4 recetas', recipes.size === 4);
+ok('parsea 7 recetas', recipes.size === 7);
 const receta = recipes.get('abrir-ticket-por-id');
 t('firma de la receta', receta.params, ['id']);
 t('nº de pasos', receta.steps.length, 4);
@@ -74,6 +86,13 @@ ok('locator inexistente detectado', !validate(recipes.get('loc-inexistente'), lo
 ok('locator sin sel detectado', !validate(recipes.get('usa-sin-sel'), locators).ok);
 const fakeParam = { name: 'x', params: [], steps: [{ action: 'type', operand: 'busqueda-tickets', arg: { kind: 'param', name: 'noexiste' } }] };
 ok('param no declarado detectado', !validate(fakeParam, locators).ok);
+// H2: extract con locator inexistente debe dar error (antes: continue ciego)
+ok('extract locator inexistente detectado', !validate(recipes.get('extract-loc-inexistente'), locators).ok);
+// H2: extract con locator válido (item-pod) debe pasar
+ok('extract locator válido pasa', validate(recipes.get('navegar-a'), locators).ok);
+// H2: navigate con {…} en operando sin <- genera warning
+const navHueco = validate(recipes.get('navigate-con-hueco'), locators);
+ok('navigate con {…} en operando genera warning', navHueco.ok && navHueco.warnings.length > 0);
 
 // --- compileFast ------------------------------------------------------------------
 process.stdout.write('[compileFast]\n');
@@ -85,6 +104,15 @@ ok('wait-url → waitForURL includes', /waitForURL.*includes\("\/tickets\/"\)/.t
 ok('return url → page.url()', code.includes('return page.url();'));
 ok('pasa assertCompiledSafe', assertCompiledSafe(code) === true);
 ok('es JS parseable', (() => { try { new Function('page', `return (${code})`); return true; } catch { return false; } })());
+// H3: navigate con <- {param} usa el valor del arg, sin doble comilla
+const navReceta = recipes.get('navegar-a');
+const navCode = compileFast(navReceta, locators, { url: 'https://example.com/page-1' });
+ok('H3: navigate usa arg (url sustituida)', navCode.includes('"https://example.com/page-1"'));
+ok('H3: navigate no doble-comilla el placeholder', !navCode.includes('"{url}"') && !navCode.includes("'{url}'"));
+// H1: extract con locator plano — compileFast devuelve textContent, no corta el nombre
+const extractCode = compileFast(navReceta, locators, { url: 'https://example.com' });
+ok('H1: extract locator plano usa sel correcto', extractCode.includes('"article.product_pod"'));
+ok('H1: nombre de locator no mutilado (no item-pod → item-po)', !extractCode.includes('"item-po"'));
 
 // --- compileSteps -----------------------------------------------------------------
 process.stdout.write('[compileSteps]\n');
@@ -92,6 +120,11 @@ const steps = compileSteps(receta, locators, { id: 'TCK-2026-123' });
 t('paso 0 type', steps[0], { action: 'type', target: 'role=textbox[name=/Buscar por número/]', value: 'TCK-2026-123' });
 t('paso 1 click con plantilla rellena', steps[1], { action: 'click', target: 'span.ticket-number >> text="TCK-2026-123" >> visible=true' });
 t('paso 2 wait', steps[2], { action: 'wait', waitFor: 'url', value: '/tickets/' });
+// H3: navigate con <- {param} en compileSteps
+const navSteps = compileSteps(recipes.get('navegar-a'), locators, { url: 'https://example.com/p1' });
+t('H3 compileSteps: navigate value = arg', navSteps[0], { action: 'navigate', value: 'https://example.com/p1' });
+// H1: extract locator plano en compileSteps devuelve map con el nombre intacto
+t('H1 compileSteps: extract locator plano', navSteps[1], { action: 'extract', map: 'item-pod' });
 
 // --- inyección (ESTRELLA) ---------------------------------------------------------
 process.stdout.write('[inyección]\n');

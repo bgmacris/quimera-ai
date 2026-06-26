@@ -79,16 +79,33 @@ export function validate(recipe, locators) {
     if (step.arg?.kind === 'param' && !recipe.params.includes(step.arg.name)) {
       errors.push(`param no declarado en la firma: {${step.arg.name}} (paso ${step.action})`);
     }
-    // acciones sobre locator: existe y tiene sel
-    if (['type', 'click', 'return', 'extract'].includes(step.action) && step.action !== 'return' || (step.action === 'return' && step.operand !== 'url')) {
-      if (step.action === 'extract') continue; // extract se valida aparte (mapa)
-      const loc = locators.get(step.operand);
-      if (!loc) { errors.push(`locator inexistente: '${step.operand}' (paso ${step.action})`); continue; }
-      if (!loc.sel) { errors.push(`locator '${step.operand}' no tiene sel: — no es accionable`); continue; }
-      // si el sel es plantilla, el step debe aportar el valor del hueco
-      if (loc.holes.length && step.action === 'click' && !step.arg) {
-        errors.push(`locator '${step.operand}' es plantilla (${loc.holes.map((h) => `{${h}}`).join(',')}) pero el paso no pasa '<- {param}'`);
+    // navigate: advertir si el operando contiene {…} (probablemente quiso <- {param})
+    if (step.action === 'navigate') {
+      if (/\{[^}]+\}/.test(step.operand) && !step.arg) {
+        warnings.push(`navigate: el operando contiene '{…}' — ¿quisiste '← {param}' para pasarlo como argumento?`);
       }
+      continue;
+    }
+    // wait-url no usa locator
+    if (step.action === 'wait-url') continue;
+    // extract: locator plano → debe existir y tener sel; mapa {…} → validación básica
+    if (step.action === 'extract') {
+      if (!step.operand.startsWith('{')) {
+        const loc = locators.get(step.operand);
+        if (!loc) { errors.push(`locator inexistente: '${step.operand}' (paso extract)`); continue; }
+        if (!loc.sel) { errors.push(`locator '${step.operand}' no tiene sel: — no es accionable (paso extract)`); continue; }
+      }
+      continue;
+    }
+    // return url es especial
+    if (step.action === 'return' && step.operand === 'url') continue;
+    // type, click, return <locator>: deben existir y tener sel
+    const loc = locators.get(step.operand);
+    if (!loc) { errors.push(`locator inexistente: '${step.operand}' (paso ${step.action})`); continue; }
+    if (!loc.sel) { errors.push(`locator '${step.operand}' no tiene sel: — no es accionable`); continue; }
+    // si el sel es plantilla, click debe aportar el valor del hueco
+    if (loc.holes.length && step.action === 'click' && !step.arg) {
+      errors.push(`locator '${step.operand}' es plantilla (${loc.holes.map((h) => `{${h}}`).join(',')}) pero el paso no pasa '<- {param}'`);
     }
   }
   return { ok: errors.length === 0, errors, warnings };
