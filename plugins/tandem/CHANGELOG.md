@@ -13,6 +13,11 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/); versionado se
   que captura request+response bodies del tab activo via CDP (`Network.enable` + `getResponseBody`
   + `getRequestPostData`). Subcomandos `start/show/clear/count`. Filtros por URL, método, status,
   mime. Cap de 32KB por body. Persistencia NDJSON en `~/.claude/tandem/intercept.ndjson`.
+- `scripts/cdp-pdf.mjs` + `bin/tandem-pdf` + `commands/pdf.md`: captura la página actual como
+  PDF (`Page.printToPDF`, requiere `--headless`) con fallback automático a screenshot PNG full-page
+  via `Page.captureScreenshot` + `Page.getLayoutMetrics` + `Emulation.setDeviceMetricsOverride`
+  (funciona siempre en modo headful de tandem). Output prefijado `pdf:` o `png:` para que el
+  agente sepa el formato generado.
 
 ### Security
 - `norm()` en `page-signals.mjs`: añadido filtro ASCII imprimible (`\x20-\x7E`) y cap de 120
