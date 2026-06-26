@@ -65,6 +65,11 @@ const landscape = !!flags.landscape;
 const noBg      = !!flags['no-bg'];
 const pngOnly   = !!flags['png-only'];
 
+if (flags.help) {
+  process.stdout.write('uso: cdp-pdf.mjs [--output <ruta>] [--tab <n>] [--landscape] [--no-bg] [--png-only]\n');
+  process.exit(0);
+}
+
 // --- conectar ---------------------------------------------------------------------
 const port = cdpPort();
 let ws, tabUrl;
