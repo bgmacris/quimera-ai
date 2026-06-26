@@ -7,10 +7,13 @@
 //
 // Requiere Chrome activo (tandem-browser start). Node 22+ (WebSocket + fetch nativos).
 //
-// Uso: cdp-cookies.mjs [--domain <d>] [--format list|json|curl|headers|netscape]
+// Uso: cdp-cookies.mjs [--domain <d>] [--format list|json|curl|headers|netscape] [--reveal]
 //   --domain   filtra por substring del domain (case-insensitive)
 //   --format   list=tabla legible (default), json=dump completo, curl=-H 'Cookie: ...',
 //              headers=línea Cookie: raw (para Burp repeater), netscape=TXT para curl --cookie-jar
+//   --reveal   muestra los VALORES en claro. Por defecto el value va REDACTADO (un cookie value
+//              suele ser un token de sesión): list lo enmascara, y los formatos que existen para
+//              volcar el value entero (json/curl/headers/netscape) exigen --reveal explícito.
 
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -59,9 +62,14 @@ for (let i = 0; i < argv.length; i++) {
 }
 const format = flags.format || 'list';
 const domainFilter = (flags.domain || '').toLowerCase();
+const reveal = !!flags.reveal;
 
 if (!['list', 'json', 'curl', 'headers', 'netscape'].includes(format)) {
   process.stderr.write(`cdp-cookies: formato '${format}' desconocido. Válidos: list json curl headers netscape\n`);
+  process.exit(2);
+}
+if (!reveal && ['json', 'curl', 'headers', 'netscape'].includes(format)) {
+  process.stderr.write(`cdp-cookies: el formato '${format}' vuelca los valores en claro. Añade --reveal si es tu intención.\n`);
   process.exit(2);
 }
 
@@ -105,11 +113,18 @@ switch (format) {
     for (const c of cookies) {
       const fgs = [c.httpOnly && 'HttpOnly', c.secure && 'Secure',
         c.sameSite && `SameSite=${c.sameSite}`, c.session && 'Session'].filter(Boolean).join(' ');
-      const val = c.value.length > V ? c.value.slice(0, V - 1) + '…' : c.value;
+      let val;
+      if (!reveal) {
+        const v = c.value;
+        val = v.length <= 8 ? '•'.repeat(v.length) : `${v.slice(0, 4)}…${v.slice(-4)}`;
+      } else {
+        val = c.value.length > V ? c.value.slice(0, V - 1) + '…' : c.value;
+      }
       process.stdout.write(
         `${c.domain.slice(0, D).padEnd(D)}  ${c.name.slice(0, N).padEnd(N)}  ${val.padEnd(V)}  ${fgs}\n`,
       );
     }
+    if (!reveal) process.stdout.write('(valores redactados; usa --reveal para verlos en claro)\n');
     process.stdout.write(`\n${cookies.length} cookie(s)\n`);
     break;
   }
