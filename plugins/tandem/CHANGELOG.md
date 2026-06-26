@@ -5,6 +5,8 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/); versionado se
 ## [Unreleased] — 2026-06-26
 
 ### Security
+- `norm()` en `page-signals.mjs`: añadido filtro ASCII imprimible (`\x20-\x7E`) y cap de 120
+  caracteres por señal. Cierra el vector de stored prompt injection via DOM → perfil → contexto.
 - `hook-inject-profile.mjs`: sanitiza `session_id` del JSON de entrada antes de usarlo como
   componente de path (`rmSync`). Cierra path traversal via `session_id` con `..`.
 - `fingerprint.mjs`: atomic write (`writeFileSync` a `.tmp` + `renameSync`) para evitar pérdida

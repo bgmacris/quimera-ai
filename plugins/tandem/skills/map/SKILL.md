@@ -173,6 +173,7 @@ auth: { muro: "<qué muro>", lo_pasa: humano|claude|ninguno }
 Ejemplo de formato: ver `docs/01-memoria-de-navegacion.md`.
 
 ## No-goals (v1)
-- Sin inyección automática por hook al navegar (asistido, no automático).
+- Sin acción automática: el hook inyecta el perfil al CONTEXTO, pero navegar/accionar siempre lo
+  decides tú (nunca auto-pilota por el perfil). La AUTORÍA (recon/escritura) también es asistida.
 - Sin self-healing que reescriba el perfil solo: re-record + re-confirmación humana.
 - Sin esquema rígido/rico: magro gana, escala por adición.

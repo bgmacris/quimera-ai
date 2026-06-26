@@ -17,7 +17,7 @@
 // colapsa espacios, recorta, y reduce cada secuencia de dígitos a '#'
 // ('Bandeja 112' y 'Bandeja 115' → 'Bandeja #'). Es la pieza que evita los falsos drifts.
 
-export const norm = (s) => (s || '').replace(/\s+/g, ' ').trim().replace(/\d+/g, '#');
+export const norm = (s) => (s || '').replace(/\s+/g, ' ').trim().replace(/\d+/g, '#').replace(/[\x00-\x1F\x7F]/g, '').slice(0, 120);
 
 // collectSignals(document[, normFn]): set ORDENADO de señales estructurales de la página.
 // normFn es parámetro (default: norm) para que el blob de browser pueda inyectar la norm
