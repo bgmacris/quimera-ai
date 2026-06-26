@@ -22,6 +22,7 @@ import { join } from 'node:path';
 import {
   existsSync, mkdirSync, readFileSync, writeFileSync, rmSync,
 } from 'node:fs';
+import { normalizeHost } from './host.mjs';
 
 const dataDir = process.env.TANDEM_DATA_DIR || join(homedir(), '.claude', 'tandem');
 const sitesDir = join(dataDir, 'sites');
@@ -39,7 +40,7 @@ const raw = readStdin();
 let input;
 try { input = JSON.parse(raw); } catch { silent(); }
 
-const sessionId = (input && input.session_id) || 'no-session';
+const sessionId = ((input && input.session_id) || 'no-session').replace(/[^a-z0-9_-]/gi, '_').slice(0, 64);
 
 // --- modo cleanup (SessionEnd) ----------------------------------------------------
 if (process.argv[2] === 'cleanup') {
@@ -52,8 +53,7 @@ const url = input?.tool_input?.url;
 if (!url || typeof url !== 'string') silent();
 
 let host;
-try { host = new URL(url).hostname.toLowerCase(); } catch { silent(); }
-if (!host) silent();
+try { host = normalizeHost(url); } catch { silent(); }
 
 const profilePath = join(sitesDir, `${host}.md`);
 if (!existsSync(profilePath)) silent();           // no hay perfil → silencio

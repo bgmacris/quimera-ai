@@ -2,6 +2,12 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/); versionado semántico.
 
+## [Unreleased] — 2026-06-26
+
+### Security
+- `hook-inject-profile.mjs`: sanitiza `session_id` del JSON de entrada antes de usarlo como
+  componente de path (`rmSync`). Cierra path traversal via `session_id` con `..`.
+
 ## [0.5.0] — 2026-06-22
 
 Recetas ejecutables: *procedural memory* sobre los `sel:`.
