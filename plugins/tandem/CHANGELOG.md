@@ -2,7 +2,10 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/); versionado semántico.
 
-## [Unreleased] — 2026-06-26
+## [0.6.0] — 2026-06-26
+
+Comandos CDP directo (`cookies`, `intercept`, `pdf`): capturan lo que el JS de
+página no alcanza (HttpOnly, response bodies) sin pasar por Playwright. + hardening.
 
 ### Added
 - `scripts/cdp-cookies.mjs` + `bin/tandem-cookies` + `commands/cookies.md`: exporta todas las
