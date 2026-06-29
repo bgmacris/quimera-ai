@@ -20,6 +20,24 @@ re-deriving the DOM every time.
 > detection + **executable locators** (`sel:`) to act **without re-snapshotting** (~18× less per
 > action, measured), with a fingerprint gate that makes skipping the snapshot honest.
 
+## Why it pays: measured savings
+
+Operating a *known* site the usual way means a full `browser_snapshot` every time you act — and the
+accessibility tree of a real page is large. tandem replaces that repeated snapshot with a **one-time
+profile** plus **executable `sel:`** locators:
+
+- A `browser_snapshot` of a real page (Wikipedia, *Web scraping*) = **~105 KB** (105,378 B measured),
+  and tandem writes it **to a file, not into the context**.
+- A per-site profile = **~3.5–6.7 KB**, injected **once per session** (not per action).
+- Profile ↔ snapshot floor: **~16–30× smaller** depending on the profile (`wc -c`, measured
+  2026-06-29). On the expensive step — reading one record's full detail — targeted extraction vs its
+  snapshot measured **~110×** (see [`docs/01`](docs/01-navigation-memory.md)).
+- The `web-navigator` subagent absorbs the snapshot noise in *its own* context and returns only the
+  distilled data, so the main context stays clean.
+
+Reproducible method: `wc -c` of the profile `.md` vs of the file saved by `browser_snapshot(filename:)`
+(every figure here is a byte count; token cost tracks it, roughly bytes ÷ 4).
+
 ## What sets it apart: `tandem:map`
 
 Operating a known site normally costs a huge `browser_snapshot` every time, with ephemeral refs that
@@ -74,6 +92,25 @@ Via the **quimera** marketplace for Claude Code:
 
 Requires Google Chrome (or Chromium) and Node 22+ (native `WebSocket`/`fetch` used by the CDP
 commands `cookies`/`intercept`/`pdf`, no external deps; `npx` launches the Playwright MCP).
+
+## Quickstart — a real 2-minute run
+
+On `books.toscrape.com` (a public scraping sandbox, no login), reproducing exactly the profile
+shipped in [`examples/`](examples/books.toscrape.com.md):
+
+1. `/tandem:browser-start` — the shared window opens.
+2. Ask Claude, in plain words:
+   > "Navigate to books.toscrape.com and recon it: the route skeleton, the locator for a book pod,
+   > and how pagination works. Then propose a `tandem:map` profile."
+
+   Claude explores the rendered DOM, drafts the profile, you confirm, and it is saved to
+   `~/.claude/tandem/sites/books.toscrape.com.md` (compare it with `examples/`).
+3. Next time you navigate there, the profile **auto-injects**; Claude acts by durable `sel:` (e.g.
+   extract all 20 book pods of a page) **without re-snapshotting** — the saving measured above.
+4. `/tandem:browser-stop`.
+
+If a site puts up a captcha or a login, you clear it with the mouse in that same window and Claude
+continues from the already-rendered page — that is the human-in-the-loop handoff.
 
 ## Usage
 
