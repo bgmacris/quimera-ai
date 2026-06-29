@@ -1,19 +1,29 @@
 # quimera
 
+[![CI](https://github.com/bgmacris/quimera/actions/workflows/ci.yml/badge.svg)](https://github.com/bgmacris/quimera/actions/workflows/ci.yml)
+
 A [Claude Code](https://code.claude.com) plugin marketplace by [bgmacris](https://github.com/bgmacris).
 
-## Usage
+One plugin today — **[tandem](plugins/tandem)**: a Chrome browser **shared in real time** between you
+and Claude Code. You drive it with the mouse and clear the captchas/logins; Claude operates it over
+CDP and **learns how each site is navigated**, then acts by durable selectors instead of
+re-snapshotting the page — a site profile is **~16–30× smaller than one page snapshot** (measured
+with `wc -c`). The human-in-the-loop handoff is the point: the walls you clear, Claude continues past.
+
+## Install
 
 ```
 /plugin marketplace add bgmacris/quimera
-/plugin install <plugin>@quimera
+/plugin install tandem@quimera
 ```
 
 ## Plugins
 
-| Plugin | Description |
+| Plugin | What it does |
 |---|---|
-| **tandem** | A shared Chrome browser (human + Claude) over CDP + Playwright MCP, with per-site navigation memory: clears anti-bot walls through human-AI handoff, automates tests, and reverse-engineers site logic. See [`plugins/tandem`](plugins/tandem). |
+| **[tandem](plugins/tandem)** | Shared human+Claude Chrome (CDP + Playwright MCP) with per-site navigation memory: human–AI handoff past captchas/logins, frugal navigation by durable `sel:` locators, recon and reverse-engineering of site logic. Full docs in [`plugins/tandem`](plugins/tandem). |
 
-Each plugin lives in its own subfolder under [`plugins/`](plugins). To add a new one: a folder at
-`plugins/<name>` with its `.claude-plugin/plugin.json`, plus one more entry in `.claude-plugin/marketplace.json`.
+## Adding a plugin
+
+Each plugin lives under [`plugins/<name>`](plugins) with its own `.claude-plugin/plugin.json`; register
+it with one entry in [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json).
