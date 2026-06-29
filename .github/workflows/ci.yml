@@ -1,0 +1,36 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  # Engine + regression guards on Linux AND macOS. smoke.sh does NOT start Chrome
+  # (that needs a display, verified manually), so it runs headless in CI.
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: smoke + engine tests (no Chrome)
+        working-directory: plugins/tandem
+        run: bash tests/smoke.sh
+
+  # Shell lint on Linux (shellcheck ships on ubuntu runners; install as a fallback).
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        working-directory: plugins/tandem
+        run: |
+          if ! command -v shellcheck >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y shellcheck
+          fi
+          shellcheck -x -S style scripts/*.sh bin/* tests/*.sh
