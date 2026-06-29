@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
-# map.sh — store de perfiles de navegación por sitio (tandem:map).
-# Uso: map.sh {list | show <host> | path <host> | index}
+# map.sh — site navigation profile store (tandem:map).
+# Usage: map.sh {list | show <host> | path <host> | index}
 #
-# Filosofía (ver tandem/docs/01-memoria-de-navegacion.md):
-#  - La FUENTE DE VERDAD son los ficheros sites/<host>.md. El índice se DERIVA de su
-#    frontmatter, no se mantiene aparte: un índice mantenido a mano se desincroniza, y
-#    un mapa que miente es peor que no tener mapa.
-#  - Ruta de datos FIJA (igual que lib.sh): ${CLAUDE_PLUGIN_DATA} no se expande en la
-#    inyección bash de los slash commands. Override con TANDEM_DATA_DIR.
+# Philosophy (see tandem/docs/01-navigation-memory.md):
+#  - The SOURCE OF TRUTH is the sites/<host>.md files. The index is DERIVED from their
+#    frontmatter, not maintained separately: a manually maintained index drifts out of
+#    sync, and a map that lies is worse than no map.
+#  - FIXED data path (same as lib.sh): ${CLAUDE_PLUGIN_DATA} does not expand in the
+#    bash injection of slash commands. Override with TANDEM_DATA_DIR.
 set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 tandem_data_dir() { printf '%s\n' "${TANDEM_DATA_DIR:-$HOME/.claude/tandem}"; }
 SITES="$(tandem_data_dir)/sites"
 
-# host normalizado — FUENTE ÚNICA: host.mjs (mismo criterio que recipe/fingerprint/hook).
-# exit≠0 + error en stderr si el host no valida; los llamadores propagan el fallo.
+# normalized host — SINGLE SOURCE: host.mjs (same criteria as recipe/fingerprint/hook).
+# exit≠0 + error on stderr if the host fails validation; callers propagate the failure.
 norm_host() { node "$HERE/host.mjs" "$1"; }
 
 profile_path() {
@@ -23,13 +23,13 @@ profile_path() {
   printf '%s\n' "$SITES/$h.md"
 }
 
-# Lee un valor del frontmatter YAML (entre el primer par de '---'). Uso: fm_get <file> <clave>
+# Read a value from YAML frontmatter (between the first pair of '---'). Usage: fm_get <file> <key>
 fm_get() {
   awk -v key="$2" '
     NR==1 && $0=="---" { infm=1; next }
     infm && $0=="---"  { exit }
     infm {
-      # clave: valor   (valor con posibles ":" se conserva entero)
+      # key: value   (value with possible ":" is kept whole)
       if ($0 ~ "^"key":[[:space:]]*") {
         sub("^"key":[[:space:]]*", "")
         print
@@ -42,15 +42,15 @@ fm_get() {
 ensure_store() { mkdir -p "$SITES"; }
 
 cmd_path() {
-  [ -n "${1:-}" ] || { echo "uso: map.sh path <host>" >&2; return 2; }
+  [ -n "${1:-}" ] || { echo "usage: map.sh path <host>" >&2; return 2; }
   profile_path "$1"
 }
 
 cmd_show() {
-  [ -n "${1:-}" ] || { echo "uso: map.sh show <host>" >&2; return 2; }
+  [ -n "${1:-}" ] || { echo "usage: map.sh show <host>" >&2; return 2; }
   local f; f="$(profile_path "$1")" || return 1
   if [ -f "$f" ]; then cat "$f"; else
-    echo "map: no hay perfil para '$(norm_host "$1")' (esperado en $f)." >&2
+    echo "map: no profile for '$(norm_host "$1")' (expected at $f)." >&2
     return 1
   fi
 }
@@ -60,10 +60,10 @@ cmd_list() {
   shopt -s nullglob
   local files=("$SITES"/*.md) f host upd
   if [ ${#files[@]} -eq 0 ]; then
-    echo "map: sin perfiles todavía. Crea el primero con la skill tandem:map."
+    echo "map: no profiles yet. Create the first one with the tandem:map skill."
     return 0
   fi
-  printf '%-32s %-12s %s\n' "SITIO" "ACTUALIZADO" "FICHERO"
+  printf '%-32s %-12s %s\n' "SITE" "UPDATED" "FILE"
   for f in "${files[@]}"; do
     host="$(fm_get "$f" site)"; [ -n "$host" ] || host="$(basename "$f" .md)"
     upd="$(fm_get "$f" updated)"; [ -n "$upd" ] || upd="—"
@@ -71,10 +71,10 @@ cmd_list() {
   done
 }
 
-# Índice JSON DERIVADO. A stdout siempre; además se cachea en sites/index.json (regenerable).
-# La serialización la hace node, NO concatenación de strings: un `site:`/`updated:` con comillas
-# o backslash rompería un JSON hecho a mano. Los campos viajan por stdin, una línea cada uno
-# (fm_get y basename nunca emiten newlines), y node los agrupa de 3 en 3 y serializa seguro.
+# DERIVED JSON index. Always to stdout; also cached in sites/index.json (regenerable).
+# Serialization done by node, NOT string concatenation: a `site:` or `updated:` with quotes
+# or backslashes would break a hand-built JSON. Fields travel via stdin, one line each
+# (fm_get and basename never emit newlines), and node groups them in threes and serializes safely.
 cmd_index() {
   ensure_store
   shopt -s nullglob
@@ -101,5 +101,5 @@ case "${1:-list}" in
   show)  shift; cmd_show "${1:-}" ;;
   path)  shift; cmd_path "${1:-}" ;;
   index) cmd_index ;;
-  *) echo "uso: $(basename "$0") {list | show <host> | path <host> | index}" >&2; exit 2 ;;
+  *) echo "usage: $(basename "$0") {list | show <host> | path <host> | index}" >&2; exit 2 ;;
 esac

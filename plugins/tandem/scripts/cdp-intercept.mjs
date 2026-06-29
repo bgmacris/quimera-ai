@@ -1,20 +1,20 @@
 #!/usr/bin/env node
-// cdp-intercept.mjs — sniffer HTTP del Chrome de tandem via CDP (sin deps, Node 22+).
+// cdp-intercept.mjs — HTTP sniffer for tandem's Chrome via CDP (no deps, Node 22+).
 //
-// Captura request+response (con bodies completos) del tab activo: APIs privadas, request
-// bodies (credenciales, CSRF tokens), response bodies de endpoints autenticados.
+// Captures request+response (with full bodies) from the active tab: private APIs, request
+// bodies (credentials, CSRF tokens), response bodies from authenticated endpoints.
 //
-// ⚠ El log puede contener credenciales y tokens. Trátalo como dato sensible.
-//   Borra con `cdp-intercept.mjs clear` al terminar.
+// ⚠ The log may contain credentials and tokens. Treat it as sensitive data.
+//   Clear with `cdp-intercept.mjs clear` when done.
 //   Log: ~/.claude/tandem/intercept.ndjson
 //
-// Uso:
-//   cdp-intercept.mjs start [--duration <s>] [--tab <n>]         captura (foreground, Ctrl-C para salir)
-//   cdp-intercept.mjs show  [--url <p>] [--method <m>]           filtra y muestra
+// Usage:
+//   cdp-intercept.mjs start [--duration <s>] [--tab <n>]         capture (foreground, Ctrl-C to stop)
+//   cdp-intercept.mjs show  [--url <p>] [--method <m>]           filter and display
 //                           [--status <code|2xx|4xx|5xx>]
-//                           [--mime <tipo>] [--limit <n>] [--body]
-//   cdp-intercept.mjs clear                                       borra el log
-//   cdp-intercept.mjs count                                       nº de entries
+//                           [--mime <type>] [--limit <n>] [--body]
+//   cdp-intercept.mjs clear                                       delete the log
+//   cdp-intercept.mjs count                                       number of entries
 
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -32,7 +32,7 @@ function logPath() {
   return join(dataDir, 'intercept.ndjson');
 }
 
-// --- cliente CDP (WebSocket + fetch nativos Node 22+) ----------------------------
+// --- CDP client (native Node 22+ WebSocket + fetch) ------------------------------
 function cdpConnect(wsUrl) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(wsUrl);
@@ -76,17 +76,17 @@ for (let i = 1; i < argv.length; i++) {
 }
 
 if (!['start', 'show', 'clear', 'count'].includes(cmd)) {
-  process.stderr.write('uso: cdp-intercept.mjs {start [--duration <s>] [--tab <n>] | show [...] | clear | count}\n');
+  process.stderr.write('usage: cdp-intercept.mjs {start [--duration <s>] [--tab <n>] | show [...] | clear | count}\n');
   process.exit(2);
 }
 
 // ==================================================================================
-// MODO: clear / count
+// MODE: clear / count
 // ==================================================================================
 if (cmd === 'clear') {
   const p = logPath();
-  if (existsSync(p)) { unlinkSync(p); process.stdout.write('cdp-intercept: log borrado.\n'); }
-  else { process.stdout.write('cdp-intercept: no hay log.\n'); }
+  if (existsSync(p)) { unlinkSync(p); process.stdout.write('cdp-intercept: log cleared.\n'); }
+  else { process.stdout.write('cdp-intercept: no log found.\n'); }
   process.exit(0);
 }
 
@@ -102,11 +102,11 @@ if (cmd === 'count') {
 }
 
 // ==================================================================================
-// MODO: show
+// MODE: show
 // ==================================================================================
 if (cmd === 'show') {
   const p = logPath();
-  if (!existsSync(p)) { process.stderr.write('cdp-intercept: no hay log. Usa `start` primero.\n'); process.exit(0); }
+  if (!existsSync(p)) { process.stderr.write('cdp-intercept: no log. Use `start` first.\n'); process.exit(0); }
 
   const urlPat   = (flags.url    || '').toLowerCase();
   const methPat  = (flags.method || '').toUpperCase();
@@ -135,7 +135,7 @@ if (cmd === 'show') {
   });
   rl.on('close', () => {
     const shown = entries.slice(-Math.min(entries.length, limit));
-    if (!shown.length) { process.stdout.write('(sin resultados)\n'); return; }
+    if (!shown.length) { process.stdout.write('(no results)\n'); return; }
     for (const e of shown) {
       const ts   = e.ts ? e.ts.replace('T', ' ').slice(0, 19) : '?';
       const stat = String(e.status ?? '?').padStart(3);
@@ -150,45 +150,45 @@ if (cmd === 'show') {
         }
       }
     }
-    process.stdout.write(`\n${shown.length} de ${entries.length} entries\n`);
+    process.stdout.write(`\n${shown.length} of ${entries.length} entries\n`);
   });
   rl.on('error', () => process.exit(1));
 }
 
 // ==================================================================================
-// MODO: start
+// MODE: start
 // ==================================================================================
 if (cmd === 'start') {
   const duration = flags.duration ? +flags.duration * 1000 : null;
   const tabIndex = flags.tab ? +flags.tab : 0;
-  const BODY_CAP = 32 * 1024; // 32KB por body en el log
+  const BODY_CAP = 32 * 1024; // 32KB per body in the log
 
   const port = cdpPort();
   let ws;
   try {
     const tabs = await fetch(`http://127.0.0.1:${port}/json`).then((r) => r.json());
     const pages = tabs.filter((t) => t.type === 'page' && t.webSocketDebuggerUrl);
-    if (!pages.length) throw new Error('no hay tabs activos');
+    if (!pages.length) throw new Error('no active tabs');
     const tab = pages[tabIndex] || pages[0];
-    process.stderr.write(`cdp-intercept: capturando tab [${tabIndex}] ${tab.url || '?'}\n`);
+    process.stderr.write(`cdp-intercept: capturing tab [${tabIndex}] ${tab.url || '?'}\n`);
     ws = await cdpConnect(tab.webSocketDebuggerUrl);
   } catch (e) {
-    process.stderr.write(`cdp-intercept: no puedo conectar (¿Chrome activo? tandem-browser status).\n  ${e.message}\n`);
+    process.stderr.write(`cdp-intercept: cannot connect (Chrome active? tandem-browser status).\n  ${e.message}\n`);
     process.exit(1);
   }
 
   ws.addEventListener('message', handleMessage);
   ws.addEventListener('close', () => {
-    process.stderr.write('\ncdp-intercept: Chrome cerró la conexión.\n');
+    process.stderr.write('\ncdp-intercept: Chrome closed the connection.\n');
     report();
     process.exit(0);
   });
 
-  // Habilitar Network domain
+  // Enable Network domain
   await cdpCall(ws, 'Network.enable', { maxPostDataSize: 65536 });
-  process.stderr.write(`cdp-intercept: capturando${duration ? ` (${duration / 1000}s)` : ' — Ctrl-C para salir'}… log → ${logPath()}\n`);
+  process.stderr.write(`cdp-intercept: capturing${duration ? ` (${duration / 1000}s)` : ' — Ctrl-C to stop'}… log → ${logPath()}\n`);
 
-  // Correlación requestId → metadata en vuelo
+  // Correlate requestId → in-flight metadata
   const pending = new Map();
   let captured = 0;
 
@@ -200,12 +200,12 @@ if (cmd === 'start') {
   }
 
   onCdpEvent('Network.requestWillBeSent', ({ requestId, request, redirectResponse }) => {
-    // Redirect: actualiza solo la URL del entry existente
+    // Redirect: update only the URL of the existing entry
     if (redirectResponse && pending.has(requestId)) {
       pending.get(requestId).url = request.url;
       return;
     }
-    // Limita el tamaño del Map (requests que nunca terminan: WebSocket, SSE)
+    // Limit Map size (requests that never finish: WebSocket, SSE)
     if (pending.size > 500) {
       const stale = pending.keys().next().value;
       pending.delete(stale);
@@ -237,7 +237,7 @@ if (cmd === 'start') {
     const getBody = cdpCall(ws, 'Network.getResponseBody', { requestId })
       .catch(() => ({ body: null, base64Encoded: false }));
 
-    // getRequestPostData da el body completo incluso para requests grandes
+    // getRequestPostData gives the full body even for large requests
     const getPost = (entry.method !== 'GET' && entry.method !== 'HEAD')
       ? cdpCall(ws, 'Network.getRequestPostData', { requestId }).catch(() => null)
       : Promise.resolve(null);
@@ -257,7 +257,7 @@ if (cmd === 'start') {
   onCdpEvent('Network.loadingFailed', ({ requestId }) => pending.delete(requestId));
 
   function report() {
-    process.stderr.write(`cdp-intercept: ${captured} request(s) capturadas → ${logPath()}\n`);
+    process.stderr.write(`cdp-intercept: ${captured} request(s) captured → ${logPath()}\n`);
   }
 
   process.on('SIGINT', () => { report(); ws.close(); process.exit(0); });

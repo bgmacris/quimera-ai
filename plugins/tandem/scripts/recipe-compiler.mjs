@@ -1,47 +1,47 @@
-// recipe-compiler.mjs — compila una receta parseada a código/pasos ejecutables (tandem:map).
+// recipe-compiler.mjs — compiles a parsed recipe to executable code/steps (tandem:map).
 //
-// De la estructura (locators + receta de recipe-parser.mjs) a dos formas (helper de autoría: NO
-// ejecuta — quien ejecuta es el agente):
-//   --fast: una función Playwright `async (page) => {…}` para `browser_run_code_unsafe` (1 call).
-//   --step: una lista de pasos `{action,target,value}` que el agente ejecuta con browser_click/type.
+// From structure (locators + recipe from recipe-parser.mjs) to two forms (authoring helper:
+// does NOT execute — the agent is the one that executes):
+//   --fast: a Playwright `async (page) => {…}` function for `browser_run_code_unsafe` (1 call).
+//   --step: a list of steps `{action,target,value}` the agent executes with browser_click/type.
 //
-// Seguridad (browser_run_code_unsafe es RCE-equivalent): la estructura viene del store co-curado;
-// los DATOS (args) son no confiables y entran SIEMPRE por JSON.stringify (literal JS inerte). El
-// `sel:` plantilla es el único punto donde un valor va dentro de un string de selector → se escapa
-// por-engine con las funciones de selector.mjs ANTES del JSON.stringify. assertCompiledSafe (de
-// recipe-safety.mjs) es la red final sobre el código generado.
+// Security (browser_run_code_unsafe is RCE-equivalent): the structure comes from the co-curated
+// store; DATA (args) is untrusted and ALWAYS enters via JSON.stringify (inert JS literal). The
+// template `sel:` is the only point where a value goes inside a selector string → escaped
+// per-engine with selector.mjs functions BEFORE JSON.stringify. assertCompiledSafe (from
+// recipe-safety.mjs) is the final net over the generated code.
 
 import { escapeStringName, escapeRegexName } from './selector.mjs';
 import { assertCompiledSafe } from './recipe-safety.mjs';
 
-// --- relleno de plantillas (escape por-engine, reusa selector.mjs) -----------------
+// --- template filling (per-engine escape, reuses selector.mjs) --------------------
 function holeEngine(segment) {
-  if (/=\//.test(segment)) return 'regex';   // name=/.../  → patrón
-  return 'string';                            // text="…" / [..="…"] → literal entre comillas
+  if (/=\//.test(segment)) return 'regex';   // name=/.../  → pattern
+  return 'string';                            // text="…" / [..="…"] → literal in quotes
 }
 export function fillTemplate(sel, argByHole) {
   return sel.replace(/\{([^}]+)\}/g, (m, hole) => {
     const val = argByHole[hole];
-    if (val == null) throw new Error(`hueco sin valor: {${hole}}`);
+    if (val == null) throw new Error(`missing value for hole: {${hole}}`);
     const seg = sel.split('>>').find((s) => s.includes(m)) || sel;
     return holeEngine(seg) === 'regex' ? escapeRegexName(val) : escapeStringName(val);
   });
 }
 
-// --- resolución de valores ---------------------------------------------------------
+// --- value resolution -------------------------------------------------------------
 function argValue(arg, args) {
   if (!arg) return undefined;
   if (arg.kind === 'literal') return arg.value;
-  if (!(arg.name in args)) throw new Error(`falta argumento: ${arg.name}`);
+  if (!(arg.name in args)) throw new Error(`missing argument: ${arg.name}`);
   return args[arg.name];
 }
 function locSel(name, locators) {
   const loc = locators.get(name);
-  if (!loc || !loc.sel) throw new Error(`locator sin sel: '${name}'`);
+  if (!loc || !loc.sel) throw new Error(`locator missing sel: '${name}'`);
   return loc;
 }
 
-// --- compilación --fast ------------------------------------------------------------
+// --- --fast compilation -----------------------------------------------------------
 const J = JSON.stringify;
 export function compileFast(recipe, locators, args = {}) {
   const lines = [];
@@ -71,7 +71,7 @@ export function compileFast(recipe, locators, args = {}) {
       case 'extract':
         lines.push(`return ${extractExpr(step.operand, locators)};`); break;
       default:
-        throw new Error(`acción desconocida: ${step.action}`);
+        throw new Error(`unknown action: ${step.action}`);
     }
   }
   const code = `async (page) => {\n  ${lines.join('\n  ')}\n}`;
@@ -85,19 +85,19 @@ function returnExpr(operand, locators) {
   return `((await page.locator(${J(sel)}).first().textContent()) || '').trim()`;
 }
 
-// extract operand: plain locator name  OR  `{ clave: fuente, ... }`  fuente = url | url:/regex/ | <locator>
+// extract operand: plain locator name  OR  `{ key: source, ... }`  source = url | url:/regex/ | <locator>
 function extractExpr(operand, locators) {
-  // plain locator: `extract: item-catalogo`
+  // plain locator: `extract: item-catalogue`
   if (!operand.startsWith('{')) {
     const { sel } = locSel(operand, locators);
     return `((await page.locator(${J(sel)}).first().textContent()) || '').trim()`;
   }
-  // map syntax: `extract: { titulo: detalle-titulo, precio: detalle-precio }`
+  // map syntax: `extract: { title: detail-title, price: detail-price }`
   const inner = operand.replace(/^\{/, '').replace(/\}$/, '').trim();
   const pairs = inner.split(',').map((p) => p.trim()).filter(Boolean);
   const fields = pairs.map((p) => {
     const i = p.indexOf(':');
-    if (i < 0) throw new Error(`extract: par sin ':' en el mapa: '${p}'`);
+    if (i < 0) throw new Error(`extract: pair without ':' in map: '${p}'`);
     const key = p.slice(0, i).trim();
     const src = p.slice(i + 1).trim();
     if (src === 'url') return `${J(key)}: page.url()`;
@@ -109,7 +109,7 @@ function extractExpr(operand, locators) {
   return `{ ${fields.join(', ')} }`;
 }
 
-// --- compilación --step ------------------------------------------------------------
+// --- --step compilation -----------------------------------------------------------
 export function compileSteps(recipe, locators, args = {}) {
   return recipe.steps.map((step) => {
     switch (step.action) {
@@ -130,7 +130,7 @@ export function compileSteps(recipe, locators, args = {}) {
       case 'wait-url': return { action: 'wait', waitFor: 'url', value: step.operand };
       case 'return': return { action: 'extract', source: step.operand };
       case 'extract': return { action: 'extract', map: step.operand };
-      default: throw new Error(`acción desconocida: ${step.action}`);
+      default: throw new Error(`unknown action: ${step.action}`);
     }
   });
 }

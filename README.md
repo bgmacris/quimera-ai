@@ -1,8 +1,8 @@
 # quimera
 
-Marketplace de plugins de [Claude Code](https://code.claude.com) de [bgmacris](https://github.com/bgmacris).
+A [Claude Code](https://code.claude.com) plugin marketplace by [bgmacris](https://github.com/bgmacris).
 
-## Uso
+## Usage
 
 ```
 /plugin marketplace add bgmacris/quimera
@@ -11,9 +11,9 @@ Marketplace de plugins de [Claude Code](https://code.claude.com) de [bgmacris](h
 
 ## Plugins
 
-| Plugin | Descripción |
+| Plugin | Description |
 |---|---|
-| **tandem** | Navegador Chrome compartido humano+Claude (CDP + Playwright MCP) con memoria de navegación por-sitio: supera muros anti-bot con reparto humano-IA, automatiza tests y extrae lógica de webs. Ver [`plugins/tandem`](plugins/tandem). |
+| **tandem** | A shared Chrome browser (human + Claude) over CDP + Playwright MCP, with per-site navigation memory: clears anti-bot walls through human-AI handoff, automates tests, and reverse-engineers site logic. See [`plugins/tandem`](plugins/tandem). |
 
-Cada plugin vive en su subcarpeta de [`plugins/`](plugins). Para añadir uno nuevo: una carpeta en
-`plugins/<nombre>` con su `.claude-plugin/plugin.json` y una entrada más en `.claude-plugin/marketplace.json`.
+Each plugin lives in its own subfolder under [`plugins/`](plugins). To add a new one: a folder at
+`plugins/<name>` with its `.claude-plugin/plugin.json`, plus one more entry in `.claude-plugin/marketplace.json`.

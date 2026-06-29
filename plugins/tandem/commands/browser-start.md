@@ -1,9 +1,9 @@
 ---
-description: Arranca el navegador Chrome compartido de tandem (perfil dedicado, CDP en loopback).
+description: Starts tandem's shared Chrome browser (dedicated profile, CDP on loopback).
 allowed-tools: Bash(tandem-browser *)
 ---
-Arrancando el navegador compartido de tandem:
+Starting tandem's shared browser:
 
 !`tandem-browser start`
 
-Si ves "Chrome listo", la ventana ya está disponible: tú la manejas con ratón y Claude opera por CDP. Si falla, revisa el estado con `/tandem:browser-status`.
+If you see "Chrome ready", the window is available: you control it with the mouse and Claude operates it via CDP. If it fails, check status with `/tandem:browser-status`.

@@ -1,32 +1,32 @@
 #!/usr/bin/env node
-// cdp-cookies.mjs — cookies del Chrome de tandem via CDP directo (sin deps, Node 22+).
+// cdp-cookies.mjs — cookies from tandem's Chrome via direct CDP (no deps, Node 22+).
 //
-// Network.getAllCookies expone TODO el jar del perfil, incluyendo HttpOnly y Secure —
-// inaccesibles desde JS de página. Útil para: análisis de flags de seguridad, exportar
-// sesiones autenticadas a Burp/curl, reproducir peticiones con contexto real de auth.
+// Network.getAllCookies exposes the FULL profile jar, including HttpOnly and Secure cookies —
+// inaccessible from page JS. Useful for: security flag analysis, exporting authenticated
+// sessions to Burp/curl, replaying requests with real auth context.
 //
-// Requiere Chrome activo (tandem-browser start). Node 22+ (WebSocket + fetch nativos).
+// Requires active Chrome (tandem-browser start). Node 22+ (native WebSocket + fetch).
 //
-// Uso: cdp-cookies.mjs [--domain <d>] [--format list|json|curl|headers|netscape] [--reveal]
-//   --domain   filtra por substring del domain (case-insensitive)
-//   --format   list=tabla legible (default), json=dump completo, curl=-H 'Cookie: ...',
-//              headers=línea Cookie: raw (para Burp repeater), netscape=TXT para curl --cookie-jar
-//   --reveal   muestra los VALORES en claro. Por defecto el value va REDACTADO (un cookie value
-//              suele ser un token de sesión): list lo enmascara, y los formatos que existen para
-//              volcar el value entero (json/curl/headers/netscape) exigen --reveal explícito.
+// Usage: cdp-cookies.mjs [--domain <d>] [--format list|json|curl|headers|netscape] [--reveal]
+//   --domain   filter by domain substring (case-insensitive)
+//   --format   list=readable table (default), json=full dump, curl=-H 'Cookie: ...',
+//              headers=raw Cookie: line (for Burp repeater), netscape=TXT for curl --cookie-jar
+//   --reveal   show VALUES in plaintext. By default the value is REDACTED (a cookie value
+//              is usually a session token): list masks it, and formats that exist to dump
+//              the full value (json/curl/headers/netscape) require explicit --reveal.
 
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 
-// --- config (misma lógica que lib.sh para coherencia de rutas) ---------------------
+// --- config (same logic as lib.sh for path consistency) ---------------------------
 function cdpPort() {
   const dataDir = process.env.TANDEM_DATA_DIR || join(homedir(), '.claude', 'tandem');
   try { return +readFileSync(join(dataDir, 'cdp-port'), 'utf8').trim() || 9222; }
   catch { return +(process.env.TANDEM_CDP_PORT || 9222); }
 }
 
-// --- cliente CDP minimalista (WebSocket nativo Node 22+) ---------------------------
+// --- minimal CDP client (native Node 22+ WebSocket) --------------------------------
 function cdpConnect(wsUrl) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(wsUrl);
@@ -50,7 +50,7 @@ function cdpCall(ws, method, params = {}) {
   });
 }
 
-// --- arg parsing -------------------------------------------------------------------
+// --- arg parsing ------------------------------------------------------------------
 const argv = process.argv.slice(2);
 const flags = {};
 for (let i = 0; i < argv.length; i++) {
@@ -65,33 +65,33 @@ const domainFilter = (flags.domain || '').toLowerCase();
 const reveal = !!flags.reveal;
 
 if (!['list', 'json', 'curl', 'headers', 'netscape'].includes(format)) {
-  process.stderr.write(`cdp-cookies: formato '${format}' desconocido. Válidos: list json curl headers netscape\n`);
+  process.stderr.write(`cdp-cookies: unknown format '${format}'. Valid: list json curl headers netscape\n`);
   process.exit(2);
 }
 if (!reveal && ['json', 'curl', 'headers', 'netscape'].includes(format)) {
-  process.stderr.write(`cdp-cookies: el formato '${format}' vuelca los valores en claro. Añade --reveal si es tu intención.\n`);
+  process.stderr.write(`cdp-cookies: format '${format}' dumps values in plaintext. Add --reveal if that is your intent.\n`);
   process.exit(2);
 }
 
-// --- conectar al page target (Network.getAllCookies requiere page, no Browser target) --
+// --- connect to page target (Network.getAllCookies requires page, not Browser target) --
 const port = cdpPort();
 let ws;
 try {
   const tabs = await fetch(`http://127.0.0.1:${port}/json`).then((r) => r.json());
   const tab = tabs.find((t) => t.type === 'page' && t.webSocketDebuggerUrl);
-  if (!tab) throw new Error('no hay tabs activos');
+  if (!tab) throw new Error('no active tabs');
   ws = await cdpConnect(tab.webSocketDebuggerUrl);
 } catch (e) {
-  process.stderr.write(`cdp-cookies: no puedo conectar (¿Chrome activo? tandem-browser status).\n  ${e.message}\n`);
+  process.stderr.write(`cdp-cookies: cannot connect (Chrome active? tandem-browser status).\n  ${e.message}\n`);
   process.exit(1);
 }
 
-// --- obtener cookies ---------------------------------------------------------------
+// --- get cookies ------------------------------------------------------------------
 let cookies;
 try {
   ({ cookies } = await cdpCall(ws, 'Network.getAllCookies'));
 } catch (e) {
-  process.stderr.write(`cdp-cookies: Network.getAllCookies falló: ${e.message}\n`);
+  process.stderr.write(`cdp-cookies: Network.getAllCookies failed: ${e.message}\n`);
   ws.close();
   process.exit(1);
 }
@@ -99,12 +99,12 @@ ws.close();
 
 if (domainFilter) cookies = cookies.filter((c) => c.domain.toLowerCase().includes(domainFilter));
 if (!cookies.length) {
-  process.stderr.write(`cdp-cookies: sin cookies${domainFilter ? ` para '${domainFilter}'` : ''}.\n`);
+  process.stderr.write(`cdp-cookies: no cookies${domainFilter ? ` for '${domainFilter}'` : ''}.\n`);
   process.exit(0);
 }
 cookies.sort((a, b) => a.domain.localeCompare(b.domain) || a.name.localeCompare(b.name));
 
-// --- output ------------------------------------------------------------------------
+// --- output -----------------------------------------------------------------------
 switch (format) {
   case 'list': {
     const D = 28, N = 24, V = 30;
@@ -124,7 +124,7 @@ switch (format) {
         `${c.domain.slice(0, D).padEnd(D)}  ${c.name.slice(0, N).padEnd(N)}  ${val.padEnd(V)}  ${fgs}\n`,
       );
     }
-    if (!reveal) process.stdout.write('(valores redactados; usa --reveal para verlos en claro)\n');
+    if (!reveal) process.stdout.write('(values redacted; use --reveal to see them in plaintext)\n');
     process.stdout.write(`\n${cookies.length} cookie(s)\n`);
     break;
   }

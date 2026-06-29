@@ -1,11 +1,11 @@
 ---
-description: "Captura la página actual del Chrome de tandem como PDF (si Chrome headless) o screenshot PNG full-page (en modo normal tandem). Guarda en ~/.claude/tandem/output/."
+description: "Captures the current page in tandem's Chrome as a PDF (if headless Chrome) or full-page PNG screenshot (in normal tandem mode). Saves to ~/.claude/tandem/output/."
 allowed-tools: Bash(tandem-pdf *)
 ---
-Capturando página actual del Chrome de tandem:
+Capturing current page from tandem's Chrome:
 
 !`tandem-pdf $ARGUMENTS`
 
-La salida indica el formato y ruta: `pdf:/ruta/...` o `png:/ruta/...`.
+Output indicates format and path: `pdf:/path/...` or `png:/path/...`.
 
-Opciones: `--output <ruta>` ruta explícita · `--tab <n>` índice del tab · `--landscape` · `--png-only` salta intento PDF.
+Options: `--output <path>` explicit path · `--tab <n>` tab index · `--landscape` · `--png-only` skip PDF attempt.

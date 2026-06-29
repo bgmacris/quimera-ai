@@ -1,12 +1,12 @@
-// recipe-parser.mjs — parseo y validación del DSL de recetas (tandem:map).
+// recipe-parser.mjs — DSL parser and validator for recipes (tandem:map).
 //
-// Entiende el markdown del perfil (sites/<host>.md): extrae locators y recetas a estructuras,
-// y valida una receta contra los locators. Formato YAML-plano parseado a mano (sin deps).
-// NO compila ni ejecuta: solo "entiende" el texto. La compilación vive en recipe-compiler.mjs.
+// Understands the profile markdown (sites/<host>.md): extracts locators and recipes into
+// structures, and validates a recipe against its locators. Hand-parsed flat-YAML (no deps).
+// Does NOT compile or execute: only "understands" the text. Compilation lives in recipe-compiler.mjs.
 
 export const ACTIONS = new Set(['navigate', 'type', 'click', 'wait-url', 'return', 'extract']);
 
-// --- parseo del perfil -------------------------------------------------------------
+// --- profile parsing ---------------------------------------------------------------
 function section(md, title) {
   const lines = md.split('\n');
   const start = lines.findIndex((l) => l.trim().startsWith(`## ${title}`));
@@ -16,7 +16,7 @@ function section(md, title) {
   return (end < 0 ? rest : rest.slice(0, end));
 }
 
-// Locators: `- nombre:` y, debajo, `sel: <selector>`. isTemplate si el sel tiene {huecos}.
+// Locators: `- name:` and below, `sel: <selector>`. isTemplate if sel has {holes}.
 export function parseLocators(md) {
   const out = new Map();
   let cur = null;
@@ -33,11 +33,11 @@ export function parseLocators(md) {
   return out;
 }
 
-// Recetas: cabecera `nombre(params):` y pasos `- accion: operando [<- {param}|"lit"]`.
+// Recipes: header `name(params):` and steps `- action: operand [<- {param}|"lit"]`.
 export function parseRecipes(md) {
   const out = new Map();
   let cur = null;
-  for (const line of section(md, 'Recetas')) {
+  for (const line of section(md, 'Recipes')) {
     const head = line.match(/^([A-Za-z0-9-]+)(?:\(([^)]*)\))?:\s*$/);
     if (head) {
       const params = head[2] ? head[2].split(',').map((s) => s.trim()).filter(Boolean) : [];
@@ -69,43 +69,43 @@ export function parseProfile(md) {
   return { locators: parseLocators(md), recipes: parseRecipes(md) };
 }
 
-// --- validación --------------------------------------------------------------------
+// --- validation --------------------------------------------------------------------
 export function validate(recipe, locators) {
   const errors = []; const warnings = [];
-  if (!recipe) return { ok: false, errors: ['receta inexistente'], warnings };
+  if (!recipe) return { ok: false, errors: ['recipe not found'], warnings };
   for (const step of recipe.steps) {
-    if (!ACTIONS.has(step.action)) { errors.push(`acción desconocida: '${step.action}' (válidas: ${[...ACTIONS].join(', ')})`); continue; }
-    // el param referenciado debe estar en la firma
+    if (!ACTIONS.has(step.action)) { errors.push(`unknown action: '${step.action}' (valid: ${[...ACTIONS].join(', ')})`); continue; }
+    // referenced param must be in the signature
     if (step.arg?.kind === 'param' && !recipe.params.includes(step.arg.name)) {
-      errors.push(`param no declarado en la firma: {${step.arg.name}} (paso ${step.action})`);
+      errors.push(`param not declared in signature: {${step.arg.name}} (step ${step.action})`);
     }
-    // navigate: advertir si el operando contiene {…} (probablemente quiso <- {param})
+    // navigate: warn if operand contains {…} (probably meant <- {param})
     if (step.action === 'navigate') {
       if (/\{[^}]+\}/.test(step.operand) && !step.arg) {
-        warnings.push(`navigate: el operando contiene '{…}' — ¿quisiste '← {param}' para pasarlo como argumento?`);
+        warnings.push(`navigate: operand contains '{…}' — did you mean '<- {param}' to pass it as an argument?`);
       }
       continue;
     }
-    // wait-url no usa locator
+    // wait-url does not use a locator
     if (step.action === 'wait-url') continue;
-    // extract: locator plano → debe existir y tener sel; mapa {…} → validación básica
+    // extract: plain locator → must exist and have sel; map {…} → basic validation
     if (step.action === 'extract') {
       if (!step.operand.startsWith('{')) {
         const loc = locators.get(step.operand);
-        if (!loc) { errors.push(`locator inexistente: '${step.operand}' (paso extract)`); continue; }
-        if (!loc.sel) { errors.push(`locator '${step.operand}' no tiene sel: — no es accionable (paso extract)`); continue; }
+        if (!loc) { errors.push(`locator not found: '${step.operand}' (step extract)`); continue; }
+        if (!loc.sel) { errors.push(`locator '${step.operand}' has no sel: — not actionable (step extract)`); continue; }
       }
       continue;
     }
-    // return url es especial
+    // return url is special
     if (step.action === 'return' && step.operand === 'url') continue;
-    // type, click, return <locator>: deben existir y tener sel
+    // type, click, return <locator>: must exist and have sel
     const loc = locators.get(step.operand);
-    if (!loc) { errors.push(`locator inexistente: '${step.operand}' (paso ${step.action})`); continue; }
-    if (!loc.sel) { errors.push(`locator '${step.operand}' no tiene sel: — no es accionable`); continue; }
-    // si el sel es plantilla, click debe aportar el valor del hueco
+    if (!loc) { errors.push(`locator not found: '${step.operand}' (step ${step.action})`); continue; }
+    if (!loc.sel) { errors.push(`locator '${step.operand}' has no sel: — not actionable`); continue; }
+    // if sel is a template, click must supply the hole value
     if (loc.holes.length && step.action === 'click' && !step.arg) {
-      errors.push(`locator '${step.operand}' es plantilla (${loc.holes.map((h) => `{${h}}`).join(',')}) pero el paso no pasa '<- {param}'`);
+      errors.push(`locator '${step.operand}' is a template (${loc.holes.map((h) => `{${h}}`).join(',')}) but the step does not pass '<- {param}'`);
     }
   }
   return { ok: errors.length === 0, errors, warnings };

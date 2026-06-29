@@ -1,21 +1,21 @@
 #!/usr/bin/env node
-// hook-inject-profile.mjs — hook PostToolUse de tandem:map.
+// hook-inject-profile.mjs — PostToolUse hook for tandem:map.
 //
-// Al navegar (tool MCP browser_navigate), si hay un perfil de sitio para ese host en
-// ~/.claude/tandem/sites/<host>.md, lo inyecta en el contexto del modelo vía
-// hookSpecificOutput.additionalContext (campo soportado por PostToolUse — verificado
-// contra la Hooks Reference oficial, 2026-06-22). Si no hay perfil, SILENCIO (cero ruido).
+// When navigating (MCP tool browser_navigate), if a site profile exists for that host in
+// ~/.claude/tandem/sites/<host>.md, it injects it into the model context via
+// hookSpecificOutput.additionalContext (field supported by PostToolUse — verified
+// against the official Hooks Reference, 2026-06-22). If no profile, SILENCE (zero noise).
 //
-// Disciplina (pitfalls de la investigación, ver docs/01-memoria-de-navegacion.md):
-//  - Solo inyecta si EXISTE perfil para el host.
-//  - UNA VEZ por (sesión, host): marca en .hook-state/<session_id>/<host> para no
-//    re-inyectar el mismo perfil en cada click dentro del sitio (context bloat).
+// Discipline (pitfalls from research, see docs/01-navigation-memory.md):
+//  - Injects only if a profile EXISTS for the host.
+//  - ONCE per (session, host): marks in .hook-state/<session_id>/<host> to avoid
+//    re-injecting the same profile on every click within the site (context bloat).
 //
-// En node a propósito: node ya es dependencia del plugin (el MCP es @playwright/mcp);
-// parsea/emite JSON nativo y normaliza el host con new URL(). Cero dependencia nueva (jq).
+// Intentionally in Node: node is already a dependency of the plugin (the MCP is @playwright/mcp);
+// it parses/emits native JSON and normalizes the host with new URL(). Zero new dependency (jq).
 //
-// Uso: por stdin recibe el JSON del hook. Sin args = modo inyección.
-//      con arg "cleanup" = borra el marcador de la sesión (lo llama SessionEnd).
+// Usage: receives the hook JSON on stdin. No args = injection mode.
+//        with arg "cleanup" = deletes the session marker (called by SessionEnd).
 
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -28,12 +28,12 @@ const dataDir = process.env.TANDEM_DATA_DIR || join(homedir(), '.claude', 'tande
 const sitesDir = join(dataDir, 'sites');
 const stateDir = join(dataDir, '.hook-state');
 
-// Lee stdin entero (síncrono, simple para un hook).
+// Read stdin synchronously (simple for a hook).
 function readStdin() {
   try { return readFileSync(0, 'utf8'); } catch { return ''; }
 }
 
-// Salir en silencio: exit 0 sin stdout = el hook no hace nada.
+// Silent exit: exit 0 with no stdout = hook does nothing.
 function silent() { process.exit(0); }
 
 const raw = readStdin();
@@ -42,13 +42,13 @@ try { input = JSON.parse(raw); } catch { silent(); }
 
 const sessionId = ((input && input.session_id) || 'no-session').replace(/[^a-z0-9_-]/gi, '_').slice(0, 64);
 
-// --- modo cleanup (SessionEnd) ----------------------------------------------------
+// --- cleanup mode (SessionEnd) ----------------------------------------------------
 if (process.argv[2] === 'cleanup') {
   try { rmSync(join(stateDir, sessionId), { recursive: true, force: true }); } catch {}
   process.exit(0);
 }
 
-// --- modo inyección (PostToolUse browser_navigate) --------------------------------
+// --- injection mode (PostToolUse browser_navigate) --------------------------------
 const url = input?.tool_input?.url;
 if (!url || typeof url !== 'string') silent();
 
@@ -56,11 +56,11 @@ let host;
 try { host = normalizeHost(url); } catch { silent(); }
 
 const profilePath = join(sitesDir, `${host}.md`);
-if (!existsSync(profilePath)) silent();           // no hay perfil → silencio
+if (!existsSync(profilePath)) silent();           // no profile → silence
 
-// Una vez por (sesión, host).
+// Once per (session, host).
 const marker = join(stateDir, sessionId, host);
-if (existsSync(marker)) silent();                 // ya inyectado esta sesión → silencio
+if (existsSync(marker)) silent();                 // already injected this session → silence
 try {
   mkdirSync(join(stateDir, sessionId), { recursive: true });
   writeFileSync(marker, '');
@@ -70,10 +70,10 @@ let profile;
 try { profile = readFileSync(profilePath, 'utf8'); } catch { silent(); }
 
 const context = [
-  `tandem:map — perfil de navegación de ${host} (cargado automáticamente al navegar).`,
-  `Úsalo para navegar este sitio SABIENDO en vez de re-derivar el DOM. Ancla por rol+nombre,`,
-  `nunca por refs eNN (efímeros). Re-check barato antes de fiarte de un locator; si falla,`,
-  `re-deriva en vivo y actualiza el perfil (no lo repares a ciegas).`,
+  `tandem:map — navigation profile for ${host} (auto-loaded on navigate).`,
+  `Use it to navigate this site KNOWING instead of re-deriving the DOM. Anchor by role+name,`,
+  `never by eNN refs (ephemeral). Cheap re-check before trusting a locator; if it fails,`,
+  `re-derive live and update the profile (don't patch it blindly).`,
   ``,
   profile,
 ].join('\n');

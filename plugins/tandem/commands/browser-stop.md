@@ -1,7 +1,7 @@
 ---
-description: Cierra el navegador Chrome compartido de tandem y limpia el estado.
+description: Closes tandem's shared Chrome browser and cleans up state.
 allowed-tools: Bash(tandem-browser *)
 ---
-Deteniendo el navegador compartido de tandem:
+Stopping tandem's shared browser:
 
 !`tandem-browser stop`

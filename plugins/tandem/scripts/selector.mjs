@@ -1,45 +1,45 @@
 #!/usr/bin/env node
-// selector.mjs — generador/validador de selectores Playwright para tandem:map (navegación frugal).
+// selector.mjs — Playwright selector generator/validator for tandem:map (frugal navigation).
 //
-// El perfil de un sitio (sites/<host>.md) guarda, por locator, un `sel:` EJECUTABLE que el agente
-// pasa como `target` a browser_click/type/evaluate para accionar SIN browser_snapshot (el snapshot
-// del árbol de accesibilidad pesa ~18× el perfil entero — ver docs/01). Ese `target` llega a
-// page.locator(), que acepta CSS y los engines Playwright (role=, text=, ...).
+// A site profile (sites/<host>.md) stores, per locator, an EXECUTABLE `sel:` that the agent
+// passes as `target` to browser_click/type/evaluate to act WITHOUT browser_snapshot (the
+// accessibility tree snapshot weighs ~18× the entire profile — see docs/01). That `target`
+// goes to page.locator(), which accepts CSS and Playwright engines (role=, text=, ...).
 //
-// Por qué un helper y no teclear el selector a mano: la sintaxis tiene escapes no obvios —comillas
-// dentro del name, metacaracteres en modo regex, el '/' que delimita la regex—. Tecleados a mano en
-// cada perfil producen selectores rotos en silencio. Misma lección que page-signals.mjs: la
-// sintaxis crítica vive en código con tests, no en prosa. Es helper de AUTORÍA (se usa al redactar
-// el `sel:` en recon); en runtime el MCP ya recibe el `sel:` escrito.
+// Why a helper instead of typing selectors by hand: the syntax has non-obvious escapes —
+// quotes inside name, metacharacters in regex mode, the '/' that delimits the regex. Hand-typed
+// selectors in each profile silently produce broken selectors. Same lesson as page-signals.mjs:
+// critical syntax lives in tested code, not prose. This is an AUTHORING helper (used when
+// writing the `sel:` during recon); at runtime the MCP already receives the written `sel:`.
 //
-// Semántica Playwright relevante: `role=R[name="X"]` casa el accessible name EXACTO (insensible a
-// mayúsculas, recortado); para SUBSTRING (robusto ante nombres largos/dinámicos) se usa regex
-// `role=R[name=/X/]`. locator() es estricto: si el selector casa >1 elemento, la acción lanza —por
-// eso los locators de CLASE (filas, items) van como PLANTILLA con un id concreto, no como prefijo.
+// Relevant Playwright semantics: `role=R[name="X"]` matches the EXACT accessible name (case-
+// insensitive, trimmed); for SUBSTRING (robust against long/dynamic names) use regex
+// `role=R[name=/X/]`. locator() is strict: if the selector matches >1 element, the action
+// throws — so CLASS locators (rows, items) are TEMPLATE with a concrete id, not a prefix.
 //
-// Uso CLI:  selector.mjs <role> <name> [--regex] [--anchor]
-//   --regex   name como patrón substring (robusto para nombres largos/dinámicos)
-//   --anchor  con --regex, ancla al inicio (^) — p.ej. una fila 'TCK-2026-016…'
-// Ejemplos:
-//   selector.mjs button "Nuevo ticket"                 → role=button[name="Nuevo ticket"]
-//   selector.mjs textbox "Buscar" --regex              → role=textbox[name=/Buscar/]
+// CLI:  selector.mjs <role> <name> [--regex] [--anchor]
+//   --regex   name as substring pattern (robust for long/dynamic names)
+//   --anchor  with --regex, anchors to start (^) — e.g. a row 'TCK-2026-016…'
+// Examples:
+//   selector.mjs button "New ticket"                   → role=button[name="New ticket"]
+//   selector.mjs textbox "Search" --regex              → role=textbox[name=/Search/]
 //   selector.mjs row "TCK-2026-016" --regex --anchor   → role=row[name=/^TCK\-2026\-016/]
 
-// Escapa un literal para colocarlo entre comillas dobles de un selector Playwright.
+// Escapes a literal for placement inside double quotes in a Playwright selector.
 export function escapeStringName(s) {
   return String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
-// Escapa un literal para usarlo como patrón regex (todos los metacaracteres, incluido el '/'
-// que delimita la expresión). $& = la coincidencia entera.
+// Escapes a literal for use as a regex pattern (all metacharacters, including '/'
+// which delimits the expression). $& = the entire match.
 export function escapeRegexName(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
 }
 
-// Construye el selector. name literal SIEMPRE (el helper escapa lo que toque). Sin name → role
-// suelto (válido pero arriesgado: solo para roles que el agente sabe únicos en la página).
+// Builds the selector. name is always taken literally (the helper escapes as needed).
+// No name → bare role (valid but risky: only for roles the agent knows are unique on the page).
 export function buildSelector({ role, name, regex = false, anchor = false } = {}) {
-  if (!role || typeof role !== 'string') throw new Error('falta role');
+  if (!role || typeof role !== 'string') throw new Error('role is required');
   if (name == null || name === '') return `role=${role}`;
   if (regex) {
     const pat = (anchor ? '^' : '') + escapeRegexName(name);
@@ -48,16 +48,16 @@ export function buildSelector({ role, name, regex = false, anchor = false } = {}
   return `role=${role}[name="${escapeStringName(name)}"]`;
 }
 
-// Validación sintáctica BARATA (no es un parser Playwright): detecta los errores de escape más
-// comunes —corchetes desbalanceados, comillas o slashes sin cerrar—. true = bien formado.
+// CHEAP syntactic validation (not a Playwright parser): detects the most common escape errors —
+// unbalanced brackets, unclosed quotes or slashes. Returns true if well-formed.
 export function isWellFormed(sel) {
   if (typeof sel !== 'string' || !sel.length) return false;
   if ((sel.match(/\[/g) || []).length !== (sel.match(/\]/g) || []).length) return false;
   const m = sel.match(/name=(.*)\]/);
-  if (!m) return true; // CSS u otro engine sin name= → no lo juzgamos aquí
+  if (!m) return true; // CSS or other engine without name= → not judged here
   const v = m[1];
-  if (v.startsWith('/')) return /^\/.*\/[a-z]*$/.test(v); // regex: /…/ con flags opcionales
-  return /^".*"$/.test(v);                                // string: "…" balanceadas
+  if (v.startsWith('/')) return /^\/.*\/[a-z]*$/.test(v); // regex: /…/ with optional flags
+  return /^".*"$/.test(v);                                 // string: balanced "…"
 }
 
 // --- CLI ----------------------------------------------------------------------------
@@ -68,7 +68,7 @@ if (isCli) {
   const flags = new Set(argv.filter((a) => a.startsWith('--')));
   const [role, name] = argv.filter((a) => !a.startsWith('--'));
   if (!role) {
-    process.stderr.write('uso: selector.mjs <role> <name> [--regex] [--anchor]\n');
+    process.stderr.write('usage: selector.mjs <role> <name> [--regex] [--anchor]\n');
     process.exit(2);
   }
   try {

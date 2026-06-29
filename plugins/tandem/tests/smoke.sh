@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# smoke.sh — prueba de humo del plugin tandem, SIN arrancar Chrome (eso necesita display y
-# queda como prueba manual: /tandem:browser-start → status → stop). Aquí se verifica lo que es
-# determinista y barato: que los scripts parsean, que el motor de tandem:map (map.sh,
-# fingerprint.mjs, hook-inject-profile.mjs) funciona, y que los hardenings recientes aguantan:
-#   - fingerprint rechaza hosts con traversal (no escribe fuera de sites/)
-#   - map.sh index emite JSON válido aunque el frontmatter lleve comillas
-#   - el hook inyecta una vez por (sesión,host) y calla cuando no hay perfil
+# smoke.sh — smoke test for the tandem plugin, WITHOUT launching Chrome (that requires a
+# display and is left as a manual test: /tandem:browser-start → status → stop). Here we
+# verify what is deterministic and cheap: that scripts parse, that the tandem:map engine
+# (map.sh, fingerprint.mjs, hook-inject-profile.mjs) works, and that recent hardenings hold:
+#   - fingerprint rejects hosts with traversal (does not write outside sites/)
+#   - map.sh index emits valid JSON even when frontmatter contains quotes
+#   - hook injects once per (session,host) and stays silent when there is no profile
 #
-# Uso: tests/smoke.sh   (exit 0 = todo verde). Aísla el estado en un TANDEM_DATA_DIR temporal.
+# Usage: tests/smoke.sh   (exit 0 = all green). Isolates state in a temporary TANDEM_DATA_DIR.
 #
-# Las capturas (OUT*, IDX) se consumen DENTRO de los strings que check() pasa a `eval`, no
-# visibles al linter → marca SC2034 (unused) en falso. Suprimido a nivel de archivo (debe ir
-# antes del primer comando para tener ámbito-archivo).
+# Captures (OUT*, IDX) are consumed INSIDE the strings that check() passes to `eval`, not
+# visible to the linter → false SC2034 (unused). Suppressed at file scope (must come
+# before the first command to have file scope).
 # shellcheck disable=SC2034
 set -u
 
@@ -24,7 +24,7 @@ ok()   { printf '  \033[32m✓\033[0m %s\n' "$1"; PASS=$((PASS+1)); }
 bad()  { printf '  \033[31m✗\033[0m %s\n' "$1"; FAIL=$((FAIL+1)); }
 check() { if eval "$2"; then ok "$1"; else bad "$1"; fi; }
 
-# Sandbox de datos aislado (se borra al salir).
+# Isolated data sandbox (removed on exit).
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/tandem-smoke.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
 export TANDEM_DATA_DIR="$TMP"
@@ -32,168 +32,169 @@ SITES="$TMP/sites"
 
 echo "tandem smoke — data dir: $TMP"
 
-# --- 1. parseo estático -------------------------------------------------------------
-echo "[1] parseo estático"
+# --- 1. static parsing --------------------------------------------------------------
+echo "[1] static parsing"
 for f in "$SCRIPTS"/*.sh "$ROOT"/bin/*; do
   check "bash -n $(basename "$f")" "bash -n '$f' 2>/dev/null"
 done
 for f in "$SCRIPTS"/*.mjs; do
   check "node --check $(basename "$f")" "node --check '$f' 2>/dev/null"
 done
-# Bit ejecutable: todo lo que se invoca por su RUTA (no con `bash`/`node` ni `source`) debe
-# tener +x, o falla con 126 en producción. lib.sh se hace `source`, así que queda fuera.
+# Executable bit: everything invoked by its PATH (not with `bash`/`node` or `source`) must
+# have +x, or it fails with 126 in production. lib.sh is `source`d, so it is excluded.
 for f in chrome-daemon.sh map.sh mcp-launch.sh fingerprint.mjs hook-inject-profile.mjs; do
-  check "$f es ejecutable (+x)" "[ -x '$SCRIPTS/$f' ]"
+  check "$f is executable (+x)" "[ -x '$SCRIPTS/$f' ]"
 done
-check "bin/tandem-browser es ejecutable (+x)" "[ -x '$ROOT/bin/tandem-browser' ]"
+check "bin/tandem-browser is executable (+x)" "[ -x '$ROOT/bin/tandem-browser' ]"
 
-# --- 2. map.sh: list/show/path/index sobre un perfil sembrado ------------------------
+# --- 2. map.sh: list/show/path/index over a seeded profile --------------------------
 echo "[2] map.sh"
 mkdir -p "$SITES"
-# Frontmatter HOSTIL a propósito: comillas y backslash en updated, para reventar un JSON
-# construido a mano. El fix (serializar con node) debe producir JSON válido igualmente.
-cat > "$SITES/ejemplo.com.md" <<'EOF'
+# Intentionally hostile frontmatter: quotes and backslash in updated, to break a hand-built
+# JSON. The fix (serialize with node) must produce valid JSON regardless.
+cat > "$SITES/example.com.md" <<'EOF'
 ---
-site: ejemplo.com
-updated: 2026-06-22 "raro\test"
+site: example.com
+updated: 2026-06-22 "weird\test"
 ---
-# ejemplo.com
-receta de prueba
+# example.com
+test recipe
 EOF
 
-check "list muestra el sitio"      "'$SCRIPTS/map.sh' list   | grep -q ejemplo.com"
-check "show vuelca el perfil"      "'$SCRIPTS/map.sh' show ejemplo.com | grep -q 'receta de prueba'"
-check "path normaliza URL→host"    "[ \"\$('$SCRIPTS/map.sh' path https://EJEMPLO.com/x/y)\" = '$SITES/ejemplo.com.md' ]"
-check "show de host inexistente falla" "! '$SCRIPTS/map.sh' show no-existe.com 2>/dev/null"
+check "list shows the site"         "'$SCRIPTS/map.sh' list   | grep -q example.com"
+check "show dumps the profile"      "'$SCRIPTS/map.sh' show example.com | grep -q 'test recipe'"
+check "path normalizes URL→host"    "[ \"\$('$SCRIPTS/map.sh' path https://EXAMPLE.com/x/y)\" = '$SITES/example.com.md' ]"
+check "show of unknown host fails"  "! '$SCRIPTS/map.sh' show no-such-host.com 2>/dev/null"
 
-# index: debe ser JSON PARSEABLE pese al frontmatter con comillas (hallazgo #3).
+# index: must be valid JSON even with quoted frontmatter (finding #3).
 IDX="$("$SCRIPTS/map.sh" index)"
-check "index es JSON válido (frontmatter con comillas)" \
+check "index is valid JSON (frontmatter with quotes)" \
   "printf '%s' \"\$IDX\" | node -e 'JSON.parse(require(\"fs\").readFileSync(0,\"utf8\"))' 2>/dev/null"
-check "index contiene el host" "printf '%s' \"\$IDX\" | grep -q ejemplo.com"
+check "index contains the host" "printf '%s' \"\$IDX\" | grep -q example.com"
 
 # --- 3. fingerprint.mjs: capture / check / drift / traversal ------------------------
 echo "[3] fingerprint.mjs"
 FP="$SCRIPTS/fingerprint.mjs"
-echo '["a","b","c"]' | "$FP" capture ejemplo.com /home >/dev/null 2>&1
-check "capture crea el store" "[ -f '$SITES/ejemplo.com.fingerprints.json' ]"
-check "check igual → status match (exit 0)" "echo '[\"a\",\"b\",\"c\"]' | '$FP' check ejemplo.com /home >/dev/null 2>&1"
-check "check distinto → drift (exit 1)"      "! ( echo '[\"a\",\"b\",\"z\"]' | '$FP' check ejemplo.com /home >/dev/null 2>&1 )"
-check "check de ruta nueva → status new"     "echo '[\"x\"]' | '$FP' check ejemplo.com /otra 2>/dev/null | grep -q '\"new\"'"
+echo '["a","b","c"]' | "$FP" capture example.com /home >/dev/null 2>&1
+check "capture creates the store"       "[ -f '$SITES/example.com.fingerprints.json' ]"
+check "check same → status match (exit 0)" "echo '[\"a\",\"b\",\"c\"]' | '$FP' check example.com /home >/dev/null 2>&1"
+check "check different → drift (exit 1)"   "! ( echo '[\"a\",\"b\",\"z\"]' | '$FP' check example.com /home >/dev/null 2>&1 )"
+check "check new route → status new"       "echo '[\"x\"]' | '$FP' check example.com /other 2>/dev/null | grep -q '\"new\"'"
 
-# Hallazgo #2: host con traversal debe ser RECHAZADO y NO escribir fuera de sites/.
+# Finding #2: host with traversal must be REJECTED and NOT write outside sites/.
 echo '["x"]' | "$FP" capture "../../canary" /r >/dev/null 2>&1
 fp_rc=$?
-check "fingerprint rechaza host con traversal (exit≠0)" "[ $fp_rc -ne 0 ]"
-check "traversal NO escribió fuera de sites/"           "[ ! -e '$TMP/canary.fingerprints.json' ] && [ ! -e '${TMP%/*}/canary.fingerprints.json' ]"
-check "fingerprint normaliza URL entera como host"      "echo '[\"x\"]' | '$FP' capture https://EJEMPLO.com/path /r >/dev/null 2>&1"
+check "fingerprint rejects host with traversal (exit≠0)" "[ $fp_rc -ne 0 ]"
+check "traversal did NOT write outside sites/"            "[ ! -e '$TMP/canary.fingerprints.json' ] && [ ! -e '${TMP%/*}/canary.fingerprints.json' ]"
+check "fingerprint normalizes full URL as host"           "echo '[\"x\"]' | '$FP' capture https://EXAMPLE.com/path /r >/dev/null 2>&1"
 
-# --- 4. hook-inject-profile.mjs: silencio / inyección / una-vez-por-sesión ----------
+# --- 4. hook-inject-profile.mjs: silence / injection / once-per-session -------------
 echo "[4] hook-inject-profile.mjs"
 HOOK="$SCRIPTS/hook-inject-profile.mjs"
 SID="smoke-session"
 nav() { printf '{"session_id":"%s","tool_input":{"url":"%s"}}' "$SID" "$1"; }
 
-# host sin perfil → silencio total (sin stdout).
-OUT="$(nav 'https://no-perfil.com/' | "$HOOK" 2>/dev/null)"
-check "sin perfil → silencio" "[ -z \"\$OUT\" ]"
+# host with no profile → total silence (no stdout).
+OUT="$(nav 'https://no-profile.com/' | "$HOOK" 2>/dev/null)"
+check "no profile → silence" "[ -z \"\$OUT\" ]"
 
-# host con perfil → primera vez inyecta additionalContext.
-OUT1="$(nav 'https://ejemplo.com/' | "$HOOK" 2>/dev/null)"
-check "con perfil → inyecta additionalContext" "printf '%s' \"\$OUT1\" | grep -q additionalContext"
-check "el contexto trae el perfil"             "printf '%s' \"\$OUT1\" | grep -q 'receta de prueba'"
+# host with profile → first time injects additionalContext.
+OUT1="$(nav 'https://example.com/' | "$HOOK" 2>/dev/null)"
+check "with profile → injects additionalContext" "printf '%s' \"\$OUT1\" | grep -q additionalContext"
+check "context includes the profile"             "printf '%s' \"\$OUT1\" | grep -q 'test recipe'"
 
-# segunda navegación al mismo host en la misma sesión → silencio (marcador).
-OUT2="$(nav 'https://ejemplo.com/otra' | "$HOOK" 2>/dev/null)"
-check "segunda vez misma sesión → silencio" "[ -z \"\$OUT2\" ]"
+# second navigation to the same host in the same session → silence (marker).
+OUT2="$(nav 'https://example.com/other' | "$HOOK" 2>/dev/null)"
+check "second time same session → silence" "[ -z \"\$OUT2\" ]"
 
-# cleanup borra el marcador → vuelve a inyectar.
+# cleanup removes the marker → injects again.
 printf '{"session_id":"%s"}' "$SID" | "$HOOK" cleanup >/dev/null 2>&1
-OUT3="$(nav 'https://ejemplo.com/' | "$HOOK" 2>/dev/null)"
-check "tras cleanup → vuelve a inyectar" "printf '%s' \"\$OUT3\" | grep -q additionalContext"
+OUT3="$(nav 'https://example.com/' | "$HOOK" 2>/dev/null)"
+check "after cleanup → injects again" "printf '%s' \"\$OUT3\" | grep -q additionalContext"
 
-# --- 5. fingerprint: motor de drift end-to-end --------------------------------------
-# Más allá del exit code: se verifica el CONTRATO del JSON (added/removed/counts), que capture
-# sobrescribe, que las rutas de un mismo host son independientes y que capture dedup+ordena.
+# --- 5. fingerprint: drift engine end-to-end ----------------------------------------
+# Beyond exit code: verify the JSON CONTRACT (added/removed/counts), that capture
+# overwrites, that routes on the same host are independent, and that capture dedupes+sorts.
 echo "[5] fingerprint — drift E2E"
-fp_capture() { printf '%s' "$1" | "$FP" capture ejemplo.com "$2" 2>/dev/null; }
-fp_check()   { printf '%s' "$1" | "$FP" check   ejemplo.com "$2" 2>/dev/null; }
-# jassert <desc> <json> <expr-node>: evalúa expr (con el objeto parseado en `o`) → ok/bad.
+fp_capture() { printf '%s' "$1" | "$FP" capture example.com "$2" 2>/dev/null; }
+fp_check()   { printf '%s' "$1" | "$FP" check   example.com "$2" 2>/dev/null; }
+# jassert <desc> <json> <node-expr>: evaluates expr (with parsed object in `o`) → ok/bad.
 jassert() {
   if printf '%s' "$2" | node -e "const o=JSON.parse(require('fs').readFileSync(0,'utf8'));process.exit(($3)?0:1)" 2>/dev/null
   then ok "$1"; else bad "$1"; fi
 }
 
-# (a) drift: añadir 'd' y quitar 'c' debe reportarse en added[]/removed[] y en los counts.
+# (a) drift: adding 'd' and removing 'c' must appear in added[]/removed[] and in counts.
 fp_capture '["a","b","c"]' /e2e >/dev/null
 DRIFT="$(fp_check '["a","b","d"]' /e2e)"
-jassert "drift: status=drift"                 "$DRIFT" "o.status==='drift'"
+jassert "drift: status=drift"                  "$DRIFT" "o.status==='drift'"
 jassert "drift: added=[d]"                     "$DRIFT" "o.added.join()==='d'"
 jassert "drift: removed=[c]"                   "$DRIFT" "o.removed.join()==='c'"
 jassert "drift: prevCount=3 nowCount=3"        "$DRIFT" "o.prevCount===3 && o.nowCount===3"
-jassert "drift: conserva captured (fecha)"     "$DRIFT" "typeof o.captured==='string' && o.captured.length===10"
+jassert "drift: captured date preserved"       "$DRIFT" "typeof o.captured==='string' && o.captured.length===10"
 
-# (b) capture SOBRESCRIBE la ruta: recapturar con otro set deja el viejo obsoleto.
+# (b) capture OVERWRITES the route: recapturing with a different set makes the old one stale.
 fp_capture '["x","y"]' /e2e >/dev/null
-jassert "tras recapture: nuevo set hace match" "$(fp_check '["x","y"]' /e2e)" "o.status==='match'"
-jassert "tras recapture: set viejo da drift"   "$(fp_check '["a","b","c"]' /e2e)" "o.status==='drift'"
+jassert "after recapture: new set matches"     "$(fp_check '["x","y"]' /e2e)" "o.status==='match'"
+jassert "after recapture: old set drifts"      "$(fp_check '["a","b","c"]' /e2e)" "o.status==='drift'"
 
-# (c) rutas independientes dentro del mismo host (la clave es routeKey, no el host).
-fp_capture '["p"]' /ruta-1 >/dev/null
-fp_capture '["q"]' /ruta-2 >/dev/null
-jassert "ruta-1 match con su propio set"       "$(fp_check '["p"]' /ruta-1)" "o.status==='match'"
-jassert "ruta-2 match con su propio set"       "$(fp_check '["q"]' /ruta-2)" "o.status==='match'"
-jassert "cruzar sets entre rutas da drift"     "$(fp_check '["p"]' /ruta-2)" "o.status==='drift'"
+# (c) routes are independent within the same host (key is routeKey, not host).
+fp_capture '["p"]' /route-1 >/dev/null
+fp_capture '["q"]' /route-2 >/dev/null
+jassert "route-1 matches its own set"          "$(fp_check '["p"]' /route-1)" "o.status==='match'"
+jassert "route-2 matches its own set"          "$(fp_check '["q"]' /route-2)" "o.status==='match'"
+jassert "crossing sets between routes drifts"  "$(fp_check '["p"]' /route-2)" "o.status==='drift'"
 
-# (d) capture normaliza: dedup + orden estable (señales repetidas/desordenadas → un set).
-jassert "capture dedup: [c,b,a,b] → count 3"   "$(fp_capture '["c","b","a","b"]' /norm)" "o.count===3"
-jassert "dedup/orden: check ordenado → match"  "$(fp_check '["a","b","c"]' /norm)" "o.status==='match'"
+# (d) capture normalizes: dedup + stable order (repeated/unordered signals → one set).
+jassert "capture dedup: [c,b,a,b] → count 3"  "$(fp_capture '["c","b","a","b"]' /norm)" "o.count===3"
+jassert "dedup/order: sorted check → match"   "$(fp_check '["a","b","c"]' /norm)" "o.status==='match'"
 
-# NOTA: la normalización de dígitos a '#' (p.ej. 'Bandeja 112'→'Bandeja ###') la hace el
-# browser_evaluate canónico de la skill map, NO fingerprint.mjs — aquí solo se almacena/compara
-# el set ya normalizado. Ese JS no es código aislado testeable; queda fuera de este smoke.
+# NOTE: digit normalization to '#' (e.g. 'Inbox 112'→'Inbox #') is done by the
+# canonical browser_evaluate in the map skill, NOT by fingerprint.mjs — here we only
+# store/compare the already-normalized set. That JS is not isolatable code; it stays
+# outside this smoke test.
 
-# --- 6. page-signals.mjs: fingerprint de página (test JS dedicado) ------------------
-# La lógica de norm/collectSignals se prueba con DOM mock en su propio runner (node, sin deps);
-# aquí se invoca y se refleja su veredicto en el conteo global.
+# --- 6. page-signals.mjs: page fingerprint (dedicated JS test) ----------------------
+# The norm/collectSignals logic is tested with a mock DOM in its own runner (node, no deps);
+# here we invoke it and reflect its verdict in the global count.
 echo "[6] page-signals.mjs (node tests/page-signals.test.mjs)"
 if node "$HERE/page-signals.test.mjs" 2>&1 | sed 's/^/  /'; then
-  ok "page-signals.test.mjs verde"
+  ok "page-signals.test.mjs green"
 else
   bad "page-signals.test.mjs"
 fi
 
-# --- 7. selector.mjs: generador de selectores Playwright (test JS dedicado) ---------
-# Genera el `sel:` ejecutable que el perfil guarda para la navegación frugal; el test cubre los
-# escapes (comillas, regex, '/'). Se invoca aquí y su veredicto entra en el conteo global.
+# --- 7. selector.mjs: Playwright selector generator (dedicated JS test) -------------
+# Generates the executable `sel:` the profile stores for frugal navigation; the test covers
+# escapes (quotes, regex, '/'). Invoked here, its verdict enters the global count.
 echo "[7] selector.mjs (node tests/selector.test.mjs)"
 if node "$HERE/selector.test.mjs" 2>&1 | sed 's/^/  /'; then
-  ok "selector.test.mjs verde"
+  ok "selector.test.mjs green"
 else
   bad "selector.test.mjs"
 fi
 
-# --- 8. recipe.mjs: compilador de recetas ejecutables (test JS dedicado) ------------
-# Compila las recetas del perfil a Playwright (--fast) o pasos (--step); el test cubre parseo,
-# validación, relleno de plantilla e INYECCIÓN (browser_run_code_unsafe es RCE-equivalent).
+# --- 8. recipe.mjs: executable recipe compiler (dedicated JS test) ------------------
+# Compiles profile recipes to Playwright (--fast) or steps (--step); the test covers parsing,
+# validation, template filling, and INJECTION (browser_run_code_unsafe is RCE-equivalent).
 echo "[8] recipe.mjs (node tests/recipe.test.mjs)"
 if node "$HERE/recipe.test.mjs" 2>&1 | sed 's/^/  /'; then
-  ok "recipe.test.mjs verde"
+  ok "recipe.test.mjs green"
 else
   bad "recipe.test.mjs"
 fi
 
-# --- 9. host.mjs: normalización única de host (test JS dedicado) --------------------
-# Fuente única que recipe/fingerprint/hook/map usan para "URL o host" → clave del store; el test
-# cubre URLs/hosts pelados, esquema en mayúscula, userinfo/puerto, IDN, y el rechazo de traversal.
+# --- 9. host.mjs: single host normalization (dedicated JS test) ---------------------
+# Single source that recipe/fingerprint/hook/map use for "URL or host" → store key; the test
+# covers URLs/bare hosts, uppercase scheme, userinfo/port, IDN, and rejection of traversal.
 echo "[9] host.mjs (node tests/host.test.mjs)"
 if node "$HERE/host.test.mjs" 2>&1 | sed 's/^/  /'; then
-  ok "host.test.mjs verde"
+  ok "host.test.mjs green"
 else
   bad "host.test.mjs"
 fi
 
-# --- resumen ------------------------------------------------------------------------
+# --- summary ------------------------------------------------------------------------
 echo ""
-echo "resultado: $PASS ok, $FAIL fallos"
+echo "result: $PASS ok, $FAIL failures"
 [ "$FAIL" -eq 0 ]

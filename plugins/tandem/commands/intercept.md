@@ -1,16 +1,16 @@
 ---
-description: "Sniffer HTTP del Chrome de tandem via CDP: captura request+response bodies (incluyendo HttpOnly, CSRF tokens, APIs privadas). Subcomandos: start, show, clear, count."
+description: "HTTP sniffer for tandem's Chrome via CDP: captures request+response bodies (including HttpOnly, CSRF tokens, private APIs). Subcommands: start, show, clear, count."
 allowed-tools: Bash(tandem-intercept *)
 ---
-Sniffer HTTP tandem (CDP):
+tandem HTTP sniffer (CDP):
 
 !`tandem-intercept $ARGUMENTS`
 
-**Flujo típico de pentest:**
-1. `/tandem:intercept start` — empieza a capturar (Ctrl-C para parar, o `--duration <s>`)
-2. Navega / interactúa con la app en el Chrome compartido
-3. `/tandem:intercept show --body` — muestra todo con bodies
-4. `/tandem:intercept show --url /api/ --status 2xx --body` — filtra por ruta y status
-5. `/tandem:intercept clear` — borra el log al terminar
+**Typical pentest flow:**
+1. `/tandem:intercept start` — start capturing (Ctrl-C to stop, or `--duration <s>`)
+2. Navigate / interact with the app in the shared Chrome
+3. `/tandem:intercept show --body` — show all with bodies
+4. `/tandem:intercept show --url /api/ --status 2xx --body` — filter by path and status
+5. `/tandem:intercept clear` — clear the log when done
 
-⚠ El log puede contener credenciales y tokens — borra cuando termines.
+⚠ The log may contain credentials and tokens — clear when done.

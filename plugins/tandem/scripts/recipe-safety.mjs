@@ -1,20 +1,20 @@
-// recipe-safety.mjs — red de seguridad sobre el código compilado (tandem:map).
+// recipe-safety.mjs — safety net over compiled code (tandem:map).
 //
-// `browser_run_code_unsafe` es RCE-equivalent. Esta es la última red: inspecciona el ESQUELETO
-// del código generado (con el contenido de los strings vaciado, porque ahí viven los valores de
-// usuario ya inertes por JSON.stringify) contra una allowlist estricta. Rechaza template strings,
-// tokens estructurales peligrosos y cualquier `page.<método>` fuera de los permitidos.
+// `browser_run_code_unsafe` is RCE-equivalent. This is the last net: it inspects the SKELETON
+// of the generated code (with string content blanked out, because that's where user values live
+// already inert via JSON.stringify) against a strict allowlist. Rejects template strings,
+// dangerous structural tokens, and any `page.<method>` outside the permitted set.
 
 export function assertCompiledSafe(code) {
-  // Quita el CONTENIDO de los string literals (ahí viven los valores de usuario, ya inertes por
-  // JSON.stringify) para no dar falsos positivos si un valor contiene p.ej. "require".
+  // Strip the CONTENT of string literals (that's where user values live, already inert via
+  // JSON.stringify) to avoid false positives if a value contains e.g. "require".
   const skeleton = code.replace(/"(\\.|[^"\\])*"/g, '""').replace(/'(\\.|[^'\\])*'/g, "''");
-  if (/`|\$\{/.test(skeleton)) throw new Error('código compilado: template strings no permitidos');
+  if (/`|\$\{/.test(skeleton)) throw new Error('compiled code: template strings not allowed');
   if (/\b(require|process|import|eval|Function|fetch|globalThis|child_process|module|constructor|while|for|XMLHttpRequest)\b/.test(skeleton)) {
-    throw new Error('código compilado: token estructural no permitido (posible inyección)');
+    throw new Error('compiled code: structural token not allowed (possible injection)');
   }
   const calls = [...skeleton.matchAll(/page\.([A-Za-z]+)/g)].map((m) => m[1]);
   const okCalls = new Set(['goto', 'locator', 'waitForURL', 'url']);
-  for (const c of calls) if (!okCalls.has(c)) throw new Error(`código compilado: page.${c} no permitido`);
+  for (const c of calls) if (!okCalls.has(c)) throw new Error(`compiled code: page.${c} not allowed`);
   return true;
 }

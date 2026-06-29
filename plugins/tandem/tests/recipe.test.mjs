@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// recipe.test.mjs — tests del compilador de recetas (scripts/recipe.mjs).
-// Sin deps: mini-runner + un perfil de ejemplo inline. Cubre parseo, validación, compilación
-// --fast/--step, relleno de plantilla con escape, y —lo crítico— que un valor hostil queda INERTE
-// en el código compilado (browser_run_code_unsafe es RCE-equivalent).
-// Uso: node tests/recipe.test.mjs   (exit 0 = verde).
+// recipe.test.mjs — tests for the recipe compiler (scripts/recipe.mjs).
+// No deps: mini-runner + an inline example profile. Covers parsing, validation, --fast/--step
+// compilation, template filling with escaping, and — critically — that a hostile value is
+// left INERT in the compiled code (browser_run_code_unsafe is RCE-equivalent).
+// Usage: node tests/recipe.test.mjs   (exit 0 = green).
 
 import {
   parseProfile, parseRecipes, parseLocators, validate,
@@ -15,146 +15,146 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 function t(d, got, want) { if (eq(got, want)) { pass++; process.stdout.write(`  ✓ ${d}\n`); } else { fail++; process.stdout.write(`  ✗ ${d}\n      got:  ${JSON.stringify(got)}\n      want: ${JSON.stringify(want)}\n`); } }
 function ok(d, c) { if (c) { pass++; process.stdout.write(`  ✓ ${d}\n`); } else { fail++; process.stdout.write(`  ✗ ${d}\n`); } }
 
-const MD = `## Locators (multi-ancla)
-- busqueda-tickets:
-    sel:       role=textbox[name=/Buscar por número/]
-    primario:  textbox
-- fila-de-ticket:
+const MD = `## Locators (multi-anchor)
+- ticket-search:
+    sel:       role=textbox[name=/Search by number/]
+    primary:   textbox
+- ticket-row:
     sel:       span.ticket-number >> text="{id}" >> visible=true
-    primario:  fila
-- fila-regex:
+    primary:   row
+- row-regex:
     sel:       role=row[name=/^{id}/]
-- sin-sel:
-    primario:  solo legible
+- no-sel:
+    primary:   read-only
 - item-pod:
     sel:       article.product_pod
 
-## Recetas
-abrir-ticket-por-id(id):
-  - type:     busqueda-tickets  <- {id}
-  - click:    fila-de-ticket    <- {id}
+## Recipes
+open-ticket-by-id(id):
+  - type:     ticket-search  <- {id}
+  - click:    ticket-row     <- {id}
   - wait-url: /tickets/
   - return:   url
 
-navegar-a(url):
+navigate-to(url):
   - navigate: <- {url}
   - extract:  item-pod
 
-mala-accion():
-  - clik:     busqueda-tickets
+bad-action():
+  - clik:     ticket-search
 
-loc-inexistente():
-  - click:    no-existe
+missing-locator():
+  - click:    no-such-locator
 
-usa-sin-sel():
-  - click:    sin-sel
+use-no-sel():
+  - click:    no-sel
 
-extract-loc-inexistente():
-  - extract:  no-existe
+extract-missing-locator():
+  - extract:  no-such-locator
 
-navigate-con-hueco():
+navigate-with-hole():
   - navigate: "{url}"
 
-## Otra cosa
-- ignorar esto
+## Other section
+- ignore this
 `;
 
-// --- parseo -----------------------------------------------------------------------
-process.stdout.write('[parseo]\n');
+// --- parsing ----------------------------------------------------------------------
+process.stdout.write('[parsing]\n');
 const { locators, recipes } = parseProfile(MD);
-ok('parsea 5 locators', locators.size === 5);
-t('sel de busqueda-tickets', locators.get('busqueda-tickets').sel, 'role=textbox[name=/Buscar por número/]');
-t('detecta plantilla (holes)', locators.get('fila-de-ticket').holes, ['id']);
-ok('locator sin sel: → sel null', locators.get('sin-sel').sel === null);
-ok('parsea 7 recetas', recipes.size === 7);
-const receta = recipes.get('abrir-ticket-por-id');
-t('firma de la receta', receta.params, ['id']);
-t('nº de pasos', receta.steps.length, 4);
-t('paso type con arg param', receta.steps[0], { action: 'type', operand: 'busqueda-tickets', arg: { kind: 'param', name: 'id' } });
+ok('parses 5 locators', locators.size === 5);
+t('sel of ticket-search', locators.get('ticket-search').sel, 'role=textbox[name=/Search by number/]');
+t('detects template (holes)', locators.get('ticket-row').holes, ['id']);
+ok('locator with no sel → sel null', locators.get('no-sel').sel === null);
+ok('parses 7 recipes', recipes.size === 7);
+const recipe = recipes.get('open-ticket-by-id');
+t('recipe signature', recipe.params, ['id']);
+t('number of steps', recipe.steps.length, 4);
+t('type step with param arg', recipe.steps[0], { action: 'type', operand: 'ticket-search', arg: { kind: 'param', name: 'id' } });
 
-// --- fillTemplate (escape por engine) ---------------------------------------------
+// --- fillTemplate (per-engine escaping) -------------------------------------------
 process.stdout.write('[fillTemplate]\n');
-t('plantilla string-engine', fillTemplate('span.ticket-number >> text="{id}" >> visible=true', { id: 'TCK-2026-123' }), 'span.ticket-number >> text="TCK-2026-123" >> visible=true');
-t('plantilla regex-engine escapa metacaracteres', fillTemplate('role=row[name=/^{id}/]', { id: 'A.B' }), 'role=row[name=/^A\\.B/]');
-t('plantilla string escapa comillas', fillTemplate('text="{x}"', { x: 'a"b' }), 'text="a\\"b"');
+t('string-engine template', fillTemplate('span.ticket-number >> text="{id}" >> visible=true', { id: 'TCK-2026-123' }), 'span.ticket-number >> text="TCK-2026-123" >> visible=true');
+t('regex-engine escapes metacharacters', fillTemplate('role=row[name=/^{id}/]', { id: 'A.B' }), 'role=row[name=/^A\\.B/]');
+t('string-engine escapes quotes', fillTemplate('text="{x}"', { x: 'a"b' }), 'text="a\\"b"');
 
-// --- validación -------------------------------------------------------------------
-process.stdout.write('[validación]\n');
-ok('receta canónica válida', validate(receta, locators).ok);
-ok('acción desconocida detectada', !validate(recipes.get('mala-accion'), locators).ok);
-ok('locator inexistente detectado', !validate(recipes.get('loc-inexistente'), locators).ok);
-ok('locator sin sel detectado', !validate(recipes.get('usa-sin-sel'), locators).ok);
-const fakeParam = { name: 'x', params: [], steps: [{ action: 'type', operand: 'busqueda-tickets', arg: { kind: 'param', name: 'noexiste' } }] };
-ok('param no declarado detectado', !validate(fakeParam, locators).ok);
-// H2: extract con locator inexistente debe dar error (antes: continue ciego)
-ok('extract locator inexistente detectado', !validate(recipes.get('extract-loc-inexistente'), locators).ok);
-// H2: extract con locator válido (item-pod) debe pasar
-ok('extract locator válido pasa', validate(recipes.get('navegar-a'), locators).ok);
-// H2: navigate con {…} en operando sin <- genera warning
-const navHueco = validate(recipes.get('navigate-con-hueco'), locators);
-ok('navigate con {…} en operando genera warning', navHueco.ok && navHueco.warnings.length > 0);
+// --- validation -------------------------------------------------------------------
+process.stdout.write('[validation]\n');
+ok('canonical recipe is valid', validate(recipe, locators).ok);
+ok('unknown action detected', !validate(recipes.get('bad-action'), locators).ok);
+ok('missing locator detected', !validate(recipes.get('missing-locator'), locators).ok);
+ok('locator without sel detected', !validate(recipes.get('use-no-sel'), locators).ok);
+const fakeParam = { name: 'x', params: [], steps: [{ action: 'type', operand: 'ticket-search', arg: { kind: 'param', name: 'notdeclared' } }] };
+ok('undeclared param detected', !validate(fakeParam, locators).ok);
+// H2: extract with missing locator must give error (previously: silent continue)
+ok('extract missing locator detected', !validate(recipes.get('extract-missing-locator'), locators).ok);
+// H2: extract with valid locator (item-pod) must pass
+ok('extract valid locator passes', validate(recipes.get('navigate-to'), locators).ok);
+// H2: navigate with {…} in operand without <- generates warning
+const navHole = validate(recipes.get('navigate-with-hole'), locators);
+ok('navigate with {…} in operand generates warning', navHole.ok && navHole.warnings.length > 0);
 
 // --- compileFast ------------------------------------------------------------------
 process.stdout.write('[compileFast]\n');
-const code = compileFast(receta, locators, { id: 'TCK-2026-123' });
-ok('es función async (page)', /^async \(page\) => \{/.test(code));
+const code = compileFast(recipe, locators, { id: 'TCK-2026-123' });
+ok('is async (page) function', /^async \(page\) => \{/.test(code));
 ok('type → fill', code.includes('.fill("TCK-2026-123")'));
-ok('click → plantilla rellena', code.includes('text=\\"TCK-2026-123\\"') || code.includes('text="TCK-2026-123"'));
+ok('click → template filled', code.includes('text=\\"TCK-2026-123\\"') || code.includes('text="TCK-2026-123"'));
 ok('wait-url → waitForURL includes', /waitForURL.*includes\("\/tickets\/"\)/.test(code));
 ok('return url → page.url()', code.includes('return page.url();'));
-ok('pasa assertCompiledSafe', assertCompiledSafe(code) === true);
-ok('es JS parseable', (() => { try { new Function('page', `return (${code})`); return true; } catch { return false; } })());
-// H3: navigate con <- {param} usa el valor del arg, sin doble comilla
-const navReceta = recipes.get('navegar-a');
-const navCode = compileFast(navReceta, locators, { url: 'https://example.com/page-1' });
-ok('H3: navigate usa arg (url sustituida)', navCode.includes('"https://example.com/page-1"'));
-ok('H3: navigate no doble-comilla el placeholder', !navCode.includes('"{url}"') && !navCode.includes("'{url}'"));
-// H1: extract con locator plano — compileFast devuelve textContent, no corta el nombre
-const extractCode = compileFast(navReceta, locators, { url: 'https://example.com' });
-ok('H1: extract locator plano usa sel correcto', extractCode.includes('"article.product_pod"'));
-ok('H1: nombre de locator no mutilado (no item-pod → item-po)', !extractCode.includes('"item-po"'));
+ok('passes assertCompiledSafe', assertCompiledSafe(code) === true);
+ok('is parseable JS', (() => { try { new Function('page', `return (${code})`); return true; } catch { return false; } })());
+// H3: navigate with <- {param} uses the arg value, no double-quoting
+const navRecipe = recipes.get('navigate-to');
+const navCode = compileFast(navRecipe, locators, { url: 'https://example.com/page-1' });
+ok('H3: navigate uses arg (url substituted)', navCode.includes('"https://example.com/page-1"'));
+ok('H3: navigate does not double-quote placeholder', !navCode.includes('"{url}"') && !navCode.includes("'{url}'"));
+// H1: extract with plain locator — compileFast returns textContent, does not truncate the name
+const extractCode = compileFast(navRecipe, locators, { url: 'https://example.com' });
+ok('H1: extract plain locator uses correct sel', extractCode.includes('"article.product_pod"'));
+ok('H1: locator name not truncated (not item-pod → item-po)', !extractCode.includes('"item-po"'));
 
 // --- compileSteps -----------------------------------------------------------------
 process.stdout.write('[compileSteps]\n');
-const steps = compileSteps(receta, locators, { id: 'TCK-2026-123' });
-t('paso 0 type', steps[0], { action: 'type', target: 'role=textbox[name=/Buscar por número/]', value: 'TCK-2026-123' });
-t('paso 1 click con plantilla rellena', steps[1], { action: 'click', target: 'span.ticket-number >> text="TCK-2026-123" >> visible=true' });
-t('paso 2 wait', steps[2], { action: 'wait', waitFor: 'url', value: '/tickets/' });
-// H3: navigate con <- {param} en compileSteps
-const navSteps = compileSteps(recipes.get('navegar-a'), locators, { url: 'https://example.com/p1' });
+const steps = compileSteps(recipe, locators, { id: 'TCK-2026-123' });
+t('step 0 type', steps[0], { action: 'type', target: 'role=textbox[name=/Search by number/]', value: 'TCK-2026-123' });
+t('step 1 click with filled template', steps[1], { action: 'click', target: 'span.ticket-number >> text="TCK-2026-123" >> visible=true' });
+t('step 2 wait', steps[2], { action: 'wait', waitFor: 'url', value: '/tickets/' });
+// H3: navigate with <- {param} in compileSteps
+const navSteps = compileSteps(recipes.get('navigate-to'), locators, { url: 'https://example.com/p1' });
 t('H3 compileSteps: navigate value = arg', navSteps[0], { action: 'navigate', value: 'https://example.com/p1' });
-// H1: extract locator plano en compileSteps devuelve map con el nombre intacto
-t('H1 compileSteps: extract locator plano', navSteps[1], { action: 'extract', map: 'item-pod' });
+// H1: plain locator extract in compileSteps returns map with intact name
+t('H1 compileSteps: extract plain locator', navSteps[1], { action: 'extract', map: 'item-pod' });
 
-// --- inyección (ESTRELLA) ---------------------------------------------------------
-process.stdout.write('[inyección]\n');
+// --- injection (CRITICAL) ---------------------------------------------------------
+process.stdout.write('[injection]\n');
 const EVIL = 'x"); fetchEvil(); //';
-const evilCode = compileFast(receta, locators, { id: EVIL }); // no debe lanzar
+const evilCode = compileFast(recipe, locators, { id: EVIL }); // must not throw
 const skeleton = evilCode.replace(/"(\\.|[^"\\])*"/g, '""').replace(/'(\\.|[^'\\])*'/g, "''");
-ok('payload NO aparece fuera de strings (inerte)', !/fetchEvil/.test(skeleton));
-ok('código con payload sigue siendo JS parseable', (() => { try { new Function('page', `return (${evilCode})`); return true; } catch { return false; } })());
-ok('assertCompiledSafe acepta (payload está encapsulado)', assertCompiledSafe(evilCode) === true);
-// y assertCompiledSafe RECHAZA estructura realmente peligrosa:
+ok('payload does NOT appear outside strings (inert)', !/fetchEvil/.test(skeleton));
+ok('code with payload is still parseable JS', (() => { try { new Function('page', `return (${evilCode})`); return true; } catch { return false; } })());
+ok('assertCompiledSafe accepts (payload is encapsulated)', assertCompiledSafe(evilCode) === true);
+// and assertCompiledSafe REJECTS genuinely dangerous structure:
 let threw = false;
 try { assertCompiledSafe('async (page) => { require("fs"); }'); } catch { threw = true; }
-ok('assertCompiledSafe rechaza require fuera de string', threw);
+ok('assertCompiledSafe rejects require outside string', threw);
 let threw2 = false;
 try { assertCompiledSafe('async (page) => { await page.evaluate(`${x}`); }'); } catch { threw2 = true; }
-ok('assertCompiledSafe rechaza template string + page.evaluate', threw2);
+ok('assertCompiledSafe rejects template string + page.evaluate', threw2);
 
-// fuzz: varios valores hostiles → siempre inerte y seguro.
+// fuzz: various hostile values → always inert and safe.
 process.stdout.write('[fuzz]\n');
 let allSafe = true;
 for (const v of ['a"b', "a'b", 'a\\b', '${x}', '`x`', 'require("x")', 'A.(B)+', 'TCK-1']) {
   try {
-    const c = compileFast(receta, locators, { id: v });
+    const c = compileFast(recipe, locators, { id: v });
     const sk = c.replace(/"(\\.|[^"\\])*"/g, '""').replace(/'(\\.|[^'\\])*'/g, "''");
     if (/require|fetchEvil|`/.test(sk)) allSafe = false;
     new Function('page', `return (${c})`); // parseable
   } catch { allSafe = false; }
 }
-ok('invariante fuzz: todo valor hostil queda inerte y parseable', allSafe);
+ok('fuzz invariant: every hostile value is inert and parseable', allSafe);
 
-// --- resumen ----------------------------------------------------------------------
-process.stdout.write(`\nrecipe: ${pass} ok, ${fail} fallos\n`);
+// --- summary ----------------------------------------------------------------------
+process.stdout.write(`\nrecipe: ${pass} ok, ${fail} failures\n`);
 process.exit(fail === 0 ? 0 : 1);

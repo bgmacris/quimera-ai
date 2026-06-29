@@ -2,52 +2,52 @@
 site: books.toscrape.com
 created: 2026-06-26
 updated: 2026-06-29
-auth: { muro: "ninguno", lo_pasa: ninguno }
+auth: { wall: "none", bypassed_by: none }
 ---
-# books.toscrape.com — perfil de navegación
+# books.toscrape.com — navigation profile
 
-> **Perfil de EJEMPLO.** Recon real de [books.toscrape.com](https://books.toscrape.com/)
-> (sandbox público de scraping), incluido como muestra de cómo se ve un perfil `tandem:map`.
-> Los perfiles de uso real **no** viven en el repo: se guardan en `~/.claude/tandem/sites/<host>.md`
-> (data dir, fuera de git) porque pueden revelar rutas/estructura de sitios privados. Este es
-> público y sin datos sensibles, por eso se versiona como documentación.
+> **EXAMPLE profile.** Real recon of [books.toscrape.com](https://books.toscrape.com/)
+> (public scraping sandbox), included as a sample of what a `tandem:map` profile looks like.
+> Real-use profiles do **not** live in the repo: they are stored in `~/.claude/tandem/sites/<host>.md`
+> (data dir, outside git) because they may reveal routes/structure of private sites. This one is
+> public and contains no sensitive data, so it is versioned as documentation.
 
-## Rutas (esqueleto)
-- /index.html ........................ catálogo, 20 libros/página, 50 páginas        | verificado 2026-06-26
-- /catalogue/page-{n}.html ........... paginación del catálogo (n=1..50)             | verificado 2026-06-26
-- /catalogue/{slug}_{id}/index.html .. detalle de un libro (href relativo en el pod) | verificado 2026-06-26
-- /catalogue/category/books/{cat}/index.html ... listado por categoría (50 cats; suman 1000, partición exacta) | verificado 2026-06-29
-- /catalogue/category/books/{cat}/page-{n}.html  paginación interna de categoría grande (Fiction: 4 págs)      | verificado 2026-06-29
+## Routes (skeleton)
+- /index.html ........................ catalogue, 20 books/page, 50 pages             | verified 2026-06-26
+- /catalogue/page-{n}.html ........... catalogue pagination (n=1..50)                 | verified 2026-06-26
+- /catalogue/{slug}_{id}/index.html .. book detail (relative href in the pod)         | verified 2026-06-26
+- /catalogue/category/books/{cat}/index.html ... category listing (50 cats; total 1000, exact partition) | verified 2026-06-29
+- /catalogue/category/books/{cat}/page-{n}.html  pagination for large categories (Fiction: 4 pages)      | verified 2026-06-29
 
-## Locators (multi-ancla; sitio HTML clásico, sin ARIA roles → sel CSS)
-- item-catalogo:
+## Locators (multi-anchor; classic HTML site, no ARIA roles → CSS sel)
+- item-catalogue:
     sel:       article.product_pod
-    titulo:    article.product_pod h3 a   (texto + attr title + href al detalle)
-    precio:    article.product_pod .price_color
+    title:     article.product_pod h3 a   (text + attr title + href to detail)
+    price:     article.product_pod .price_color
     stock:     article.product_pod .instock.availability
-    corrobora: 20 pods por página                                  | verificado 2026-06-26
-- nav-categorias:
+    verify:    20 pods per page                                    | verified 2026-06-26
+- nav-categories:
     sel:       .side_categories ul li a
-    corrobora: 51 enlaces = 50 hijas + raíz "Books" (TRAMPA → gotcha) | verificado 2026-06-29
-- paginacion-siguiente:
+    verify:    51 links = 50 children + root "Books" (TRAP → gotcha) | verified 2026-06-29
+- pagination-next:
     sel:       .pager .next a
-    corrobora: .pager .current = "Page X of N" (N=50 catálogo, 4 en Fiction) | verificado 2026-06-29
-- detalle-titulo:      sel: .product_main h1                       | verificado 2026-06-26
-- detalle-precio:      sel: .product_main .price_color             | verificado 2026-06-26
-- detalle-stock:       sel: .product_main .availability  (texto "In stock (N available)") | verificado 2026-06-26
-- detalle-tabla:       sel: table.table-striped  (UPC, precios, tax, nº reviews) | verificado 2026-06-26
-- detalle-descripcion: sel: #product_description ~ p              | verificado 2026-06-26
+    verify:    .pager .current = "Page X of N" (N=50 catalogue, 4 in Fiction) | verified 2026-06-29
+- detail-title:       sel: .product_main h1                        | verified 2026-06-26
+- detail-price:       sel: .product_main .price_color              | verified 2026-06-26
+- detail-stock:       sel: .product_main .availability  (text "In stock (N available)") | verified 2026-06-26
+- detail-table:       sel: table.table-striped  (UPC, prices, tax, nº reviews) | verified 2026-06-26
+- detail-description: sel: #product_description ~ p                | verified 2026-06-26
 
-## Recetas
-extraer-pagina-catalogo(url-pagina):
-  - navigate: <- {url-pagina}
-  - extract:  item-catalogo
+## Recipes
+extract-catalogue-page(page-url):
+  - navigate: <- {page-url}
+  - extract:  item-catalogue
 
 ## Gotchas
-- [verificado 2026-06-26] El RATING no es texto: va en la CLASE -> `.star-rating Three|Four|...`. Leer className, no textContent.
-- [verificado 2026-06-26] Los href del pod son RELATIVOS (`catalogue/...`); resolver contra la URL base.
-- [verificado 2026-06-26] Sitio HTML clásico SIN roles ARIA -> los sel son CSS, no `role=`. (selector.mjs v1 no aplica aquí.)
-- [verificado 2026-06-26] 50 páginas en el catálogo -> recorrer con TOPE explícito, nunca a ciegas.
-- [verificado 2026-06-29] Extracción POR CATEGORÍAS: `.side_categories` lista 51 enlaces = 50 hijas + raíz "Books". El raíz (`books_1`) y el catálogo general dan los MISMOS 1000 libros; las 50 hijas suman 1000 (partición exacta). Recorrer SOLO las 50 hijas; mezclar el raíz o el general DUPLICA.
-- [verificado 2026-06-29] Las categorías grandes PAGINAN como el catálogo (Fiction: 65 results, 4 págs); las pequeñas no (Travel: 11, sin `.pager`). Recorrer cada categoría siguiendo `paginacion-siguiente` con TOPE; no asumir 1 página.
-- [verificado 2026-06-29] FINGERPRINT no fiable en rutas-lista aquí: los `h3` son TÍTULOS de libro (contenido), no cabeceras → `fingerprint check` da FALSO drift entre páginas de la misma plantilla (Fiction p1 vs p2: 20 h3 added/removed, 7 señales estables iguales). En estas rutas NO te fíes del gate; usa señal directa (`.pager` / 20 pods). Límite del mecanismo, no del sitio: ver `docs/01` §T015.
+- [verified 2026-06-26] RATING is not text: it is in the CLASS → `.star-rating Three|Four|...`. Read className, not textContent.
+- [verified 2026-06-26] hrefs in the pod are RELATIVE (`catalogue/...`); resolve against the base URL.
+- [verified 2026-06-26] Classic HTML site WITH NO ARIA roles → selectors are CSS, not `role=`. (selector.mjs v1 does not apply here.)
+- [verified 2026-06-26] 50 pages in the catalogue → iterate with an explicit LIMIT, never blindly.
+- [verified 2026-06-29] BY-CATEGORY extraction: `.side_categories` lists 51 links = 50 children + root "Books". The root (`books_1`) and the general catalogue give the SAME 1000 books; the 50 children sum to 1000 (exact partition). Iterate ONLY the 50 children; mixing root or general DUPLICATES.
+- [verified 2026-06-29] Large categories PAGINATE like the catalogue (Fiction: 65 results, 4 pages); small ones do not (Travel: 11, no `.pager`). Iterate each category following `pagination-next` with a LIMIT; do not assume 1 page.
+- [verified 2026-06-29] FINGERPRINT unreliable on list routes here: `h3` elements are book TITLES (content), not headings → `fingerprint check` gives FALSE drift between pages of the same template (Fiction p1 vs p2: 20 h3 added/removed, 7 stable signals identical). On these routes do NOT rely on the gate; use direct signal (`.pager` / 20 pods). Mechanism limit, not a site issue: see `docs/01` §T015.

@@ -1,21 +1,21 @@
 #!/usr/bin/env node
-// recipe.mjs — fachada + CLI de las RECETAS ejecutables de tandem:map (procedural memory).
+// recipe.mjs — facade + CLI for tandem:map EXECUTABLE RECIPES (procedural memory).
 //
-// Una receta del perfil (sites/<host>.md, sección ## Recetas) es una secuencia nombrada y
-// PARAMETRIZADA de pasos sobre los locators del perfil (por su `sel:`). El trabajo está repartido
-// por responsabilidad en tres módulos; esto es la cara pública (re-exporta) + la CLI:
-//   recipe-parser.mjs    — entiende el DSL: parseLocators/parseRecipes/parseProfile/validate/ACTIONS.
-//   recipe-compiler.mjs  — estructura → código/pasos: fillTemplate/compileFast/compileSteps.
-//   recipe-safety.mjs    — red final sobre el código compilado: assertCompiledSafe.
+// A recipe in the profile (sites/<host>.md, section ## Recipes) is a named, PARAMETERIZED
+// sequence of steps over the profile's locators (by their `sel:`). Work is split by
+// responsibility across three modules; this is the public face (re-exports) + the CLI:
+//   recipe-parser.mjs    — understands the DSL: parseLocators/parseRecipes/parseProfile/validate/ACTIONS.
+//   recipe-compiler.mjs  — structure → code/steps: fillTemplate/compileFast/compileSteps.
+//   recipe-safety.mjs    — final net over compiled code: assertCompiledSafe.
 //
-// Compila a dos formas (helper de autoría: NO ejecuta — quien ejecuta es el agente):
-//   --fast: una función Playwright `async (page) => {…}` para `browser_run_code_unsafe` (1 call).
-//   --step: una lista de pasos `{action,target,value}` que el agente ejecuta con browser_click/type.
+// Compiles to two forms (authoring helper: does NOT execute — the agent executes):
+//   --fast: a Playwright `async (page) => {…}` function for `browser_run_code_unsafe` (1 call).
+//   --step: a list of steps `{action,target,value}` the agent executes with browser_click/type.
 //
-// Formato (YAML-plano, parseado a mano — el plugin no tiene deps):
-//   abrir-ticket-por-id(id):
-//     - type:     busqueda-tickets  <- {id}
-//     - click:    fila-de-ticket    <- {id}
+// Format (flat-YAML, hand-parsed — the plugin has no deps):
+//   open-ticket-by-id(id):
+//     - type:     ticket-search  <- {id}
+//     - click:    ticket-row     <- {id}
 //     - wait-url: /tickets/
 //     - return:   url
 
@@ -35,7 +35,7 @@ export { assertCompiledSafe } from './recipe-safety.mjs';
 function dataDir() { return process.env.TANDEM_DATA_DIR || join(homedir(), '.claude', 'tandem'); }
 function loadProfile(host) {
   const path = join(dataDir(), 'sites', `${normalizeHost(host)}.md`);
-  if (!existsSync(path)) { process.stderr.write(`recipe: no hay perfil para '${host}' (${path})\n`); process.exit(1); }
+  if (!existsSync(path)) { process.stderr.write(`recipe: no profile for '${host}' (${path})\n`); process.exit(1); }
   return parseProfile(readFileSync(path, 'utf8'));
 }
 
@@ -60,15 +60,15 @@ if (isCli) {
       const [host, recipeName, ...rest] = pos;
       const { locators, recipes } = loadProfile(host);
       const recipe = recipes.get(recipeName);
-      if (!recipe) { process.stderr.write(`recipe: receta '${recipeName}' no está en ${host}\n`); process.exit(1); }
+      if (!recipe) { process.stderr.write(`recipe: recipe '${recipeName}' not found in ${host}\n`); process.exit(1); }
       const args = Object.fromEntries(recipe.params.map((p, i) => [p, rest[i]]));
       const v = validate(recipe, locators);
-      if (!v.ok) { process.stderr.write(`recipe: receta inválida:\n${v.errors.map((e) => `  ${e}`).join('\n')}\n`); process.exit(1); }
+      if (!v.ok) { process.stderr.write(`recipe: invalid recipe:\n${v.errors.map((e) => `  ${e}`).join('\n')}\n`); process.exit(1); }
       if (flags.has('--step')) process.stdout.write(JSON.stringify(compileSteps(recipe, locators, args), null, 2) + '\n');
       else process.stdout.write(compileFast(recipe, locators, args) + '\n');
       process.exit(0);
     }
-    process.stderr.write('uso: recipe.mjs {validate <host> | compile <host> <receta> [args…] [--fast|--step]}\n');
+    process.stderr.write('usage: recipe.mjs {validate <host> | compile <host> <recipe> [args…] [--fast|--step]}\n');
     process.exit(2);
   } catch (e) {
     process.stderr.write('recipe: ' + e.message + '\n');

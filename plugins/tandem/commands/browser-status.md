@@ -1,7 +1,7 @@
 ---
-description: Muestra el estado del navegador compartido de tandem (CDP, puerto, pestañas).
+description: Shows the status of tandem's shared browser (CDP, port, tabs).
 allowed-tools: Bash(tandem-browser *)
 ---
-Estado del navegador compartido de tandem:
+Status of tandem's shared browser:
 
 !`tandem-browser status`

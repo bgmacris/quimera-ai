@@ -1,7 +1,7 @@
 ---
-description: Exporta cookies del Chrome de tandem via CDP (incluye HttpOnly/Secure). Filtra con --domain <d>. Formatos: list (tabla, default), json, curl, headers, netscape.
+description: Exports cookies from tandem's Chrome via CDP (includes HttpOnly/Secure). Filter with --domain <d>. Formats: list (table, default), json, curl, headers, netscape.
 allowed-tools: Bash(tandem-cookies *)
 ---
-Cookies del Chrome de tandem (CDP directo):
+Cookies from tandem's Chrome (direct CDP):
 
 !`tandem-cookies $ARGUMENTS`

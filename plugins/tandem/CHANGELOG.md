@@ -1,110 +1,110 @@
 # Changelog
 
-Formato basado en [Keep a Changelog](https://keepachangelog.com/); versionado semántico.
+Format based on [Keep a Changelog](https://keepachangelog.com/); semantic versioning.
 
 ## [0.6.0] — 2026-06-26
 
-Comandos CDP directo (`cookies`, `intercept`, `pdf`): capturan lo que el JS de
-página no alcanza (HttpOnly, response bodies) sin pasar por Playwright. + hardening.
+Direct-CDP commands (`cookies`, `intercept`, `pdf`): they capture what page JS
+can't reach (HttpOnly, response bodies) without going through Playwright. + hardening.
 
 ### Added
-- `scripts/cdp-cookies.mjs` + `bin/tandem-cookies` + `commands/cookies.md`: exporta todas las
-  cookies del Chrome de tandem via CDP directo (`Network.getAllCookies`), incluyendo HttpOnly y
-  Secure (inaccesibles desde JS de página). Formatos: `list` (tabla), `json`, `curl`, `headers`,
-  `netscape`. Filtro por `--domain`. Sin dependencias externas (WebSocket + fetch nativos Node 22+).
-- `scripts/cdp-intercept.mjs` + `bin/tandem-intercept` + `commands/intercept.md`: sniffer HTTP
-  que captura request+response bodies del tab activo via CDP (`Network.enable` + `getResponseBody`
-  + `getRequestPostData`). Subcomandos `start/show/clear/count`. Filtros por URL, método, status,
-  mime. Cap de 32KB por body. Persistencia NDJSON en `~/.claude/tandem/intercept.ndjson`.
-- `scripts/cdp-pdf.mjs` + `bin/tandem-pdf` + `commands/pdf.md`: captura la página actual como
-  PDF (`Page.printToPDF`, requiere `--headless`) con fallback automático a screenshot PNG full-page
+- `scripts/cdp-cookies.mjs` + `bin/tandem-cookies` + `commands/cookies.md`: exports all of
+  tandem's Chrome cookies via direct CDP (`Network.getAllCookies`), including HttpOnly and
+  Secure (inaccessible from page JS). Formats: `list` (table), `json`, `curl`, `headers`,
+  `netscape`. Filter by `--domain`. No external dependencies (native WebSocket + fetch, Node 22+).
+- `scripts/cdp-intercept.mjs` + `bin/tandem-intercept` + `commands/intercept.md`: an HTTP sniffer
+  that captures request+response bodies of the active tab via CDP (`Network.enable` + `getResponseBody`
+  + `getRequestPostData`). Subcommands `start/show/clear/count`. Filters by URL, method, status,
+  mime. 32KB cap per body. NDJSON persistence in `~/.claude/tandem/intercept.ndjson`.
+- `scripts/cdp-pdf.mjs` + `bin/tandem-pdf` + `commands/pdf.md`: captures the current page as a
+  PDF (`Page.printToPDF`, requires `--headless`) with automatic fallback to a full-page PNG screenshot
   via `Page.captureScreenshot` + `Page.getLayoutMetrics` + `Emulation.setDeviceMetricsOverride`
-  (funciona siempre en modo headful de tandem). Output prefijado `pdf:` o `png:` para que el
-  agente sepa el formato generado.
+  (always works in tandem's headful mode). Output prefixed `pdf:` or `png:` so the
+  agent knows which format was produced.
 
 ### Security
-- `norm()` en `page-signals.mjs`: añadido filtro ASCII imprimible (`\x20-\x7E`) y cap de 120
-  caracteres por señal. Cierra el vector de stored prompt injection via DOM → perfil → contexto.
-- `hook-inject-profile.mjs`: sanitiza `session_id` del JSON de entrada antes de usarlo como
-  componente de path (`rmSync`). Cierra path traversal via `session_id` con `..`.
-- `fingerprint.mjs`: atomic write (`writeFileSync` a `.tmp` + `renameSync`) para evitar pérdida
-  silenciosa de fingerprints por write interrumpido.
+- `norm()` in `page-signals.mjs`: added a printable-ASCII filter (`\x20-\x7E`) and a 120-character
+  cap per signal. Closes the stored-prompt-injection vector via DOM → profile → context.
+- `hook-inject-profile.mjs`: sanitizes the `session_id` from the input JSON before using it as a
+  path component (`rmSync`). Closes path traversal via a `session_id` with `..`.
+- `fingerprint.mjs`: atomic write (`writeFileSync` to `.tmp` + `renameSync`) to avoid silent
+  loss of fingerprints from an interrupted write.
 
 ## [0.5.0] — 2026-06-22
 
-Recetas ejecutables: *procedural memory* sobre los `sel:`.
+Executable recipes: *procedural memory* over the `sel:` values.
 
 ### Added
-- Recetas del perfil PARAMETRIZADAS y ejecutables (formato YAML-plano en `## Recetas`), sustituyen
-  la prosa numerada. `scripts/recipe.mjs` (+ `tests/recipe.test.mjs`) las parsea, valida y compila.
-- Dos modos de ejecución (híbrido): `--step` (pasos que el agente ejecuta con las tools, observable,
-  default seguro) y `--fast` (función Playwright en 1 tool call vía `browser_run_code_unsafe`).
-  `recipe.mjs` compila; el agente ejecuta. Enganchado a `smoke.sh` §8 → 49 asserts.
-- Acciones v1: `navigate`, `type`, `click`, `wait-url`, `return`/`extract`.
+- Profile recipes are PARAMETERIZED and executable (flat-YAML format under `## Recipes`), replacing
+  the numbered prose. `scripts/recipe.mjs` (+ `tests/recipe.test.mjs`) parses, validates, and compiles them.
+- Two execution modes (hybrid): `--step` (steps the agent runs with the tools, observable,
+  safe default) and `--fast` (a Playwright function in 1 tool call via `browser_run_code_unsafe`).
+  `recipe.mjs` compiles; the agent executes. Wired into `smoke.sh` §8 → 49 asserts.
+- v1 actions: `navigate`, `type`, `click`, `wait-url`, `return`/`extract`.
 
 ### Security
-- `browser_run_code_unsafe` es RCE-equivalent. Defensa en capas: solo recetas del store co-curado;
-  los datos (args) entran por `JSON.stringify` (inertes); el `sel:` plantilla se escapa por-engine
-  (reusa `selector.mjs`); `assertCompiledSafe` valida el esqueleto contra una allowlist; dry-run
-  obligatorio antes de `--fast`. Test de inyección verifica que un payload hostil queda inerte.
+- `browser_run_code_unsafe` is RCE-equivalent. Layered defense: only recipes from the co-curated store;
+  data (args) enters via `JSON.stringify` (inert); the `sel:` template is escaped per-engine
+  (reuses `selector.mjs`); `assertCompiledSafe` validates the skeleton against an allowlist; mandatory
+  dry-run before `--fast`. An injection test verifies that a hostile payload stays inert.
 
 ## [0.4.0] — 2026-06-22
 
-Navegación token-frugal: el perfil hace los locators **ejecutables**.
+Token-frugal navigation: the profile makes the locators **executable**.
 
 ### Added
-- Campo `sel:` (opcional) por locator en `sites/<host>.md`: selector Playwright que el agente pasa
-  como `target` para accionar **sin `browser_snapshot`**. Instancia (directo) vs plantilla (hueco
-  que la receta rellena, para locators de clase como filas).
-- `scripts/selector.mjs` + `tests/selector.test.mjs`: genera el `sel:` con los escapes correctos
-  (comillas, metacaracteres regex, `/` delimitador) para que la sintaxis no se teclee a mano.
-  Enganchado a `smoke.sh` §7 → 47 asserts.
-- Flujo frugal en `skills/map` y `skills/tandem`, **atado a `fingerprint.mjs check`** como gate
-  (saltarse el snapshot solo si la ruta da `match`; `wait_for` en SPAs de render diferido).
+- `sel:` field (optional) per locator in `sites/<host>.md`: a Playwright selector the agent passes
+  as `target` to act **without `browser_snapshot`**. Instance (direct) vs template (a slot
+  the recipe fills, for class locators like rows).
+- `scripts/selector.mjs` + `tests/selector.test.mjs`: generates the `sel:` with the correct escapes
+  (quotes, regex metacharacters, `/` delimiter) so the syntax isn't typed by hand.
+  Wired into `smoke.sh` §7 → 47 asserts.
+- Frugal flow in `skills/map` and `skills/tandem`, **tied to `fingerprint.mjs check`** as a gate
+  (skip the snapshot only if the route returns `match`; `wait_for` on deferred-render SPAs).
 
 ### Changed
-- `skills/map`: el reflejo de re-check ya no dice "confirma con `browser_snapshot` dirigido" sino
-  "valida con `fingerprint check`" — más barato y dice qué locator cambió. Reconcilia la
-  contradicción con el flujo frugal.
+- `skills/map`: the re-check reflex no longer says "confirm with a targeted `browser_snapshot`" but
+  "validate with `fingerprint check`" — cheaper, and it tells you which locator changed. Reconciles the
+  contradiction with the frugal flow.
 
-### Medición (verificada, método reproducible)
-- Un `browser_snapshot` del árbol pesa **~18×** el perfil entero: `wc -c` → snapshot Wikipedia
-  105.571 B (~26k tok, ÷4) vs un perfil de sitio real 5.581 B (~1,4k tok). El perfil se inyecta 1×/sesión;
-  el snapshot se repetía por acción. Medición tarea-equivalente (necesita login) queda para v2.
+### Measurement (verified, reproducible method)
+- A `browser_snapshot` of the tree weighs **~18×** the whole profile: `wc -c` → Wikipedia snapshot
+  105,571 B (~26k tok, ÷4) vs a real site profile 5,581 B (~1.4k tok). The profile is injected 1×/session;
+  the snapshot was repeated per action. A task-equivalent measurement (needs login) is left for v2.
 
 ## [0.3.0] — 2026-06-22
 
-Hardening pre-release: auditoría de código + cierre de hallazgos + tests.
+Pre-release hardening: code audit + closing findings + tests.
 
 ### Changed
-- `mcp-launch.sh`: la versión del Playwright MCP pasa a estar **pineada** (`@playwright/mcp@0.0.76`)
-  en vez de `@latest`, que dejaba cada arranque a merced de una versión distinta (rotura
-  silenciosa + superficie supply-chain). Override con `TANDEM_MCP_VERSION`.
-- `map.sh index`: el JSON se serializa con node en vez de concatenar strings, así un frontmatter
-  con comillas o backslash ya no rompe `index.json`.
+- `mcp-launch.sh`: the Playwright MCP version is now **pinned** (`@playwright/mcp@0.0.76`)
+  instead of `@latest`, which left each launch at the mercy of a different version (silent
+  breakage + supply-chain surface). Override with `TANDEM_MCP_VERSION`.
+- `map.sh index`: the JSON is serialized with node instead of concatenating strings, so a frontmatter
+  with quotes or a backslash no longer breaks `index.json`.
 
 ### Added
-- `scripts/page-signals.mjs`: **fuente única** del fingerprint de página (antes el evaluate
-  canónico vivía como snippet en la skill). `norm` + `collectSignals` definidos una sola vez;
-  `page-signals.mjs print` emite el blob auto-contenido para `browser_evaluate`, serializado de
-  esas mismas funciones (no puede divergir del código testeado).
-- `tests/smoke.sh`: prueba de humo del motor de `tandem:map` sin arrancar Chrome (parseo, bit
-  `+x`, `map.sh`, `fingerprint` con drift E2E, hook de inyección) — 45 asserts.
-- `tests/page-signals.test.mjs`: 19 asserts sobre `norm`/`collectSignals` con DOM mock dirigido,
-  dedup y consistencia blob↔función.
+- `scripts/page-signals.mjs`: **single source** of the page fingerprint (the canonical evaluate
+  previously lived as a snippet in the skill). `norm` + `collectSignals` defined once;
+  `page-signals.mjs print` emits the self-contained blob for `browser_evaluate`, serialized from
+  those same functions (it can't diverge from the tested code).
+- `tests/smoke.sh`: a smoke test of the `tandem:map` engine without starting Chrome (parsing, `+x`
+  bit, `map.sh`, `fingerprint` with E2E drift, injection hook) — 45 asserts.
+- `tests/page-signals.test.mjs`: 19 asserts over `norm`/`collectSignals` with a targeted mock DOM,
+  dedup, and blob↔function consistency.
 
 ### Fixed
-- `fingerprint.mjs`: el host de `argv` entraba crudo en la ruta del store → **path traversal** al
-  capturar/leer. Ahora normaliza igual que `map.sh` y exige un hostname plausible.
-- `fingerprint.mjs`: faltaba el bit ejecutable (`+x`); la skill lo invoca por ruta directa, así
-  que en producción fallaba con `rc=126`. Lo cazó el smoke test.
-- `lib.sh`: contador de reintentos sin usar (`i`→`_`).
+- `fingerprint.mjs`: the `argv` host went raw into the store path → **path traversal** when
+  capturing/reading. It now normalizes like `map.sh` and requires a plausible hostname.
+- `fingerprint.mjs`: the executable bit (`+x`) was missing; the skill invokes it by direct path, so
+  in production it failed with `rc=126`. The smoke test caught it.
+- `lib.sh`: unused retry counter (`i`→`_`).
 
 ### Tooling
-- `shellcheck -x -S style` limpio en todo el shell. README §Desarrollo documenta cómo correr
-  los checks (ninguno arranca Chrome; el ciclo real de Chrome se prueba a mano).
+- `shellcheck -x -S style` clean across all the shell. README §Development documents how to run
+  the checks (none start Chrome; the real Chrome cycle is tested by hand).
 
 ## [0.2.0] — 2026-06-22
 
-- Preparación para publicación y **soporte Linux** (autodetección de Chromium vía PATH; estado
-  del puerto con `lsof` o, en su defecto, `ss`). macOS soportado y probado; Linux sin CI aún.
+- Publishing prep and **Linux support** (Chromium autodetection via PATH; port status
+  with `lsof` or, failing that, `ss`). macOS supported and tested; Linux without CI yet.

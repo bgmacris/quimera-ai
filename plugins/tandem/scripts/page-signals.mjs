@@ -1,27 +1,27 @@
 #!/usr/bin/env node
-// page-signals.mjs — FUENTE ÚNICA del fingerprint de página de tandem:map (T015).
+// page-signals.mjs — single source of truth for tandem:map page fingerprint (T015).
 //
-// El "evaluate canónico" que extrae el ESQUELETO estructural de una página (roles, landmarks,
-// botones, inputs, headings, nav-links) vivía como un snippet en prosa dentro de skills/map.
-// Problema: ese algoritmo es CRÍTICO —cambiarlo invalida TODOS los fingerprints guardados
-// (falso drift en todo)— pero su única fuente era markdown que se tecleaba a mano. Aquí pasa a
-// ser código versionado y testeable, con una sola definición del algoritmo.
+// The "canonical evaluate" that extracts the STRUCTURAL SKELETON of a page (roles, landmarks,
+// buttons, inputs, headings, nav-links) lived as a prose snippet inside skills/map. Problem:
+// that algorithm is CRITICAL — changing it invalidates ALL saved fingerprints (false drift
+// everywhere) — but its only source was hand-typed markdown. Here it becomes versioned and
+// testable code, with a single definition of the algorithm.
 //
-// Dos consumidores, una fuente:
-//   - node (test): importa { norm, collectSignals } y los ejercita en proceso.
-//   - browser: `page-signals.mjs print` emite un blob AUTO-CONTENIDO `() => [...]` listo para
-//     pegar en browser_evaluate. El blob se SERIALIZA de estas mismas funciones (.toString()),
-//     así que no puede divergir del código testeado.
+// Two consumers, one source:
+//   - node (test): imports { norm, collectSignals } and exercises them in-process.
+//   - browser: `page-signals.mjs print` emits a SELF-CONTAINED blob `() => [...]` ready to
+//     paste into browser_evaluate. The blob is SERIALIZED from these same functions (.toString()),
+//     so it cannot diverge from the tested code.
 //
-// `norm`: normaliza una cadena para que counts/fechas/ids NO cuenten como drift —
-// colapsa espacios, recorta, y reduce cada secuencia de dígitos a '#'
-// ('Bandeja 112' y 'Bandeja 115' → 'Bandeja #'). Es la pieza que evita los falsos drifts.
+// `norm`: normalizes a string so that counts/dates/ids do NOT count as drift —
+// collapses spaces, trims, and reduces each digit sequence to '#'
+// ('Inbox 112' and 'Inbox 115' → 'Inbox #'). This is the piece that prevents false drift.
 
 export const norm = (s) => (s || '').replace(/\s+/g, ' ').trim().replace(/\d+/g, '#').replace(/[\x00-\x1F\x7F]/g, '').slice(0, 120);
 
-// collectSignals(document[, normFn]): set ORDENADO de señales estructurales de la página.
-// normFn es parámetro (default: norm) para que el blob de browser pueda inyectar la norm
-// serializada y la función quede de verdad auto-contenida.
+// collectSignals(document[, normFn]): SORTED set of structural signals for the page.
+// normFn is a parameter (default: norm) so the browser blob can inject the serialized norm
+// and the function is truly self-contained.
 export function collectSignals(document, normFn = norm) {
   const sig = new Set();
   document.querySelectorAll('[role]').forEach((e) => { const r = e.getAttribute('role'); if (r) sig.add('role:' + r); });
@@ -33,8 +33,8 @@ export function collectSignals(document, normFn = norm) {
   return [...sig].sort();
 }
 
-// Blob auto-contenido para browser_evaluate. Inyecta la norm REAL (serializada) en el scope y
-// llama a collectSignals con el document global del navegador. Una sola arrow, sin imports.
+// Self-contained blob for browser_evaluate. Injects the REAL norm (serialized) into scope and
+// calls collectSignals with the browser's global document. Single arrow, no imports.
 export function browserBlob() {
   return `() => {\n  const norm = ${norm.toString()};\n  const collectSignals = ${collectSignals.toString()};\n  return collectSignals(document, norm);\n}`;
 }
@@ -47,6 +47,6 @@ if (isCli) {
     process.stdout.write(browserBlob() + '\n');
     process.exit(0);
   }
-  process.stderr.write('uso: page-signals.mjs print   (emite el blob para browser_evaluate)\n');
+  process.stderr.write('usage: page-signals.mjs print   (emits the blob for browser_evaluate)\n');
   process.exit(2);
 }

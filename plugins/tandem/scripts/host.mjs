@@ -1,36 +1,37 @@
 #!/usr/bin/env node
-// host.mjs — normalización ÚNICA de "URL o host" → hostname canónico del store (tandem:map).
+// host.mjs — single source for "URL or host" → canonical store hostname (tandem:map).
 //
-// El host entra en el path del store (sites/<host>.md, sites/<host>.fingerprints.json), así que
-// un valor con '/', '..' o basura permitiría leer/escribir FUERA de sites/ (path traversal). Antes
-// esta lógica vivía duplicada (y divergente) en recipe.mjs, fingerprint.mjs, hook-inject-profile.mjs
-// y map.sh: solo una validaba el charset, otra rompía con esquemas en mayúscula. Aquí, una sola
-// definición que normaliza y VALIDA. Lanza si el resultado no es un hostname plausible.
+// The host goes into the store path (sites/<host>.md, sites/<host>.fingerprints.json), so
+// a value with '/', '..' or garbage would allow reading/writing OUTSIDE sites/ (path traversal).
+// Previously this logic lived duplicated (and divergent) in recipe.mjs, fingerprint.mjs,
+// hook-inject-profile.mjs and map.sh: only one validated the charset, another broke on
+// uppercase schemes. Here, a single definition that normalizes AND validates. Throws if the
+// result is not a plausible hostname.
 //
-// Decisión deliberada: se descarta el PUERTO (un "sitio" se indexa por hostname, no host:port).
-// Antes el comportamiento divergía —recipe/map lo conservaban, fingerprint reventaba con ':',
-// el hook lo descartaba vía new URL()—; se unifica a descartarlo (y ':' rompería el nombre de
-// fichero en macOS). Acepta una URL entera (con esquema) o un host pelado. IDN: una URL con host
-// no-ASCII se normaliza a punycode (new URL); un host pelado no-ASCII se rechaza (pasa la URL).
-// IPv6 literal NO se soporta como clave (':'/'[]' no van en nombre de fichero) → se rechaza.
+// Deliberate decision: PORT is discarded (a "site" is indexed by hostname, not host:port).
+// Previously behavior diverged — recipe/map kept it, fingerprint broke on ':', hook discarded
+// it via new URL() — unified to discard (and ':' would break the filename on macOS).
+// Accepts a full URL (with scheme) or a bare host. IDN: a URL with non-ASCII host is
+// normalized to punycode (new URL); a bare non-ASCII host is rejected (pass the URL instead).
+// IPv6 literals NOT supported as keys (':' / '[]' cannot appear in filenames) → rejected.
 //
-// Uso como módulo:  import { normalizeHost } from './host.mjs'
-// Uso CLI (map.sh): host.mjs <url-o-host>  → imprime el host, o exit 2 + error en stderr.
+// Module usage:  import { normalizeHost } from './host.mjs'
+// CLI (map.sh):  host.mjs <url-or-host>  → prints the host, or exit 2 + error on stderr.
 
 export function normalizeHost(raw) {
-  if (typeof raw !== 'string' || !raw.trim()) throw new Error('host vacío');
+  if (typeof raw !== 'string' || !raw.trim()) throw new Error('empty host');
   let host = raw.trim();
   if (/:\/\//.test(host)) {
-    // Con esquema → URL entera. new URL().hostname ya viene limpio (sin esquema/puerto/path/
-    // userinfo) y en minúsculas; no le apliques el strip manual o destrozarías casos válidos.
-    try { host = new URL(host).hostname; } catch { /* malformado → cae a la validación, que lo rechaza */ }
+    // With scheme → full URL. new URL().hostname is already clean (no scheme/port/path/
+    // userinfo) and lowercase; don't apply manual stripping or you'd break valid cases.
+    try { host = new URL(host).hostname; } catch { /* malformed → falls to validation, which rejects it */ }
   } else {
-    // Host pelado: puede traer userinfo@ y/o :puerto. Corta en el primer ':' o '/'.
+    // Bare host: may carry userinfo@ and/or :port. Cut at the first ':' or '/'.
     host = host.replace(/^[^@]*@/, '').replace(/[:/].*$/, '');
   }
   host = host.toLowerCase();
   if (!/^[a-z0-9.-]+$/.test(host) || host.includes('..') || host.startsWith('.') || host.endsWith('.')) {
-    throw new Error(`host inválido tras normalizar: '${host}'`);
+    throw new Error(`invalid host after normalizing: '${host}'`);
   }
   return host;
 }

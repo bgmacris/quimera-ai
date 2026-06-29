@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-// selector.test.mjs — tests del generador de selectores Playwright (scripts/selector.mjs).
-// Sin dependencias: mini-runner. Cubre los escapes que se teclean mal a mano (la razón de ser
-// del helper): comillas en el name, metacaracteres en modo regex, el '/' delimitador, anclaje,
-// unicode/acentos, el caso plantilla (id concreto), y que todo lo generado quede bien formado.
-// Uso: node tests/selector.test.mjs   (exit 0 = verde).
+// selector.test.mjs — tests for the Playwright selector generator (scripts/selector.mjs).
+// No dependencies: mini-runner. Covers the escapes that are error-prone when typed by hand
+// (the raison d'être of the helper): quotes in name, metacharacters in regex mode, the '/'
+// delimiter, anchoring, unicode/accents, the template case (concrete id), and that everything
+// generated passes isWellFormed.
+// Usage: node tests/selector.test.mjs   (exit 0 = green).
 
 import {
   buildSelector, escapeStringName, escapeRegexName, isWellFormed,
@@ -19,54 +20,54 @@ function ok(desc, cond) {
   else { fail++; process.stdout.write(`  ✗ ${desc}\n`); }
 }
 
-// --- string mode (name exacto) ----------------------------------------------------
+// --- string mode (exact name) -----------------------------------------------------
 process.stdout.write('[string]\n');
-t('básico', buildSelector({ role: 'button', name: 'Nuevo ticket' }), 'role=button[name="Nuevo ticket"]');
-t('comilla doble escapada', buildSelector({ role: 'button', name: 'Buscar "tickets"' }), 'role=button[name="Buscar \\"tickets\\""]');
-t('backslash escapado', buildSelector({ role: 'link', name: 'a\\b' }), 'role=link[name="a\\\\b"]');
-t('acentos sin tocar', buildSelector({ role: 'textbox', name: 'Día válido' }), 'role=textbox[name="Día válido"]');
-t('apóstrofo sin escape (comillas dobles)', buildSelector({ role: 'cell', name: "N.º d'ordre" }), 'role=cell[name="N.º d\'ordre"]');
-t('sin name → role suelto', buildSelector({ role: 'navigation', name: '' }), 'role=navigation');
-t('name nulo → role suelto', buildSelector({ role: 'main' }), 'role=main');
+t('basic', buildSelector({ role: 'button', name: 'New ticket' }), 'role=button[name="New ticket"]');
+t('double quote escaped', buildSelector({ role: 'button', name: 'Search "tickets"' }), 'role=button[name="Search \\"tickets\\""]');
+t('backslash escaped', buildSelector({ role: 'link', name: 'a\\b' }), 'role=link[name="a\\\\b"]');
+t('accents untouched', buildSelector({ role: 'textbox', name: 'Valid date' }), 'role=textbox[name="Valid date"]');
+t('apostrophe unescaped (double quotes)', buildSelector({ role: 'cell', name: "N.º d'ordre" }), 'role=cell[name="N.º d\'ordre"]');
+t('no name → bare role', buildSelector({ role: 'navigation', name: '' }), 'role=navigation');
+t('null name → bare role', buildSelector({ role: 'main' }), 'role=main');
 
-// --- regex mode (substring, robusto para nombres largos/dinámicos) ----------------
+// --- regex mode (substring, robust for long/dynamic names) ------------------------
 process.stdout.write('[regex]\n');
-t('substring simple', buildSelector({ role: 'textbox', name: 'Buscar por número', regex: true }), 'role=textbox[name=/Buscar por número/]');
-t('metacaracteres escapados', buildSelector({ role: 'textbox', name: 'N.º (1)', regex: true }), 'role=textbox[name=/N\\.º \\(1\\)/]');
-t('slash delimitador escapado', buildSelector({ role: 'link', name: 'a/b', regex: true }), 'role=link[name=/a\\/b/]');
-// el guión fuera de [...] es literal en regex → NO se escapa (sería ruido).
-t('anclaje al inicio (plantilla con id concreto)', buildSelector({ role: 'row', name: 'TCK-2026-016', regex: true, anchor: true }), 'role=row[name=/^TCK-2026-016/]');
-t('anchor sin regex se ignora (string mode)', buildSelector({ role: 'button', name: 'X', anchor: true }), 'role=button[name="X"]');
+t('simple substring', buildSelector({ role: 'textbox', name: 'Search by number', regex: true }), 'role=textbox[name=/Search by number/]');
+t('metacharacters escaped', buildSelector({ role: 'textbox', name: 'N.º (1)', regex: true }), 'role=textbox[name=/N\\.º \\(1\\)/]');
+t('slash delimiter escaped', buildSelector({ role: 'link', name: 'a/b', regex: true }), 'role=link[name=/a\\/b/]');
+// hyphen outside [...] is literal in regex → NOT escaped (would be noise).
+t('anchor at start (template with concrete id)', buildSelector({ role: 'row', name: 'TCK-2026-016', regex: true, anchor: true }), 'role=row[name=/^TCK-2026-016/]');
+t('anchor without regex is ignored (string mode)', buildSelector({ role: 'button', name: 'X', anchor: true }), 'role=button[name="X"]');
 
-// --- escapes unitarios ------------------------------------------------------------
+// --- unit escapes -----------------------------------------------------------------
 process.stdout.write('[escapes]\n');
-t('escapeStringName comillas', escapeStringName('di "hola"'), 'di \\"hola\\"');
-t('escapeRegexName puntos/paréntesis', escapeRegexName('v1.2 (beta)'), 'v1\\.2 \\(beta\\)');
-t('escapeRegexName barra', escapeRegexName('a/b'), 'a\\/b');
+t('escapeStringName quotes', escapeStringName('say "hello"'), 'say \\"hello\\"');
+t('escapeRegexName dots/parens', escapeRegexName('v1.2 (beta)'), 'v1\\.2 \\(beta\\)');
+t('escapeRegexName slash', escapeRegexName('a/b'), 'a\\/b');
 
-// --- validación + errores ---------------------------------------------------------
-process.stdout.write('[bien formado / errores]\n');
-ok('string generado es bien formado', isWellFormed(buildSelector({ role: 'button', name: 'Guardar "ya"' })));
-ok('regex generado es bien formado', isWellFormed(buildSelector({ role: 'row', name: 'TCK-1', regex: true, anchor: true })));
-ok('role suelto es bien formado', isWellFormed('role=main'));
-ok('detecta corchete sin cerrar', !isWellFormed('role=button[name="x"'));
-ok('detecta comilla sin cerrar', !isWellFormed('role=button[name="x]'));
-ok('detecta regex sin cerrar', !isWellFormed('role=row[name=/^x]'));
-ok('vacío no es bien formado', !isWellFormed(''));
+// --- well-formed / errors ---------------------------------------------------------
+process.stdout.write('[well-formed / errors]\n');
+ok('generated string is well-formed', isWellFormed(buildSelector({ role: 'button', name: 'Save "now"' })));
+ok('generated regex is well-formed', isWellFormed(buildSelector({ role: 'row', name: 'TCK-1', regex: true, anchor: true })));
+ok('bare role is well-formed', isWellFormed('role=main'));
+ok('detects unclosed bracket', !isWellFormed('role=button[name="x"'));
+ok('detects unclosed quote', !isWellFormed('role=button[name="x]'));
+ok('detects unclosed regex', !isWellFormed('role=row[name=/^x]'));
+ok('empty string is not well-formed', !isWellFormed(''));
 let threw = false;
-try { buildSelector({ name: 'sin role' }); } catch { threw = true; }
-ok('lanza si falta role', threw);
+try { buildSelector({ name: 'no role' }); } catch { threw = true; }
+ok('throws if role is missing', threw);
 
-// invariante: todo lo que genera buildSelector con name no vacío pasa isWellFormed.
-const fuzz = ['Hola', 'a"b', 'a\\b', 'N.º (1)', 'a/b/c', 'TCK-2026-016', "d'ord"];
+// invariant: everything buildSelector generates with non-empty name passes isWellFormed.
+const fuzz = ['Hello', 'a"b', 'a\\b', 'N.º (1)', 'a/b/c', 'TCK-2026-016', "d'ord"];
 let allWF = true;
 for (const n of fuzz) {
   for (const rx of [false, true]) {
     if (!isWellFormed(buildSelector({ role: 'x', name: n, regex: rx, anchor: rx }))) { allWF = false; }
   }
 }
-ok('invariante: todo selector generado es bien formado', allWF);
+ok('invariant: every generated selector is well-formed', allWF);
 
-// --- resumen ----------------------------------------------------------------------
-process.stdout.write(`\nselector: ${pass} ok, ${fail} fallos\n`);
+// --- summary ----------------------------------------------------------------------
+process.stdout.write(`\nselector: ${pass} ok, ${fail} failures\n`);
 process.exit(fail === 0 ? 0 : 1);

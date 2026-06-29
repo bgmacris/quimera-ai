@@ -1,22 +1,22 @@
 #!/usr/bin/env node
-// fingerprint.mjs — detección de DRIFT estructural por ruta (tandem:map, T015).
+// fingerprint.mjs — structural DRIFT detection by route (tandem:map, T015).
 //
-// Staleness por SEÑAL, no por fecha de calendario: en vez de fiarte de cuán viejo es el
-// tag [verificado], comparas el ESQUELETO estructural de la página (roles/controles/headings)
-// contra el que guardaste. Si cambió → los locators de esa ruta en el perfil son sospechosos.
+// Staleness by SIGNAL, not by calendar date: instead of trusting how old the [verified]
+// tag is, compare the structural SKELETON of the page (roles/controls/headings) against
+// the one you saved. If it changed → the locators for that route in the profile are suspect.
 //
-// Por qué el esqueleto y no la página entera: queremos drift de ESTRUCTURA, no de datos.
-// El agente extrae las señales con un browser_evaluate canónico (ver skills/map/SKILL.md) que
-// normaliza dígitos a '#' (así "Bandeja 112"→"115" NO cuenta como drift) y excluye filas de
-// datos. Aquí solo se almacena/compara el set.
+// Why the skeleton and not the whole page: we want STRUCTURAL drift, not data drift.
+// The agent extracts signals with a canonical browser_evaluate (see skills/map/SKILL.md) that
+// normalizes digits to '#' (so "Inbox 112"→"115" does NOT count as drift) and excludes data
+// rows. Here we only store/compare the set.
 //
-// Uso (el agente pasa el array de señales JSON por stdin):
-//   echo '<json array de strings>' | fingerprint.mjs capture <host> <route-key>
-//   echo '<json array de strings>' | fingerprint.mjs check   <host> <route-key>
+// Usage (agent passes the JSON signal array on stdin):
+//   echo '<json array of strings>' | fingerprint.mjs capture <host> <route-key>
+//   echo '<json array of strings>' | fingerprint.mjs check   <host> <route-key>
 //
-// capture: guarda/actualiza el set de la ruta en sites/<host>.fingerprints.json.
-// check:   compara stdin contra lo guardado; emite {status, added[], removed[]} por stdout.
-//          status = new (no había) | match (igual) | drift (cambió).
+// capture: saves/updates the route set in sites/<host>.fingerprints.json.
+// check:   compares stdin against saved; emits {status, added[], removed[]} on stdout.
+//          status = new (no prior) | match (identical) | drift (changed).
 
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -28,12 +28,13 @@ const sitesDir = join(dataDir, 'sites');
 
 const [, , mode, rawHost, routeKey] = process.argv;
 if (!mode || !rawHost || !routeKey || !['capture', 'check'].includes(mode)) {
-  process.stderr.write('uso: fingerprint.mjs {capture|check} <host> <route-key>  (señales JSON por stdin)\n');
+  process.stderr.write('usage: fingerprint.mjs {capture|check} <host> <route-key>  (JSON signals on stdin)\n');
   process.exit(2);
 }
 
-// Normaliza y valida el host con la fuente única (host.mjs): entra en el path del store, sin
-// validar permitiría path traversal. normalizeHost lanza si no es un hostname plausible.
+// Normalize and validate the host with the single source (host.mjs): it goes into the store
+// path, so without validation this would allow path traversal. normalizeHost throws if not
+// a plausible hostname.
 let host;
 try { host = normalizeHost(rawHost); } catch (e) {
   process.stderr.write(`fingerprint: ${e.message}\n`);
@@ -42,17 +43,17 @@ try { host = normalizeHost(rawHost); } catch (e) {
 
 function readStdinJson() {
   let raw = '';
-  try { raw = readFileSync(0, 'utf8'); } catch { /* vacío */ }
+  try { raw = readFileSync(0, 'utf8'); } catch { /* empty */ }
   let arr;
   try { arr = JSON.parse(raw); } catch {
-    process.stderr.write('fingerprint: stdin no es JSON válido\n');
+    process.stderr.write('fingerprint: stdin is not valid JSON\n');
     process.exit(2);
   }
   if (!Array.isArray(arr)) {
-    process.stderr.write('fingerprint: stdin debe ser un array de strings\n');
+    process.stderr.write('fingerprint: stdin must be an array of strings\n');
     process.exit(2);
   }
-  // normaliza: strings, únicos, ordenados (estable)
+  // normalize: strings, unique, sorted (stable)
   return [...new Set(arr.map((s) => String(s)))].sort();
 }
 
@@ -83,7 +84,7 @@ if (mode === 'capture') {
 const store = loadStore();
 const prev = store[routeKey];
 if (!prev) {
-  process.stdout.write(JSON.stringify({ status: 'new', routeKey, hint: 'no hay fingerprint guardado; usa capture' }) + '\n');
+  process.stdout.write(JSON.stringify({ status: 'new', routeKey, hint: 'no fingerprint saved; use capture' }) + '\n');
   process.exit(0);
 }
 const prevSet = new Set(prev.signals);

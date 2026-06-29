@@ -1,124 +1,124 @@
 # tandem
 
-Un navegador Chrome **compartido en tiempo real** entre tú y Claude Code, que **aprende cómo se
-navega cada sitio**. Una sola ventana: tú la conduces con el ratón (y pasas captchas, checkpoints
-anti-bot, logins con 2FA); Claude opera por CDP vía el [Playwright MCP](https://github.com/microsoft/playwright-mcp)
-(lee el DOM renderizado, ejecuta JS, saca snapshots, inspecciona red). Y con `tandem:map`, Claude
-recuerda el esqueleto, los locators y las recetas de cada sitio para navegar *sabiendo* en vez de
-re-derivar el DOM cada vez.
+A Chrome browser **shared in real time** between you and Claude Code that **learns how each site
+is navigated**. One window: you drive it with the mouse (and clear captchas, anti-bot checkpoints,
+2FA logins); Claude operates over CDP via the [Playwright MCP](https://github.com/microsoft/playwright-mcp)
+(reads the rendered DOM, runs JS, takes snapshots, inspects the network). And with `tandem:map`, Claude
+remembers each site's skeleton, locators, and recipes so it navigates *knowingly* instead of
+re-deriving the DOM every time.
 
-> **Encuadre honesto.** El navegador compartido es cableado de piezas existentes (Chrome + CDP +
-> Playwright MCP) listo para humano-en-el-loop. Y no es terreno virgen: en 2026 ya hay memoria de
-> sitio cross-sesión (p.ej. WebCoach), *semantic locators* por rol+nombre como práctica estándar, y
-> handoff humano para captcha/login (AuthRelay, Cloudflare Browser Run, BrowserAct). La diferencia de
-> tandem no es inventar una pieza nueva: es **dónde vive el conjunto** — local, sobre el **mismo
-> Chrome real que tú ves y tocas**, nativo de terminal/Claude Code, con una memoria de sitio
-> **co-curada y legible** (`sites/<host>.md` en markdown que editas y commiteas, no un store opaco ni
-> un SaaS en la nube). Sobre eso, `tandem:map` añade lo que sí cuesta encontrar combinado: drift por
-> señal estructural + **locators ejecutables** (`sel:`) para accionar **sin re-snapshotear** (~18×
-> menos por acción, medido), con un gate de fingerprint para que saltarse el snapshot sea honesto.
+> **Honest framing.** The shared browser is wiring of existing parts (Chrome + CDP + Playwright MCP)
+> made ready for human-in-the-loop. And it's not virgin territory: by 2026 there's already
+> cross-session site memory (e.g. WebCoach), *semantic locators* by role+name as standard practice, and
+> human handoff for captcha/login (AuthRelay, Cloudflare Browser Run, BrowserAct). tandem's difference
+> isn't inventing a new piece: it's **where the whole thing lives** — local, on the **same real Chrome
+> you see and touch**, native to the terminal/Claude Code, with a **co-curated, human-readable** site
+> memory (`sites/<host>.md` in markdown you edit and commit, not an opaque store nor a cloud SaaS). On
+> top of that, `tandem:map` adds what is genuinely hard to find combined: structural-signal drift
+> detection + **executable locators** (`sel:`) to act **without re-snapshotting** (~18× less per
+> action, measured), with a fingerprint gate that makes skipping the snapshot honest.
 
-## Qué lo distingue: `tandem:map`
+## What sets it apart: `tandem:map`
 
-Operar un sitio conocido normalmente cuesta un `browser_snapshot` enorme cada vez, con refs
-efímeros que cambian entre páginas. `tandem:map` persiste un **perfil por sitio**
-(`~/.claude/tandem/sites/<host>.md`, fuera de git) con:
+Operating a known site normally costs a huge `browser_snapshot` every time, with ephemeral refs that
+change between pages. `tandem:map` persists a **per-site profile**
+(`~/.claude/tandem/sites/<host>.md`, outside git) with:
 
-- **Esqueleto de rutas** y **locators durables** anclados por rol+nombre del árbol de
-  accesibilidad (no por refs frágiles ni posición), multi-ancla.
-- **Recetas** de navegación y **gotchas**, cada línea con fecha y tag `[verificado]`/`[hipótesis]`.
-- **Auto-inyección**: al navegar a un host con perfil, un hook `PostToolUse` mete el perfil en el
-  contexto de Claude — una vez por sesión, silencio si no hay perfil.
-- **Drift por señal, no por fecha**: un fingerprint del *esqueleto* (no de los datos) detecta cuándo
-  la estructura de una página cambió, para revalidar solo lo que toca.
-- **Locators ejecutables (`sel:`)**: el perfil no solo *describe* los locators, los hace
-  *accionables*. El agente clica/escribe por selector durable (`role=button[name="…"]`) **sin
-  re-snapshotear** — un snapshot del árbol pesa ~18× el perfil entero. Saltárselo solo cuando el
-  fingerprint de la ruta da `match` (gate, no fe).
-- **Recetas ejecutables** (*procedural memory*): tareas repetidas y nombradas (`abrir-ticket-por-id
-  TCK-2026-123`) viven como recetas **parametrizadas** que se compilan a pasos observables
-  (`--step`) o a una función Playwright de 1 tool call (`--fast`). Co-curadas y legibles.
+- **Route skeleton** and **durable locators** anchored by role+name from the accessibility tree
+  (not by fragile refs nor position), multi-anchor.
+- **Recipes** for navigation and **gotchas**, each line dated and tagged `[verified]`/`[hypothesis]`.
+- **Auto-injection**: when you navigate to a host with a profile, a `PostToolUse` hook injects the
+  profile into Claude's context — once per session, silent if there's no profile.
+- **Drift by signal, not by date**: a fingerprint of the *skeleton* (not the data) detects when a
+  page's structure changed, so only what's affected gets re-validated.
+- **Executable locators (`sel:`)**: the profile doesn't just *describe* locators, it makes them
+  *actionable*. The agent clicks/types by durable selector (`role=button[name="…"]`) **without
+  re-snapshotting** — a tree snapshot weighs ~18× the whole profile. Skip it only when the route's
+  fingerprint returns `match` (a gate, not faith).
+- **Executable recipes** (*procedural memory*): repeated, named tasks (`open-ticket-by-id
+  TCK-2026-123`) live as **parameterized** recipes that compile to observable steps (`--step`) or to a
+  single-tool-call Playwright function (`--fast`). Co-curated and human-readable.
 
-El diseño y la investigación que lo respaldan: [`docs/01-memoria-de-navegacion.md`](docs/01-memoria-de-navegacion.md).
+The design and the research behind it: [`docs/01-navigation-memory.md`](docs/01-navigation-memory.md).
 
-## Arquitectura
+## Architecture
 
 ```
-Chrome (headed, perfil dedicado, --remote-debugging-port en 127.0.0.1)
-   ▲ ratón (humano)               ▲ CDP (Claude)
-   └── ventana visible            └── npx @playwright/mcp --cdp-endpoint → tools browser_*
+Chrome (headed, dedicated profile, --remote-debugging-port on 127.0.0.1)
+   ▲ mouse (human)                ▲ CDP (Claude)
+   └── visible window             └── npx @playwright/mcp --cdp-endpoint → browser_* tools
 ```
 
-- **`scripts/chrome-daemon.sh`** `{start|stop|restart|status}` — ciclo de vida de Chrome,
-  idempotente, basado en healthcheck CDP (la verdad del estado es el CDP, no el PID).
-- **`scripts/mcp-launch.sh`** — command del `.mcp.json`; solo lanza el Playwright MCP (lazy, no
-  arranca Chrome, así el `initialize` nunca se bloquea).
+- **`scripts/chrome-daemon.sh`** `{start|stop|restart|status}` — Chrome lifecycle, idempotent,
+  based on the CDP healthcheck (the source of truth for state is CDP, not the PID).
+- **`scripts/mcp-launch.sh`** — the `.mcp.json` command; only launches the Playwright MCP (lazy, it
+  doesn't start Chrome, so `initialize` never blocks).
 - **`scripts/map.sh`**, **`scripts/fingerprint.mjs`**, **`scripts/page-signals.mjs`**,
   **`scripts/selector.mjs`**, **`scripts/recipe.mjs`**, **`scripts/hook-inject-profile.mjs`** —
-  motor de `tandem:map` (store de perfiles, fingerprint de página, drift, selectores ejecutables,
-  recetas, auto-inyección). `page-signals.mjs print` emite el evaluate canónico; `selector.mjs`
-  genera los `sel:`; `recipe.mjs compile` compila las recetas a Playwright (`--fast`) o pasos (`--step`).
-- **`skills/`** — `tandem` (cómo operar el navegador compartido) y `map` (memoria de sitio).
-- **`agents/web-navigator.md`** — subagente para extracción pesada sin contaminar el contexto principal.
+  the `tandem:map` engine (profile store, page fingerprint, drift, executable selectors,
+  recipes, auto-injection). `page-signals.mjs print` emits the canonical evaluate; `selector.mjs`
+  generates the `sel:` values; `recipe.mjs compile` compiles recipes to Playwright (`--fast`) or steps (`--step`).
+- **`skills/`** — `tandem` (how to operate the shared browser) and `map` (site memory).
+- **`agents/web-navigator.md`** — subagent for heavy extraction without polluting the main context.
 
-## Instalación
+## Installation
 
-Vía el marketplace **quimera** de Claude Code:
+Via the **quimera** marketplace for Claude Code:
 
 ```
 /plugin marketplace add bgmacris/quimera
 /plugin install tandem@quimera
 ```
 
-Requiere Google Chrome (o Chromium) y Node 18+ (`npx` lanza el Playwright MCP).
+Requires Google Chrome (or Chromium) and Node 18+ (`npx` launches the Playwright MCP).
 
-## Uso
+## Usage
 
-1. `/tandem:browser-start` — abre la ventana compartida.
-2. Pide a Claude que navegue/analice. Si un muro requiere humano, lo pasas tú con el ratón y Claude
-   sigue desde el DOM ya renderizado.
-3. La primera vez que navegas a un sitio, si hay perfil de `tandem:map`, se carga solo. Para crear
-   uno: pídele a Claude un recon (explora → te propone un borrador → confirmas → se guarda).
+1. `/tandem:browser-start` — opens the shared window.
+2. Ask Claude to navigate/analyze. If a wall requires a human, you clear it with the mouse and Claude
+   continues from the already-rendered DOM.
+3. The first time you navigate to a site, if there's a `tandem:map` profile, it loads on its own. To
+   create one: ask Claude for a recon (it explores → proposes a draft → you confirm → it's saved).
 4. `/tandem:browser-status` · `/tandem:browser-stop`.
 
-## Configuración (variables de entorno)
+## Configuration (environment variables)
 
-| Variable | Por defecto | Para qué |
+| Variable | Default | Purpose |
 |---|---|---|
-| `TANDEM_CHROME_BIN` | autodetección (macOS/Linux) | ruta al binario de Chrome/Chromium |
-| `TANDEM_CDP_PORT`   | `9222` | puerto del CDP en loopback |
-| `TANDEM_DATA_DIR`   | `~/.claude/tandem` | perfil de Chrome, logs y perfiles de sitio |
+| `TANDEM_CHROME_BIN` | autodetect (macOS/Linux) | path to the Chrome/Chromium binary |
+| `TANDEM_CDP_PORT`   | `9222` | CDP port on loopback |
+| `TANDEM_DATA_DIR`   | `~/.claude/tandem` | Chrome profile, logs, and site profiles |
 
-## Seguridad
+## Security
 
-- Perfil **dedicado** en `${TANDEM_DATA_DIR}/chrome-profile` — nunca el Chrome personal.
-- CDP en **loopback** (`127.0.0.1`), sin auth: cualquier proceso local controla el navegador
-  mientras viva → vida corta, cierre con `/tandem:browser-stop` y en `SessionEnd`.
-- El perfil acumula cookies/tokens de logins: trátalo como secreto, fuera de git y backups.
-- Los perfiles de `tandem:map` guardan **estructura** (rutas, locators), nunca datos sensibles, y
-  viven fuera de git por defecto.
-- `browser_evaluate`/`browser_run_code_unsafe` ejecutan JS arbitrario en la página: para análisis,
-  no para acciones destructivas ni exfiltración.
+- **Dedicated** profile at `${TANDEM_DATA_DIR}/chrome-profile` — never your personal Chrome.
+- CDP on **loopback** (`127.0.0.1`), no auth: any local process controls the browser while it's
+  alive → keep it short-lived, close with `/tandem:browser-stop` and on `SessionEnd`.
+- The profile accumulates cookies/tokens from logins: treat it as a secret, outside git and backups.
+- `tandem:map` profiles store **structure** (routes, locators), never sensitive data, and live
+  outside git by default.
+- `browser_evaluate`/`browser_run_code_unsafe` run arbitrary JS on the page: for analysis,
+  not for destructive actions nor exfiltration.
 
-## Desarrollo
+## Development
 
-Antes de publicar o tras tocar el shell/JS, dos checks (ninguno arranca Chrome):
+Before publishing or after touching the shell/JS, two checks (neither starts Chrome):
 
 ```
-tests/smoke.sh                                   # motor de tandem:map + guardias de regresión
-shellcheck -x -S style scripts/*.sh bin/* tests/*.sh   # lint del shell (brew install shellcheck)
+tests/smoke.sh                                   # tandem:map engine + regression guards
+shellcheck -x -S style scripts/*.sh bin/* tests/*.sh   # shell lint (brew install shellcheck)
 ```
 
-`smoke.sh` aísla el estado en un `TANDEM_DATA_DIR` temporal y verifica: parseo de todos los
-scripts, bit `+x` de los invocables, `map.sh` (incluido `index` con JSON válido aunque el
-frontmatter lleve comillas), `fingerprint` (capture/check/drift y **rechazo de host con
-traversal**), y el hook de inyección (silencio sin perfil · una-vez-por-sesión · cleanup).
-El arranque/parada real de Chrome necesita display y se prueba a mano: `/tandem:browser-start`
+`smoke.sh` isolates state in a temporary `TANDEM_DATA_DIR` and verifies: parsing of all
+scripts, the `+x` bit on the invocables, `map.sh` (including `index` with valid JSON even when the
+frontmatter has quotes), `fingerprint` (capture/check/drift and **rejection of a host with
+traversal**), and the injection hook (silent without a profile · once-per-session · cleanup).
+The real start/stop of Chrome needs a display and is tested by hand: `/tandem:browser-start`
 → `/tandem:browser-status` → `/tandem:browser-stop`.
 
-## Requisitos y alcance
+## Requirements and scope
 
-- **macOS**: soportado y probado.
-- **Linux**: autodetección de Chromium implementada (usa `lsof` o `ss`); **no probado en CI** aún.
-- **Windows**: no soportado (el ciclo de vida es bash/POSIX).
-- Google Chrome o Chromium · Node 18+ · Claude Code v2.1.120+.
+- **macOS**: supported and tested.
+- **Linux**: Chromium autodetection implemented (uses `lsof` or `ss`); **not tested in CI** yet.
+- **Windows**: not supported (the lifecycle is bash/POSIX).
+- Google Chrome or Chromium · Node 18+ · Claude Code v2.1.120+.
