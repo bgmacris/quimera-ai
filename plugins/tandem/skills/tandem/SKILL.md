@@ -52,13 +52,17 @@ There are two ways to navigate; choose by the task, not one by default:
 - Pentest work: only within authorized scope; the shared browser is no excuse to go
   out of scope.
 
-## If Chrome dies mid-session
-- The tools fail with a connection error (`ECONNREFUSED` if nothing is on the port, or
-  "Target page/context/browser has been closed" if the MCP held a handle to the previous Chrome).
-  The MCP server stays alive.
-- Ask for `/tandem:browser-start` to relaunch Chrome. Then **retry the tool**: the FIRST
-  use after a new Chrome may fail with "page closed" (dead handle); the SECOND reconnects
-  (verified). No need to restart the MCP or the session, just retry once.
+## After a Chrome (re)start — the first tool may reconnect
+- The MCP server is PERSISTENT (one per session); Chrome is EPHEMERAL (`browser-start`/`-stop`).
+  When Chrome is killed and a new one starts on the same port — a **voluntary `stop`→`start`** OR
+  Chrome dying mid-session — the MCP still holds a `connectOverCDP` handle to the OLD process and
+  doesn't notice until a tool fails.
+- Symptom: the FIRST `browser_*` after a new Chrome fails with "Target page/context/browser has been
+  closed" (dead handle); that very failure triggers the reconnect, so the SECOND tool works
+  `[verified 2026-06-29]`. (`ECONNREFUSED 127.0.0.1:9222` is different: no Chrome at all → `/tandem:browser-start`.)
+- Rule: do NOT restart the MCP or the session. Retry once — or fire a cheap `browser_tabs` as a
+  WARMUP right after `browser-start` — so the human never sees the error. Root cause is in
+  @playwright/mcp's CDP reconnect (a changed-process endpoint), not in tandem's scripts.
 
 ## Site memory (`tandem:map` skill)
 The section below is CROSS-site technique (applies to any website). The knowledge

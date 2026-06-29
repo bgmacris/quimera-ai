@@ -140,6 +140,15 @@ continues from the already-rendered page — that is the human-in-the-loop hando
 - `browser_evaluate`/`browser_run_code_unsafe` run arbitrary JS on the page: for analysis,
   not for destructive actions nor exfiltration.
 
+## Troubleshooting
+
+- **First browser command after a (re)start says `Target page … has been closed`.** The MCP server
+  is persistent (one per session); Chrome is ephemeral (`browser-start`/`-stop`). After a
+  `stop`→`start`, the MCP reconnects on the first tool call — so that first call fails and the
+  second works. Retry once; it is not a fault in your install (root cause is in @playwright/mcp's
+  CDP reconnect). A first *virgin* start (no prior Chrome) is not affected.
+- **`ECONNREFUSED 127.0.0.1:9222`** means no Chrome is running → `/tandem:browser-start`.
+
 ## Development
 
 Before publishing or after touching the shell/JS, two checks (neither starts Chrome):
