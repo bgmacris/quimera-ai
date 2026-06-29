@@ -180,6 +180,15 @@ guardado. Implementado: `scripts/fingerprint.mjs` + evaluate canónico (en `skil
 - Verificado end-to-end 2026-06-22: mecánica del helper (capture/match/drift/new) en sandbox +
   captura real autenticada de dos rutas distintas, ambas capture→match. Sidecar limpio de datos
   (la normalización a `#` y el filtro de filas lo garantizan).
+- `[límite conocido, n=1 — 2026-06-29]` **Falso drift cuando un heading es CONTENIDO, no sección.**
+  El diseño asume h1/h2/h3 = esqueleto (cabeceras). En rutas-LISTA donde cada item lleva su título
+  en `h3` (catálogos, resultados de búsqueda), páginas de la MISMA plantilla traen h3 distintos →
+  `check` reporta drift aunque la plantilla sea idéntica. Medido en books.toscrape (Fiction p1 vs
+  p2: 20 `h3` added/removed, 7 señales estables iguales → casarían sin el texto de los h3). La
+  normalización a `#` no ayuda: es texto, no dígitos. **Condicional al sitio** (no afecta a
+  dashboards/forms), por eso NO se rediseña la fuente única con un solo caso — registrado para
+  revisar si reaparece en un sitio con stake real. Mitigación hoy: en la ruta-lista, saltar el gate
+  y usar señal directa (`.pager`, conteo de items).
 
 ## v2 — navegación frugal por `sel:` (HECHO 2026-06-22)
 

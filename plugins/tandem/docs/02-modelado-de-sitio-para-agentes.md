@@ -133,8 +133,23 @@ WebChallenger —perdería—; **ocupa el hueco que la autonomía deja vacío po
 - `[verificado en sesión]` El gap —intención humana persistida en memoria de sitio compartida— **no
   lo cubre el SOTA de jun 2026** (verificado contra WebChallenger, CowPilot, WebNavigator, ALLOY).
   Matiz honesto: es *ausencia hasta donde alcanza esta búsqueda*, no un absoluto.
-- `[hipótesis]` El **formato magro de tres capas** — sin probar. **Siguiente paso:** recon real de
-  `books.toscrape` reescrito con A+B+C, comprobar si el flujo emerge **sin engordar** (o muere ahí).
+- `[parcialmente probado, 2026-06-29]` El **formato magro de tres capas**. Recon real de
+  `books.toscrape` HECHO (tarea-ancla: extracción por categorías, en vivo por el navegador de tandem).
+  Resultado:
+  - **Capa A**: validada y magra — el perfil absorbió una tarea entera (categorías, paginación
+    interna, partición 50 hijas = 1000, trampa de duplicación raíz/general) en ~6 líneas, cada una
+    un hecho verificado. No engordó.
+  - **Capa B**: **nula** — el sitio no declara semántica (cero JSON-LD/microdata/RDFa/OG, verificado).
+    Confirma que B es **condicional, no universal**: regalo cuando existe, ausente en HTML clásico
+    (el terreno típico de tandem).
+  - **Capa C**: **no capturable aquí** — es un sandbox sin intención real ("práctica pura", dixit
+    the author). Inventarla sería el sesgo de autoría que el estudio denuncia, ahora por falta de stake.
+  - **Conclusión honesta:** en un sandbox, A+B+C **se reduce a A**. La hipótesis de las tres capas
+    sólo se valida en un sitio **con semántica declarada (B)** y una **tarea con stake real (C)** →
+    terreno propio (a production site), no juguete. **Siguiente paso real:** repetir el
+    experimento ahí.
+  - **Hallazgo colateral** (independiente de A/B/C): el gate `fingerprint` da **falso drift en
+    rutas-lista** donde `h3`=título de item. Registrado en `docs/01` §T015 `[n=1]`.
 - `[ruta cerrada]` "Knowledge Topology" como marco — humo (no definido en su fuente).
 - `[abierto]` Pata de **memoria/persistencia** (WebCoach con su *WebCondenser* traces→resumen; M²;
   mem0) — no profundizada; podría dar técnica de condensación, pero no es el corazón del hueco.
