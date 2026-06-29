@@ -45,11 +45,11 @@ The profiles live **outside git**, in tandem's fixed data dir
 
 ```
 ~/.claude/tandem/
-├── chrome-profile/         (perfil dedicado de Chrome)
+├── chrome-profile/         (dedicated Chrome profile)
 ├── cdp-port, logs/ …
-└── sites/                  (perfiles de navegación)
-    ├── index.json          caché DERIVADA (regenerable con `map.sh index`), no fuente de verdad
-    └── app.example.com.md  perfil legible por humano (FUENTE DE VERDAD)
+└── sites/                  (navigation profiles)
+    ├── index.json          DERIVED cache (regenerable with `map.sh index`), not source of truth
+    └── app.example.com.md  human-readable profile (SOURCE OF TRUTH)
 ```
 
 ---
@@ -65,32 +65,32 @@ Illustrative (fictional) example:
 site: app.example.com
 created: 2026-06-22
 updated: 2026-06-22
-auth: { muro: "login form", lo_pasa: humano }
+auth: { wall: "login form", bypassed_by: human }
 ---
-# app.example.com — perfil de navegación
+# app.example.com — navigation profile
 
-## Rutas (esqueleto)
-- /dashboard ............ inicio
-- /tickets .............. lista de tickets (tabla, paginada, filtros por estado)
-- /tickets?search=X ..... búsqueda (admite &ordering=-created_at)
-- /tickets/{id} ......... detalle (id numérico de URL)
-- /projects ............ proyectos (master-detail SPA; selección client-side, la URL NO cambia)
+## Routes (skeleton)
+- /dashboard ............ home
+- /tickets .............. ticket list (table, paginated, filters by status)
+- /tickets?search=X ..... search (supports &ordering=-created_at)
+- /tickets/{id} ......... detail (numeric URL id)
+- /projects ............ projects (master-detail SPA; client-side selection, URL does NOT change)
 
-## Locators (multi-ancla: primario + corroborantes)     | verificado
-- busqueda-tickets:
-    primario:    textbox "Buscar tickets..."
-    corrobora:   en la barra de filtros; botón "Columnas" al lado     | 2026-06-22
-- fila-de-ticket:  role=row, name empieza por el nº de ticket          | 2026-06-22
-- filtros-estado:  botones "Todos | Abierto | …", cada uno con badge de conteo | 2026-06-22
+## Locators (multi-anchor: primary + corroborating)     | verified
+- ticket-search:
+    primary:     textbox "Search tickets..."
+    corroborate: in the filter bar; "Columns" button next to it     | 2026-06-22
+- ticket-row:  role=row, name starts with the ticket number          | 2026-06-22
+- status-filters:  buttons "All | Open | …", each with a count badge | 2026-06-22
 
-## Recetas (unidades nombradas, componibles)
-- abrir-ticket-por-numero: escribir el nº en busqueda-tickets → click en la fila →
-  la URL pasa a /tickets/{id}.
+## Recipes (named, composable units)
+- open-ticket-by-number: type number in ticket-search → click the row →
+  URL changes to /tickets/{id}.
 
-## Gotchas (reglas inducidas)
-- [verificado 2026-06-22] El nº visible (TCK-123) ≠ el id de URL (numérico interno).
-- [verificado 2026-06-22] El snapshot del detalle es GRANDE → vuélcalo a archivo, no al contexto.
-- [hipótesis] La paginación es server-side (?ordering=, ?search= en URL) → recorrible por URL.
+## Gotchas (learned rules)
+- [verified 2026-06-22] The visible number (TCK-123) ≠ the URL id (internal numeric id).
+- [verified 2026-06-22] The detail snapshot is LARGE → dump it to a file, not into context.
+- [hypothesis] Pagination is server-side (?ordering=, ?search= in URL) → navigable by URL.
 ```
 
 ---
