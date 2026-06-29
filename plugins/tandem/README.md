@@ -1,6 +1,6 @@
 # tandem
 
-[![CI](https://github.com/bgmacris/quimera/actions/workflows/ci.yml/badge.svg)](https://github.com/bgmacris/quimera/actions/workflows/ci.yml)
+[![CI](https://github.com/bgmacris/quimera-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/bgmacris/quimera-ai/actions/workflows/ci.yml)
 
 A Chrome browser **shared in real time** between you and Claude Code that **learns how each site
 is navigated**. One window: you drive it with the mouse (and clear captchas, anti-bot checkpoints,
@@ -83,11 +83,11 @@ Chrome (headed, dedicated profile, --remote-debugging-port on 127.0.0.1)
 
 ## Installation
 
-Via the **quimera** marketplace for Claude Code:
+Via the **quimera-ai** marketplace for Claude Code:
 
 ```
-/plugin marketplace add bgmacris/quimera
-/plugin install tandem@quimera
+/plugin marketplace add bgmacris/quimera-ai
+/plugin install tandem@quimera-ai
 ```
 
 Requires Google Chrome (or Chromium) and Node 22+ (native `WebSocket`/`fetch` used by the CDP

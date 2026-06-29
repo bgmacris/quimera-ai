@@ -1,6 +1,6 @@
-# quimera
+# quimera-ai
 
-[![CI](https://github.com/bgmacris/quimera/actions/workflows/ci.yml/badge.svg)](https://github.com/bgmacris/quimera/actions/workflows/ci.yml)
+[![CI](https://github.com/bgmacris/quimera-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/bgmacris/quimera-ai/actions/workflows/ci.yml)
 
 A [Claude Code](https://code.claude.com) plugin marketplace by [bgmacris](https://github.com/bgmacris).
 
@@ -13,8 +13,8 @@ with `wc -c`). The human-in-the-loop handoff is the point: the walls you clear, 
 ## Install
 
 ```
-/plugin marketplace add bgmacris/quimera
-/plugin install tandem@quimera
+/plugin marketplace add bgmacris/quimera-ai
+/plugin install tandem@quimera-ai
 ```
 
 ## Plugins
