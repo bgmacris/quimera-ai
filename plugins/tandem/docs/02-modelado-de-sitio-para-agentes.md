@@ -14,6 +14,8 @@
 > sin re-verificar uno a uno: coinciden con conocimiento textbook establecido. Un claim que
 > sonaba potente y resultó **humo** se registra como ruta cerrada (Knowledge Topology, §1).
 > Regla: ningún claim recién aparecido toca el diseño sin pasar por su fuente.
+> **Erratas detectadas al re-verificar puntos sueltos del anexo: ver §«Erratas verificadas del
+> anexo» al final** (SimHash mal atribuido, quad count 2022/2023, universos Schema.org).
 
 ---
 
@@ -137,6 +139,54 @@ WebChallenger —perdería—; **ocupa el hueco que la autonomía deja vacío po
 - `[abierto]` Pata de **memoria/persistencia** (WebCoach con su *WebCondenser* traces→resumen; M²;
   mem0) — no profundizada; podría dar técnica de condensación, pero no es el corazón del hueco.
 - `[abierto]` Capa B: decidir si el JSON-LD se guarda en el perfil o se lee on-demand al navegar.
+- `[abierto: verificar en cuerpo del PDF]` Tres atribuciones a WebChallenger/WebNavigator que el
+  abstract **no respalda al pie de la letra** y que sostienen el argumento central: (a) que el
+  componente de memoria de sitio de WebChallenger se llame *"WebsiteMem"* (el abstract sólo nombra
+  *PageMem*); (b) que esa memoria sea *"fully deterministic / requires no LLM guidance"* literalmente
+  (en el abstract sólo *PageMem* se llama "deterministic"); (c) que WebNavigator use *"BFS"* para
+  construir el grafo (el abstract dice "zero-token cost heuristic exploration offline", sin nombrar
+  BFS). Plausibles según la descripción de alto nivel; cerrar leyendo el cuerpo antes de construir
+  encima.
+
+---
+
+## Erratas verificadas del anexo
+
+El anexo `02-anexo-fondo-clasico-perplexity.md` se conserva **íntegro** (es la copia fiel del
+deep-research, sin retocar). Estas correcciones se registran aquí, no en él. Verificadas contra
+**fuente primaria** el 2026-06-29 (no resúmenes de buscador).
+
+- **[REFUTADA] "Manber y Charikar (2002) introdujeron el SimHash".** Confabulación doble: (1) Charikar
+  2002 ("Similarity Estimation Techniques from Rounding Algorithms", STOC 2002) es **autor único** —
+  Manber no figura ([DBLP](https://dblp.org/rec/conf/stoc/Charikar02.html) + PDF de las actas). (2) El
+  término *"SimHash"* **no aparece** en ese paper (0 ocurrencias; describe LSH por hiperplanos
+  aleatorios); el nombre lo asienta **Manku, Jain & Das Sarma (2007, WWW)**, que lo llaman *"Charikar's
+  simhash"* ([PDF Google](https://research.google.com/pubs/archive/33026.pdf)). Udi Manber es real pero
+  de otro trabajo independiente y 8 años anterior: *sif*, "Finding Similar Files in a Large File
+  System", USENIX 1994 — sin coautoría con Charikar. **Corrección:** el algoritmo es de Charikar
+  (2002); la etiqueta "simhash" es de Manku et al. (2007); Manber (1994) es una línea aparte.
+
+- **[ERROR FACTUAL] "El release de octubre 2023 contiene 86 mil millones de quads RDF".** Son
+  **97,7 mil millones** ([WebDataCommons 2023-12 stats](https://webdatacommons.org/structureddata/2023-12/stats/stats.html)).
+  Los 86 mil millones son del release de **2022**: el informe cruzó el conteo de quads de 2022 con las
+  estadísticas de 2023. El resto de cifras de esa frase son **correctas** (3,35 mil millones de
+  páginas; JSON-LD 9,5M sitios, Microdata 7,4M, RDFa 0,5M).
+
+- **[MATIZ, no error] Las dos cifras de Schema.org no miden el mismo universo.** "45M dominios / 450
+  mil millones de objetos" **sí es cita oficial** (homepage de [schema.org](https://schema.org), a
+  2024) — autodeclarada, redonda (ratio 10:1) y sin metodología publicada, pero no inventada por el
+  informe. Mide el índice **completo de Google**. La cifra de WebDataCommons (14,6M dominios / 97,7B
+  quads, [anuncio W3C 2024-02-06](https://lists.w3.org/Archives/Public/public-schemaorg/2024Feb/0001.html))
+  mide **Common Crawl** (muestra parcial). El anexo las yuxtapone como comparables; son metodologías
+  distintas (de ahí el ~3× de diferencia). Tratar 45M/450B como "cifra oficial sin metodología
+  verificable", no como dato auditado.
+
+- **[VERIFICADO OK] Las fuentes recientes existen, ninguna confabulada.** WebChallenger
+  ([2606.10423](https://arxiv.org/abs/2606.10423)), WebNavigator ([2603.20366](https://arxiv.org/abs/2603.20366)),
+  R2D2 (ACL 2025), CowPilot ([2501.16609](https://arxiv.org/abs/2501.16609)), ALLOY
+  ([2510.10049](https://arxiv.org/abs/2510.10049)) resuelven a papers reales (API de arXiv / ACL
+  Anthology). WAI-ARIA 1.3 existe como **W3C Working Draft del 04-jun-2026** (no Recommendation, como
+  podría leerse del anexo). Caveat de atribuciones de detalle: ver la ruta `[abierto]` arriba.
 
 ---
 
