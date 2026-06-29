@@ -1,5 +1,7 @@
 # tandem
 
+[![CI](https://github.com/bgmacris/quimera/actions/workflows/ci.yml/badge.svg)](https://github.com/bgmacris/quimera/actions/workflows/ci.yml)
+
 A Chrome browser **shared in real time** between you and Claude Code that **learns how each site
 is navigated**. One window: you drive it with the mouse (and clear captchas, anti-bot checkpoints,
 2FA logins); Claude operates over CDP via the [Playwright MCP](https://github.com/microsoft/playwright-mcp)
@@ -70,7 +72,8 @@ Via the **quimera** marketplace for Claude Code:
 /plugin install tandem@quimera
 ```
 
-Requires Google Chrome (or Chromium) and Node 18+ (`npx` launches the Playwright MCP).
+Requires Google Chrome (or Chromium) and Node 22+ (native `WebSocket`/`fetch` used by the CDP
+commands `cookies`/`intercept`/`pdf`, no external deps; `npx` launches the Playwright MCP).
 
 ## Usage
 
@@ -109,6 +112,9 @@ tests/smoke.sh                                   # tandem:map engine + regressio
 shellcheck -x -S style scripts/*.sh bin/* tests/*.sh   # shell lint (brew install shellcheck)
 ```
 
+CI (`.github/workflows/ci.yml`) runs both on every push/PR — `smoke.sh` on `ubuntu-latest` and
+`macos-latest`, `shellcheck` on `ubuntu-latest`.
+
 `smoke.sh` isolates state in a temporary `TANDEM_DATA_DIR` and verifies: parsing of all
 scripts, the `+x` bit on the invocables, `map.sh` (including `index` with valid JSON even when the
 frontmatter has quotes), `fingerprint` (capture/check/drift and **rejection of a host with
@@ -118,7 +124,10 @@ The real start/stop of Chrome needs a display and is tested by hand: `/tandem:br
 
 ## Requirements and scope
 
-- **macOS**: supported and tested.
-- **Linux**: Chromium autodetection implemented (uses `lsof` or `ss`); **not tested in CI** yet.
-- **Windows**: not supported (the lifecycle is bash/POSIX).
-- Google Chrome or Chromium · Node 18+ · Claude Code v2.1.120+.
+- **macOS**: supported and tested (CI + manual).
+- **Linux**: supported. The `tandem:map` engine, the parsing of every script, and `shellcheck`
+  run in CI on `ubuntu-latest`; Chromium autodetection uses `lsof` (fallback `ss`). The Chrome
+  start/stop lifecycle needs a display and is verified by hand.
+- **Windows**: native is **not supported** (the lifecycle is bash/POSIX). Run it under **WSL2**,
+  where it behaves as Linux.
+- Google Chrome or Chromium · Node 22+ · Claude Code v2.1.120+.
