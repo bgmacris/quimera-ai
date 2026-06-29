@@ -1,6 +1,6 @@
 ---
 name: web-navigator
-description: Navigation subagent over tandem's shared Chrome. Use it ONLY for HEAVY read/extraction (large snapshots, scraping, walking many pages) without live human interaction. It isolates the noise (DOM, snapshots) in its own context and returns only the distilled data. Do NOT use it when there are walls the human must clear (captcha/checkpoint/login) nor for step-by-step interactive navigation: that belongs live in the main context.
+description: "Navigation subagent over tandem's shared Chrome. Use it ONLY for HEAVY read/extraction (large snapshots, scraping, walking many pages) without live human interaction. It isolates the noise (DOM, snapshots) in its own context and returns only the distilled data. Do NOT use it when there are walls the human must clear (captcha/checkpoint/login) nor for step-by-step interactive navigation: that belongs live in the main context."
 model: sonnet
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: map
-description: Per-site navigation memory for tandem's shared browser. Profiles that describe a site's skeleton (routes), its durable locators, navigation recipes, and gotchas, so you navigate KNOWING instead of re-deriving the DOM each time. Use it when you start operating a site (check whether a profile already exists), when you finish a recon worth saving, or when a saved locator fails (re-record). ASSISTED recon: you draft, the human confirms, it's saved.
+description: "Per-site navigation memory for tandem's shared browser. Profiles that describe a site's skeleton (routes), its durable locators, navigation recipes, and gotchas, so you navigate KNOWING instead of re-deriving the DOM each time. Use it when you start operating a site (check whether a profile already exists), when you finish a recon worth saving, or when a saved locator fails (re-record). ASSISTED recon: you draft, the human confirms, it's saved."
 ---
 
 # tandem:map — per-site navigation memory
