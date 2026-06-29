@@ -4,5 +4,7 @@
   "license": "MIT",
   "description": "A shared Chrome browser (human + Claude, CDP + Playwright MCP) that learns how each site is navigated: the human drives with the mouse and clears captchas/logins, Claude operates over CDP, and tandem:map persists per-site navigation memory (durable locators, drift, auto-injection).",
   "author": { "name": "bgmacris" },
+  "homepage": "https://github.com/bgmacris/quimera-ai/tree/main/plugins/tandem",
+  "repository": "https://github.com/bgmacris/quimera-ai",
   "keywords": ["browser", "cdp", "playwright", "mcp", "automation", "site-memory", "recon", "navigation"]
 }

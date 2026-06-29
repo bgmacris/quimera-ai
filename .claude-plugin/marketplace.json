@@ -1,6 +1,7 @@
 {
   "name": "quimera-ai",
   "owner": { "name": "bgmacris" },
+  "description": "Claude Code plugins by bgmacris. Currently: tandem — a real-time shared Chrome (human + Claude, CDP + Playwright MCP) with per-site navigation memory.",
   "plugins": [
     {
       "name": "tandem",
