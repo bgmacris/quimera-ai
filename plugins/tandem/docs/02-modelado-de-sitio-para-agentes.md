@@ -139,14 +139,22 @@ WebChallenger —perdería—; **ocupa el hueco que la autonomía deja vacío po
 - `[abierto]` Pata de **memoria/persistencia** (WebCoach con su *WebCondenser* traces→resumen; M²;
   mem0) — no profundizada; podría dar técnica de condensación, pero no es el corazón del hueco.
 - `[abierto]` Capa B: decidir si el JSON-LD se guarda en el perfil o se lee on-demand al navegar.
-- `[abierto: verificar en cuerpo del PDF]` Tres atribuciones a WebChallenger/WebNavigator que el
-  abstract **no respalda al pie de la letra** y que sostienen el argumento central: (a) que el
-  componente de memoria de sitio de WebChallenger se llame *"WebsiteMem"* (el abstract sólo nombra
-  *PageMem*); (b) que esa memoria sea *"fully deterministic / requires no LLM guidance"* literalmente
-  (en el abstract sólo *PageMem* se llama "deterministic"); (c) que WebNavigator use *"BFS"* para
-  construir el grafo (el abstract dice "zero-token cost heuristic exploration offline", sin nombrar
-  BFS). Plausibles según la descripción de alto nivel; cerrar leyendo el cuerpo antes de construir
-  encima.
+- `[CERRADO: verificado en cuerpo del PDF, 2026-06-29]` Las tres atribuciones que sostienen el
+  argumento central, **confirmadas con cita literal del cuerpo** (no del abstract):
+  - **(a) WebsiteMem existe** — nombre exacto del componente de memoria de SITIO de WebChallenger
+    (distinto de PageMem, que es por página). §2.2: *"A WebsiteMem ℳw contains all PageMems and
+    elements encountered on a website w."*
+  - **(b) "fully deterministic / no LLM guidance"** aplica a la construcción de la WebsiteMem, no
+    sólo a PageMem. §2.3: *"Exploration is fully deterministic: it requires no LLM guidance, task
+    demonstrations, or external resources."*
+  - **(c) WebNavigator usa BFS** — concretamente *"Adaptive BFS"*. §3.1: *"a heuristic
+    auto-exploration engine based on breadth-first search (BFS)"*.
+  - **Matiz que refuerza el modelo de tres capas:** en WebChallenger el *mapa estructural* es
+    determinista y sin LLM (Appendix A.2 precisa que el recorrido es *depth-first*, no BFS — eso es
+    WebNavigator), pero el *enriquecimiento semántico* (resúmenes de sección) se rellena con LLM en
+    inferencia y se **cachea** dentro de la WebsiteMem. Es decir, el propio SOTA ya separa
+    estructura-barata-determinista (≈ capa A) de semántica-cara-con-LLM (≈ parte de B) — exactamente
+    el corte que propone este estudio. `[observación verificada, no decisión de diseño]`
 
 ---
 
