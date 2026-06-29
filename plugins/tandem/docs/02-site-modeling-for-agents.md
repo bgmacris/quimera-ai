@@ -113,7 +113,7 @@ Each layer has **a different owner** and a different degree of maturity:
   structural fingerprint already exists.
 - **Layer B — declared semantics.** *Owner: the site.* Extract the JSON-LD/Schema.org from the pages.
   Free, typed, frugal. **New in tandem.** Reduces what the human has to contribute.
-- **Layer C — human intent.** *Owner: the human (the author).* What matters, what is a trap, the flow that
+- **Layer C — human intent.** *Owner: the human.* What matters, what is a trap, the flow that
   makes sense. **It is in no DOM and in no `<script>`.** It is captured by demonstration (à la ALLOY)
   + interview —because the human is in the loop— and is persisted frugally: one intent phrase per
   route, with its own channel (today it only exists diffusely as gotchas).
@@ -142,12 +142,11 @@ WebChallenger —it would lose—; **it occupies the gap that autonomy leaves em
   - **Layer B**: **null** — the site declares no semantics (zero JSON-LD/microdata/RDFa/OG, verified).
     Confirms that B is **conditional, not universal**: a gift when it exists, absent in classic HTML
     (tandem's typical terrain).
-  - **Layer C**: **not capturable here** — it is a sandbox with no real intent ("pure practice", dixit
-    the author). Inventing it would be the authorship bias the study denounces, now from lack of stake.
+  - **Layer C**: **not capturable here** — it is a sandbox with no real intent ("pure practice").
+    Inventing it would be the authorship bias the study denounces, now from lack of stake.
   - **Honest conclusion:** in a sandbox, A+B+C **reduces to A**. The three-layer hypothesis
     is validated only on a site **with declared semantics (B)** and a **task with real stake (C)** →
-    home terrain (a production site), not a toy. **Real next step:** repeat the
-    experiment there.
+    real terrain, not a toy. **Real next step:** repeat the experiment on a production site.
   - **Collateral finding** (independent of A/B/C): the `fingerprint` gate gives **false drift on
     list-routes** where `h3`=item title. Recorded in `docs/01` §T015 `[n=1]`.
 - `[closed path]` "Knowledge Topology" as a framework — smoke (not defined in its source).

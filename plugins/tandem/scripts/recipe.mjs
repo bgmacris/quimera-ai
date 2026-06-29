@@ -61,6 +61,10 @@ if (isCli) {
       const { locators, recipes } = loadProfile(host);
       const recipe = recipes.get(recipeName);
       if (!recipe) { process.stderr.write(`recipe: recipe '${recipeName}' not found in ${host}\n`); process.exit(1); }
+      if (rest.length < recipe.params.length) {
+        process.stderr.write(`recipe: compile requires ${recipe.params.length} arg(s): ${recipe.params.join(', ')}\n`);
+        process.exit(1);
+      }
       const args = Object.fromEntries(recipe.params.map((p, i) => [p, rest[i]]));
       const v = validate(recipe, locators);
       if (!v.ok) { process.stderr.write(`recipe: invalid recipe:\n${v.errors.map((e) => `  ${e}`).join('\n')}\n`); process.exit(1); }

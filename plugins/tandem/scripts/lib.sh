@@ -134,8 +134,9 @@ start_chrome() {
 
 stop_chrome() {
   local stopped=1
-  if saved_pid_alive; then
-    kill "$(cat "$PIDFILE")" 2>/dev/null && stopped=0
+  local pid; pid="$(cat "$PIDFILE" 2>/dev/null)"
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    kill "$pid" 2>/dev/null && stopped=0
   fi
   # Fallback: kill by user-data-dir (does not touch the personal Chrome: different profile).
   if pgrep -f "user-data-dir=$PROFILE" >/dev/null 2>&1; then

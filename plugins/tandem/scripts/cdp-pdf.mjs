@@ -137,14 +137,17 @@ try {
     width: w, height: h, deviceScaleFactor: 1, mobile: false,
   });
 
-  const { data } = await cdpCall(ws, 'Page.captureScreenshot', {
-    format: 'png',
-    captureBeyondViewport: true,
-    clip: { x: 0, y: 0, width: w, height: h, scale: 1 },
-  });
-
-  // Restore viewport
-  await cdpCall(ws, 'Emulation.clearDeviceMetricsOverride');
+  let data;
+  try {
+    ({ data } = await cdpCall(ws, 'Page.captureScreenshot', {
+      format: 'png',
+      captureBeyondViewport: true,
+      clip: { x: 0, y: 0, width: w, height: h, scale: 1 },
+    }));
+  } finally {
+    // Restore viewport whether or not captureScreenshot succeeded.
+    await cdpCall(ws, 'Emulation.clearDeviceMetricsOverride').catch(() => {});
+  }
 
   const outPath = resolvePath('png');
   writeFileSync(outPath, Buffer.from(data, 'base64'));

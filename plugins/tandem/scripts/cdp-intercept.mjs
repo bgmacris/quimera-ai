@@ -96,9 +96,8 @@ if (cmd === 'count') {
   let n = 0;
   const rl = createInterface({ input: createReadStream(p), crlfDelay: Infinity });
   rl.on('line', (l) => { if (l.trim()) n++; });
-  rl.on('close', () => { process.stdout.write(`${n}\n`); });
+  rl.on('close', () => { process.stdout.write(`${n}\n`); process.exit(0); });
   rl.on('error', () => process.exit(1));
-  process.exit(0);  // readline close fires async
 }
 
 // ==================================================================================

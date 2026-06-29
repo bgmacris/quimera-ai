@@ -37,16 +37,19 @@ function readStdin() {
 function silent() { process.exit(0); }
 
 const raw = readStdin();
-let input;
-try { input = JSON.parse(raw); } catch { silent(); }
+let input = null;
+try { input = JSON.parse(raw); } catch { /* handled below per mode */ }
 
 const sessionId = ((input && input.session_id) || 'no-session').replace(/[^a-z0-9_-]/gi, '_').slice(0, 64);
 
-// --- cleanup mode (SessionEnd) ----------------------------------------------------
+// --- cleanup mode (SessionEnd) — runs even if stdin was invalid JSON ---------------
 if (process.argv[2] === 'cleanup') {
   try { rmSync(join(stateDir, sessionId), { recursive: true, force: true }); } catch {}
   process.exit(0);
 }
+
+// --- injection mode: need valid JSON input ----------------------------------------
+if (!input) silent();
 
 // --- injection mode (PostToolUse browser_navigate) --------------------------------
 const url = input?.tool_input?.url;

@@ -59,6 +59,8 @@ export function compileFast(recipe, locators, args = {}) {
         const loc = locSel(step.operand, locators);
         let sel = loc.sel;
         if (loc.holes.length) {
+          const uniqueHoles = new Set(loc.holes);
+          if (uniqueHoles.size > 1) throw new Error(`locator '${step.operand}' has ${uniqueHoles.size} distinct holes (${[...uniqueHoles].join(', ')}): a click step can only provide one value`);
           const v = String(argValue(step.arg, args) ?? '');
           sel = fillTemplate(sel, Object.fromEntries(loc.holes.map((h) => [h, v])));
         }
@@ -122,6 +124,8 @@ export function compileSteps(recipe, locators, args = {}) {
         const loc = locSel(step.operand, locators);
         let sel = loc.sel;
         if (loc.holes.length) {
+          const uniqueHoles = new Set(loc.holes);
+          if (uniqueHoles.size > 1) throw new Error(`locator '${step.operand}' has ${uniqueHoles.size} distinct holes (${[...uniqueHoles].join(', ')}): a click step can only provide one value`);
           const v = String(argValue(step.arg, args) ?? '');
           sel = fillTemplate(sel, Object.fromEntries(loc.holes.map((h) => [h, v])));
         }
