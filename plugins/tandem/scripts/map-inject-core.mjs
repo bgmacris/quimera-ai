@@ -1,15 +1,24 @@
-#!/usr/bin/env node
-// map-inject-core.mjs — shared tandem:map profile injection logic (Cursor + OpenCode adapters).
-// Upstream Claude Code keeps scripts/hook-inject-profile.mjs until a future PR merges this.
+// map-inject-core.mjs — shared tandem:map profile-injection logic.
+//
+// Single source of truth for the "on browser_navigate, inject the site profile
+// once per (session, host)" behaviour. Consumed by:
+//   - scripts/hook-inject-profile.mjs        (Claude Code PostToolUse hook)
+//   - adapters/cursor/hooks/inject-profile.mjs   (Cursor postToolUse hook)
+//   - adapters/opencode/plugins/tandem-map-inject.ts (OpenCode tool.execute.after)
+//
+// Pure logic only: every entry point resolves its own data dir (defaults differ
+// by host IDE) and formats its own output envelope. This module never hardcodes
+// a default dir and never writes to stdout.
 
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import {
   existsSync, mkdirSync, readFileSync, writeFileSync, rmSync,
 } from 'node:fs';
 
-export function tandemDataDir() {
-  return process.env.TANDEM_DATA_DIR || join(homedir(), '.local', 'share', 'tandem');
+// TANDEM_DATA_DIR always wins; otherwise the caller's context-specific default
+// (Claude Code: ~/.claude/tandem; multi-IDE adapters: ~/.local/share/tandem).
+export function resolveDataDir(fallback) {
+  return process.env.TANDEM_DATA_DIR || fallback;
 }
 
 export function sessionKey(sessionId) {
@@ -27,14 +36,16 @@ export function profileContext(host, profile) {
   ].join('\n');
 }
 
-/** @returns {{ ok: true, host: string, context: string } | { ok: false }} */
-export function tryInjectProfile({ url, sessionId, normalizeHost }) {
+/**
+ * Inject the site profile once per (session, host).
+ * @returns {{ ok: true, host: string, context: string } | { ok: false }}
+ */
+export function tryInjectProfile({ url, sessionId, dataDir, normalizeHost }) {
   if (!url || typeof url !== 'string') return { ok: false };
 
   let host;
   try { host = normalizeHost(url); } catch { return { ok: false }; }
 
-  const dataDir = tandemDataDir();
   const profilePath = join(dataDir, 'sites', `${host}.md`);
   if (!existsSync(profilePath)) return { ok: false };
 
@@ -55,14 +66,14 @@ export function tryInjectProfile({ url, sessionId, normalizeHost }) {
   return { ok: true, host, context: profileContext(host, profile) };
 }
 
-export function cleanupSessionMarkers(sessionId) {
+export function cleanupSessionMarkers(sessionId, dataDir) {
   const sid = sessionKey(sessionId);
   try {
-    rmSync(join(tandemDataDir(), '.hook-state', sid), { recursive: true, force: true });
+    rmSync(join(dataDir, '.hook-state', sid), { recursive: true, force: true });
   } catch { /* ignore */ }
 }
 
-/** Cursor / Claude hook stdin shapes */
+/** Extract the navigate URL from a hook's stdin JSON (Claude / Cursor shapes). */
 export function extractNavigateUrl(input) {
   if (!input || typeof input !== 'object') return null;
   const toolInput = input.tool_input || input.toolInput || {};
@@ -70,6 +81,7 @@ export function extractNavigateUrl(input) {
   return typeof url === 'string' ? url : null;
 }
 
+/** Extract the session id from a hook's stdin JSON (Claude / Cursor / OpenCode shapes). */
 export function extractSessionId(input) {
   if (!input || typeof input !== 'object') return 'no-session';
   return input.session_id || input.conversation_id || input.sessionID || 'no-session';

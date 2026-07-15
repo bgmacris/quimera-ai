@@ -31,7 +31,7 @@ Ensure `~/.local/bin` is in your `PATH`.
 plugins/tandem/
 ├── scripts/, bin/, skills/, …     ← upstream core (do not edit)
 ├── adapters/
-│   ├── shared/                    ← map-inject-core, mcp-wrap, env template
+│   ├── shared/                    ← mcp-wrap, env template
 │   ├── cursor/                    ← .cursor-plugin, hooks, mcp.json
 │   └── opencode/                  ← tandem-map-inject plugin, config fragment
 ├── install.sh
