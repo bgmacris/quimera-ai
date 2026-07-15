@@ -9,9 +9,9 @@
   "repository": "https://github.com/bgmacris/quimera-ai",
   "license": "MIT",
   "keywords": ["browser", "cdp", "playwright", "mcp", "automation", "site-memory", "cursor"],
-  "commands": "../../commands",
-  "skills": "../../skills",
-  "agents": "../../agents",
+  "commands": "./commands",
+  "skills": "./skills",
+  "agents": "./agents",
   "hooks": "./hooks/hooks.json",
   "mcpServers": "./mcp.json"
 }
