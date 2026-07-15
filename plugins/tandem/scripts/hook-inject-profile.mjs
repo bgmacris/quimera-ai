@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// hook-inject-profile.mjs — PostToolUse hook for tandem:map.
+// hook-inject-profile.mjs — PostToolUse hook for tandem:map (Claude Code).
 //
 // When navigating (MCP tool browser_navigate), if a site profile exists for that host in
-// ~/.claude/tandem/sites/<host>.md, it injects it into the model context via
+// <data-dir>/sites/<host>.md, it injects it into the model context via
 // hookSpecificOutput.additionalContext (field supported by PostToolUse — verified
 // against the official Hooks Reference, 2026-06-22). If no profile, SILENCE (zero noise).
 //
@@ -11,22 +11,24 @@
 //  - ONCE per (session, host): marks in .hook-state/<session_id>/<host> to avoid
 //    re-injecting the same profile on every click within the site (context bloat).
 //
-// Intentionally in Node: node is already a dependency of the plugin (the MCP is @playwright/mcp);
-// it parses/emits native JSON and normalizes the host with new URL(). Zero new dependency (jq).
+// The shared logic lives in scripts/map-inject-core.mjs (also consumed by the Cursor
+// and OpenCode adapters). This file is the thin Claude Code entry point: it resolves the
+// data dir (~/.claude/tandem by default), reads the hook JSON on stdin, and formats the
+// Claude-specific output envelope.
 //
 // Usage: receives the hook JSON on stdin. No args = injection mode.
 //        with arg "cleanup" = deletes the session marker (called by SessionEnd).
 
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import {
-  existsSync, mkdirSync, readFileSync, writeFileSync, rmSync,
-} from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { normalizeHost } from './host.mjs';
+import {
+  resolveDataDir, tryInjectProfile, cleanupSessionMarkers,
+  extractNavigateUrl, extractSessionId,
+} from './map-inject-core.mjs';
 
-const dataDir = process.env.TANDEM_DATA_DIR || join(homedir(), '.claude', 'tandem');
-const sitesDir = join(dataDir, 'sites');
-const stateDir = join(dataDir, '.hook-state');
+const dataDir = resolveDataDir(join(homedir(), '.claude', 'tandem'));
 
 // Read stdin synchronously (simple for a hook).
 function readStdin() {
@@ -40,51 +42,27 @@ const raw = readStdin();
 let input = null;
 try { input = JSON.parse(raw); } catch { /* handled below per mode */ }
 
-const sessionId = ((input && input.session_id) || 'no-session').replace(/[^a-z0-9_-]/gi, '_').slice(0, 64);
+const sessionId = extractSessionId(input);
 
 // --- cleanup mode (SessionEnd) — runs even if stdin was invalid JSON ---------------
 if (process.argv[2] === 'cleanup') {
-  try { rmSync(join(stateDir, sessionId), { recursive: true, force: true }); } catch {}
+  cleanupSessionMarkers(sessionId, dataDir);
   process.exit(0);
 }
 
 // --- injection mode: need valid JSON input ----------------------------------------
 if (!input) silent();
 
-// --- injection mode (PostToolUse browser_navigate) --------------------------------
-const url = input?.tool_input?.url;
-if (!url || typeof url !== 'string') silent();
-
-let host;
-try { host = normalizeHost(url); } catch { silent(); }
-
-const profilePath = join(sitesDir, `${host}.md`);
-if (!existsSync(profilePath)) silent();           // no profile → silence
-
-// Once per (session, host).
-const marker = join(stateDir, sessionId, host);
-if (existsSync(marker)) silent();                 // already injected this session → silence
-try {
-  mkdirSync(join(stateDir, sessionId), { recursive: true });
-  writeFileSync(marker, '');
-} catch {}
-
-let profile;
-try { profile = readFileSync(profilePath, 'utf8'); } catch { silent(); }
-
-const context = [
-  `tandem:map — navigation profile for ${host} (auto-loaded on navigate).`,
-  `Use it to navigate this site KNOWING instead of re-deriving the DOM. Anchor by role+name,`,
-  `never by eNN refs (ephemeral). Cheap re-check before trusting a locator; if it fails,`,
-  `re-derive live and update the profile (don't patch it blindly).`,
-  ``,
-  profile,
-].join('\n');
+const url = extractNavigateUrl(input);
+const result = tryInjectProfile({
+  url, sessionId, dataDir, normalizeHost,
+});
+if (!result.ok) silent();
 
 process.stdout.write(JSON.stringify({
   hookSpecificOutput: {
     hookEventName: 'PostToolUse',
-    additionalContext: context,
+    additionalContext: result.context,
   },
 }));
 process.exit(0);

@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "postToolUse": [
+      {
+        "matcher": "MCP:browser_navigate",
+        "command": "./scripts/run-hook-inject.sh"
+      }
+    ],
+    "sessionEnd": [
+      {
+        "command": "tandem-browser stop"
+      },
+      {
+        "command": "./scripts/run-hook-inject.sh cleanup"
+      }
+    ]
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "mcp": {
+    "tandem": {
+      "type": "local",
+      "command": ["@MCP_WRAP@"],
+      "timeout": 120000,
+      "enabled": true
+    }
+  },
+  "skills": {
+    "paths": [
+      "@TANDEM_ROOT@/skills/tandem",
+      "@TANDEM_ROOT@/skills/map"
+    ]
+  },
+  "agent": {
+    "web-navigator": {
+      "description": "Navigation subagent over tandem shared Chrome. Use for HEAVY read/extraction without live human interaction.",
+      "mode": "subagent",
+      "hidden": false,
+      "prompt": "You operate tandem shared Chrome via MCP browser_* tools (server name: tandem).\n\nRules:\n- Browser is already open; never run tandem-browser start.\n- Open your own tab (browser_tabs new) so you do not steal the human focus tab.\n- Never dump full browser_snapshot into the reply; use browser_evaluate for lists/tables.\n- Retry once on 'page closed' / connection errors after Chrome restart.\n- Return ONLY distilled data requested; if captcha/login wall, report URL and wall type.\n\nRead tandem:map profile if injected; act by durable sel: when fingerprint matches."
+    }
+  },
+  "instructions": [
+    "Tandem shared Chrome: if browser_* fails with ECONNREFUSED on :9222, run tandem-browser start (or /browser-start).",
+    "After browser-start or stop→start, first browser_* call may fail once; retry immediately.",
+    "Site memory lives in ~/.local/share/tandem/sites/<host>.md (tandem:map skill)."
+  ]
+}
