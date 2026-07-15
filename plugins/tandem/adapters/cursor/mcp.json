@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "tandem": {
+      "command": "./scripts/mcp-cursor-launch.sh"
+    }
+  }
+}

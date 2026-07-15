@@ -1,0 +1,17 @@
+{
+  "name": "tandem",
+  "version": "0.6.0-cursor",
+  "description": "Shared Chrome browser (human + agent, CDP + Playwright MCP) with per-site navigation memory (tandem:map). Cursor adapter.",
+  "author": {
+    "name": "bgmacris"
+  },
+  "homepage": "https://github.com/bgmacris/quimera-ai/tree/main/plugins/tandem",
+  "repository": "https://github.com/bgmacris/quimera-ai",
+  "license": "MIT",
+  "keywords": ["browser", "cdp", "playwright", "mcp", "automation", "site-memory", "cursor"],
+  "commands": "../../commands",
+  "skills": "../../skills",
+  "agents": "../../agents",
+  "hooks": "./hooks/hooks.json",
+  "mcpServers": "./mcp.json"
+}
