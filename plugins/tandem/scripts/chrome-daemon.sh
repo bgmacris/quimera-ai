@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # chrome-daemon.sh — control for tandem's shared Chrome.
 # Usage: chrome-daemon.sh {start|stop|restart|status}
+# `stop` from the SessionEnd hook (hook JSON on stdin) only stops Chrome when no other Claude
+# Code session is alive; from the user it always stops. See stop_requested in lib.sh.
 set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
@@ -9,7 +11,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 case "${1:-status}" in
   start)   start_chrome ;;
-  stop)    stop_chrome ;;
+  stop)    stop_requested ;;
   restart) stop_chrome; sleep 1; start_chrome ;;
   status)  status_chrome ;;
   *) echo "usage: $(basename "$0") {start|stop|restart|status}" >&2; exit 2 ;;

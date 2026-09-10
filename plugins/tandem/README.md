@@ -70,7 +70,9 @@ Chrome (headed, dedicated profile, --remote-debugging-port on 127.0.0.1)
 ```
 
 - **`scripts/chrome-daemon.sh`** `{start|stop|restart|status}` — Chrome lifecycle, idempotent,
-  based on the CDP healthcheck (the source of truth for state is CDP, not the PID).
+  based on the CDP healthcheck (the source of truth for state is CDP, not the PID). When `stop`
+  comes from the SessionEnd hook, it keeps Chrome while other Claude Code sessions are alive
+  (`scripts/other-sessions.mjs`); a user `stop` always stops it.
 - **`scripts/mcp-launch.sh`** — the `.mcp.json` command; only launches the Playwright MCP (lazy, it
   doesn't start Chrome, so `initialize` never blocks).
 - **`scripts/map.sh`**, **`scripts/fingerprint.mjs`**, **`scripts/page-signals.mjs`**,

@@ -146,6 +146,45 @@ stop_chrome() {
   if [ "$stopped" -eq 0 ]; then echo "tandem: Chrome stopped."; else echo "tandem: no active tandem Chrome found."; fi
 }
 
+# `stop` arrives two ways: from the user (/tandem:browser-stop → tandem-browser stop) and from
+# the SessionEnd hook of EVERY Claude Code session, which gets the hook JSON on stdin. Only the
+# hook call is conditional: the Chrome is shared, so one session ending must not kill the browser
+# other sessions are driving. It used to: any headless `claude -p` or a /clear took it down.
+# The check lives here, not in hooks.json, so sessions already running (they keep the hooks.json
+# they started with) get the fix too.
+LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+stop_requested() {
+  local hook_json=""
+  if [ ! -t 0 ]; then IFS= read -r -d '' -t 1 hook_json || true; fi
+  case "$hook_json" in
+    *'"SessionEnd"'*) release_chrome "$hook_json" ;;
+    *) stop_chrome ;;
+  esac
+}
+
+# SessionEnd: stop Chrome only if this session really ends and no other session is alive.
+# Unknown count → keep it (an orphan Chrome is cheaper than killing someone's browser).
+# TANDEM_OTHER_SESSIONS overrides the count (tests only).
+release_chrome() {
+  local reason others action
+  reason="$(printf '%s' "$1" | tr -d '\n' | sed -n 's/.*"reason"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+  case "$reason" in
+    clear|resume) others="-"; action="kept (session continues)" ;;
+    *)
+      others="${TANDEM_OTHER_SESSIONS:-$(node "$LIB_DIR/other-sessions.mjs" 2>/dev/null)}"
+      if [ "$others" = "0" ]; then action="stopped (last session)"; else action="kept"; fi ;;
+  esac
+  mkdir -p "$LOGDIR" 2>/dev/null
+  printf '%s SessionEnd reason=%s other_sessions=%s → %s\n' \
+    "$(date '+%Y-%m-%d %H:%M:%S')" "${reason:-?}" "${others:-?}" "$action" >> "$LOGDIR/chrome.log" 2>/dev/null
+  if [ "$action" = "stopped (last session)" ]; then
+    stop_chrome
+  else
+    echo "tandem: Chrome ${action} (reason=${reason:-?}, other live sessions: ${others:-?})."
+  fi
+}
+
 status_chrome() {
   local port; port="$(cdp_port)"
   echo "tandem — status:"

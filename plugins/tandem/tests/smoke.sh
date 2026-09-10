@@ -26,7 +26,8 @@ check() { if eval "$2"; then ok "$1"; else bad "$1"; fi; }
 
 # Isolated data sandbox (removed on exit).
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/tandem-smoke.XXXXXX")"
-trap 'rm -rf "$TMP"' EXIT
+FAKE=""
+trap '[ -n "$FAKE" ] && kill "$FAKE" 2>/dev/null; rm -rf "$TMP"' EXIT
 export TANDEM_DATA_DIR="$TMP"
 SITES="$TMP/sites"
 
@@ -193,6 +194,36 @@ if node "$HERE/host.test.mjs" 2>&1 | sed 's/^/  /'; then
 else
   bad "host.test.mjs"
 fi
+
+# --- 10. stop: SessionEnd must not kill the Chrome other sessions are using ------------
+# No real Chrome: a `sleep` stands in for it (its pid in chrome.pid; TANDEM_DATA_DIR is isolated,
+# so the user-data-dir fallback cannot match a real browser). TANDEM_OTHER_SESSIONS fakes the
+# number of other live Claude Code sessions. Liveness ignores zombies (the killed sleep is our
+# child until reaped).
+echo "[10] chrome-daemon.sh stop: SessionEnd vs user"
+DAEMON="$SCRIPTS/chrome-daemon.sh"
+fake_chrome() { sleep 300 & FAKE=$!; echo "$FAKE" > "$TMP/chrome.pid"; }
+fake_alive() { local s; s="$(ps -o stat= -p "$FAKE" 2>/dev/null)"; [ -n "$s" ] && [ "${s#Z}" = "$s" ]; }
+end_json() { printf '{"session_id":"s","hook_event_name":"SessionEnd","reason":"%s"}' "$1"; }
+
+fake_chrome
+end_json prompt_input_exit | TANDEM_OTHER_SESSIONS=2 "$DAEMON" stop >/dev/null 2>&1
+check "SessionEnd with other sessions alive → Chrome kept" "fake_alive"
+end_json clear | TANDEM_OTHER_SESSIONS=0 "$DAEMON" stop >/dev/null 2>&1
+check "SessionEnd reason=clear (session continues) → Chrome kept" "fake_alive"
+end_json other | TANDEM_OTHER_SESSIONS='?' "$DAEMON" stop >/dev/null 2>&1
+check "SessionEnd with unknown session count → Chrome kept" "fake_alive"
+check "SessionEnd decisions are logged" "grep -c 'SessionEnd reason=' '$TMP/logs/chrome.log' | grep -qx 3"
+end_json prompt_input_exit | TANDEM_OTHER_SESSIONS=0 "$DAEMON" stop >/dev/null 2>&1
+sleep 0.3
+check "SessionEnd of the last session → Chrome stopped" "! fake_alive"
+
+fake_chrome
+TANDEM_OTHER_SESSIONS=3 "$DAEMON" stop </dev/null >/dev/null 2>&1
+sleep 0.3
+check "user stop (no hook JSON) → Chrome stopped even with other sessions" "! fake_alive"
+check "other-sessions.mjs prints a count or ?" \
+  "node '$SCRIPTS/other-sessions.mjs' 2>/dev/null | grep -Eqx '[0-9]+|[?]'"
 
 # --- summary ------------------------------------------------------------------------
 echo ""

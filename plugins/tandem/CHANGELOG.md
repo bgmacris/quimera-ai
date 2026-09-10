@@ -2,6 +2,22 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/); semantic versioning.
 
+## [Unreleased]
+
+### Fixed
+- **A session ending no longer kills the shared Chrome other sessions are using.**
+  - **Before:** the SessionEnd hook runs `chrome-daemon.sh stop` for EVERY ending session,
+    including a headless `claude -p` and `/clear`, and `stop_chrome` killed by pidfile and
+    profile unconditionally.
+  - **Now:** `stop` tells the hook call (JSON on stdin) from the user's `/tandem:browser-stop`.
+  - **From the hook**, Chrome is only stopped when the session really ends (not `clear` or
+    `resume`) and no other live session is left. The count comes from the new
+    `scripts/other-sessions.mjs`, which reads `claude agents --json` and takes the own session
+    from `$CLAUDE_PID`. If the count is unknown, Chrome is kept.
+  - **From the user**, it stops as before.
+  - Each SessionEnd decision is logged to `logs/chrome.log`.
+  - The fix lives in `stop` rather than `hooks.json`, so sessions already running get it too.
+
 ## [0.6.0] — 2026-06-26
 
 Direct-CDP commands (`cookies`, `intercept`, `pdf`): they capture what page JS
