@@ -204,6 +204,13 @@ else
   bad "lifecycle.test.mjs"
 fi
 
+echo "[11] har (node tests/har.test.mjs)"
+if node "$HERE/har.test.mjs" 2>&1 | sed 's/^/  /'; then
+  ok "har.test.mjs green"
+else
+  bad "har.test.mjs"
+fi
+
 # hooks.json must parse and point only at scripts that exist and are executable.
 check "hooks.json is valid JSON" "node -e 'JSON.parse(require(\"fs\").readFileSync(\"$ROOT/hooks/hooks.json\",\"utf8\"))'"
 check "every hook command targets an executable script" \

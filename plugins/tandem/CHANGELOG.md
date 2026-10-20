@@ -2,6 +2,19 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/); semantic versioning.
 
+## [Unreleased]
+
+### Added
+- `scripts/cdp-record.mjs`: records ALL tabs of tandem's Chrome to a HAR 1.2 file (browser-level
+  `Target.setAutoAttach`, one connection, no collision with Playwright). Each redirect hop is its own
+  entry; request headers from `requestWillBeSentExtraInfo` (sec-fetch-*, referer); Set-Cookie of
+  redirect hops matched by `statusCode` (an ExtraInfo can arrive after the next hop: 3 of 4 runs).
+  Validated against WebArena-Verified's HAR parser (redirect, POST form, JSON body, new tab).
+- `scripts/cdp.mjs` (shared CDP client with timeouts, flattened sessions) and `scripts/har.mjs`
+  (pure CDP→HAR, `tests/har.test.mjs`).
+- `bench/webarena/` (repo root): benchmark harness — arms A–D, isolated `claude -p` per task,
+  HAR + metrics per task, report by arm and by instance within template.
+
 ## [0.8.0] — 2026-10-20
 
 Foundations: several sessions sharing one Chrome, one data dir for every IDE, and the site-profile

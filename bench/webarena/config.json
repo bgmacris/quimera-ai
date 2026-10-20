@@ -1,0 +1,10 @@
+{
+  "test_data_file": "assets/dataset/webarena-verified.json",
+  "environments": {
+    "__SHOPPING_ADMIN__": {
+      "urls": ["http://localhost:7780/admin"],
+      "active_url_idx": 0,
+      "credentials": { "username": "admin", "password": "admin1234" }
+    }
+  }
+}
