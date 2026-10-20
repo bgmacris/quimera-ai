@@ -15,7 +15,7 @@
 // Usage: run.mjs --plan plan.json --arms A,B,C,D --out <dir> [--model sonnet] [--port 9444]
 //          [--reset-cmd ./reset-shopping-admin.sh | --no-reset] [--envctrl http://localhost:7781]
 //          [--app-url http://localhost:7780/admin] [--header "X-M2-Admin-Auto-Login: admin:admin1234"]
-//          [--budget 3] [--timeout 900] [--limit N] [--resume] [--no-reset] [--headful]
+//          [--budget 3] [--timeout 900] [--limit N] [--until HH:MM] [--resume] [--no-reset] [--headful]
 
 import { spawn, execFileSync } from 'node:child_process';
 import { copyFileSync, createWriteStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -118,13 +118,20 @@ function runClaude(arm, env, dir, systemPrompt, intent, startUrl) {
   });
 }
 
+// --until HH:MM: start no new task row after that time (the current row finishes): a shutdown never
+// cuts a task in half, and the rows done are balanced across arms. Resume later with --resume.
+const until = opt('until') ? (() => { const [h, m] = opt('until').split(':').map(Number); const d = new Date(); d.setHours(h, m, 0, 0); return d; })() : null;
+// --resume skips tasks already measured — but retries those that ended in a harness error.
+const done = (dir) => { try { return !JSON.parse(readFileSync(join(dir, 'metrics.json'), 'utf8')).harnessError; } catch { return false; } };
+
 for (const task of plan.slice(0, limit)) {
+  if (until && new Date() >= until) { process.stdout.write(`--until ${opt('until')} reached: stopping before task ${task.task_id} (resume with --resume)\n`); break; }
   for (const armKey of armKeys) {
     const arm = ARMS[armKey]; const OUT = resolve(opt('out'), armKey); const env = armEnv(OUT);
     mkdirSync(OUT, { recursive: true });
     const profilePath = join(OUT, 'profile.md');
     const dir = join(OUT, String(task.task_id));
-    if (has('resume') && existsSync(join(dir, 'metrics.json'))) continue;
+    if (has('resume') && done(dir)) continue;
     mkdirSync(dir, { recursive: true });
     const started = Date.now(); const log = []; const loadBefore = loadavg();
     try {
