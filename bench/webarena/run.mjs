@@ -11,7 +11,7 @@
 // Usage: run.mjs --plan plan.json --arm A|B|C|D --out <dir> [--model sonnet] [--port 9444]
 //          [--reset-cmd ./reset-shopping-admin.sh | --no-reset] [--envctrl http://localhost:7781]
 //          [--app-url http://localhost:7780/admin] [--header "X-M2-Admin-Auto-Login: admin:admin1234"]
-//          [--budget 3] [--timeout 900] [--limit N] [--resume] [--no-reset]
+//          [--budget 3] [--timeout 900] [--limit N] [--resume] [--no-reset] [--headful]
 
 import { spawn, execFileSync } from 'node:child_process';
 import { copyFileSync, createWriteStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -35,7 +35,10 @@ const appUrl = opt('app-url', 'http://localhost:7780/admin');
 const budget = opt('budget', '3'); const timeoutS = +opt('timeout', '900');
 const limit = +opt('limit', String(plan.length));
 
-const env = { ...process.env, TANDEM_DATA_DIR: join(OUT, 'tandem-data'), TANDEM_CDP_PORT: port };
+// Headless by default: the runner restarts Chrome on every task, and a window popping up every few
+// minutes steals the focus of whoever is working on the machine. --headful to watch it.
+const env = { ...process.env, TANDEM_DATA_DIR: join(OUT, 'tandem-data'), TANDEM_CDP_PORT: port,
+  TANDEM_CHROME_ARGS: has('headful') ? (process.env.TANDEM_CHROME_ARGS || '') : '--headless=new' };
 const daemon = (cmd) => execFileSync(join(TANDEM, 'scripts/chrome-daemon.sh'), [cmd], { env, encoding: 'utf8' });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
