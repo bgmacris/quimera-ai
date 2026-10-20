@@ -7,8 +7,8 @@ A [Claude Code](https://code.claude.com) plugin marketplace by [bgmacris](https:
 One plugin today — **[tandem](plugins/tandem)**: a Chrome browser **shared in real time** between you
 and Claude Code. You drive it with the mouse and clear the captchas/logins; Claude operates it over
 CDP and **learns how each site is navigated**, then acts by durable selectors instead of
-re-snapshotting the page — a site profile is **~16–30× smaller than one page snapshot** (measured
-with `wc -c`). The human-in-the-loop handoff is the point: the walls you clear, Claude continues past.
+re-snapshotting the page — a site profile was **~16–30× smaller than one page snapshot** (bytes,
+`wc -c`, vs @playwright/mcp 0.0.76; being re-measured against task success — see the plugin README). The human-in-the-loop handoff is the point: the walls you clear, Claude continues past.
 
 ## Install
 

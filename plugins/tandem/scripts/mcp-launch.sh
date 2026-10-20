@@ -21,11 +21,16 @@ mkdir -p "$DATA/output"
 # Version PINNED intentionally: @latest would mean each start could bring a different
 # MCP version (silent breakage + supply-chain surface). Bumped deliberately.
 # Override with TANDEM_MCP_VERSION to test another version without touching the repo.
-MCP_VERSION="${TANDEM_MCP_VERSION:-0.0.76}"
+# 0.0.79+ reconnects after Chrome is restarted (stop→start no longer fails the first call).
+MCP_VERSION="${TANDEM_MCP_VERSION:-0.0.83}"
 
 # Only --cdp-endpoint (validated in PoC: without --browser, if Chrome is not running it gives
 # a CLEAN error instead of auto-launching its own browser). --output-dir avoids cluttering
-# the cwd with snapshots.
+# the cwd with snapshots; since 0.0.83 file writes are only allowed under it (or the MCP's
+# workspace root). --file-paths absolute: tool results link files by absolute path, readable
+# as-is. --no-webmcp: tools a page registers via WebMCP are untrusted input → not exposed.
 exec npx -y "@playwright/mcp@${MCP_VERSION}" \
   --cdp-endpoint "http://127.0.0.1:${PORT}" \
-  --output-dir "$DATA/output"
+  --output-dir "$DATA/output" \
+  --file-paths absolute \
+  --no-webmcp

@@ -1,6 +1,6 @@
 {
   "name": "tandem",
-  "version": "0.6.0-cursor",
+  "version": "0.7.0-cursor",
   "description": "Shared Chrome browser (human + agent, CDP + Playwright MCP) with per-site navigation memory (tandem:map). Cursor adapter.",
   "author": {
     "name": "bgmacris"

@@ -2,6 +2,33 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/); semantic versioning.
 
+## [0.7.0] — 2026-10-20
+
+Catch-up with @playwright/mcp (seven releases behind) + the Cursor/OpenCode adapters.
+
+### Added
+- **Cursor and OpenCode adapters** (`adapters/`, `install.sh`, `README.adapters.md`) — contributed by
+  @OriolFiblaSancho (PR #1). Profile-injection logic shared by all IDEs in `scripts/map-inject-core.mjs`.
+
+### Changed
+- @playwright/mcp pinned **0.0.76 → 0.0.83**. Brings `browser_find` (search the snapshot, return only
+  matching nodes) and distilled snapshots; documented in the `tandem` skill and the subagent.
+- MCP launched with `--no-webmcp` (tools a page registers via WebMCP are untrusted input) and
+  `--file-paths absolute`.
+- README figures (16–30×, ~18×) now carry an explicit caveat: bytes measured vs 0.0.76, not task
+  success; re-measurement pending.
+
+### Removed
+- The "retry once after `stop`→`start`" workaround (skill, `browser-start`, subagent, READMEs,
+  OpenCode prompt). 0.0.79 reconnects to a restarted Chrome on its own — verified 2026-10-20 with a
+  stdio MCP client: 0.0.76 fails the first call after restart (`Target page, context or browser has
+  been closed`), 0.0.83 passes it (2/2 runs).
+- `UPSTREAM.md`: written for a fork workflow; the adapters now live in this repo.
+
+### Fixed
+- Skill rule for `filename`: 0.0.83 only writes under the output dir or the MCP workspace root
+  ("File access denied … outside allowed roots"); the old "use any absolute path" advice now fails.
+
 ## [0.6.0] — 2026-06-26
 
 Direct-CDP commands (`cookies`, `intercept`, `pdf`): they capture what page JS

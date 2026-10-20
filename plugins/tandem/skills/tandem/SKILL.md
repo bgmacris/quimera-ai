@@ -52,17 +52,11 @@ There are two ways to navigate; choose by the task, not one by default:
 - Pentest work: only within authorized scope; the shared browser is no excuse to go
   out of scope.
 
-## After a Chrome (re)start — the first tool may reconnect
+## After a Chrome (re)start
 - The MCP server is PERSISTENT (one per session); Chrome is EPHEMERAL (`browser-start`/`-stop`).
-  When Chrome is killed and a new one starts on the same port — a **voluntary `stop`→`start`** OR
-  Chrome dying mid-session — the MCP still holds a `connectOverCDP` handle to the OLD process and
-  doesn't notice until a tool fails.
-- Symptom: the FIRST `browser_*` after a new Chrome fails with "Target page/context/browser has been
-  closed" (dead handle); that very failure triggers the reconnect, so the SECOND tool works
-  `[verified 2026-06-29]`. (`ECONNREFUSED 127.0.0.1:9222` is different: no Chrome at all → `/tandem:browser-start`.)
-- Rule: do NOT restart the MCP or the session. Retry once — or fire a cheap `browser_tabs` as a
-  WARMUP right after `browser-start` — so the human never sees the error. Root cause is in
-  @playwright/mcp's CDP reconnect (a changed-process endpoint), not in tandem's scripts.
+  Since @playwright/mcp 0.0.79 the MCP reconnects on its own: the first `browser_*` after a
+  `stop`→`start` works `[verified 2026-10-20, 0.0.83]`. No retry/warmup needed.
+- `ECONNREFUSED 127.0.0.1:<port>` = no Chrome at all → `/tandem:browser-start`.
 
 ## Site memory (`tandem:map` skill)
 The section below is CROSS-site technique (applies to any website). The knowledge
@@ -85,6 +79,8 @@ website breaks something. Mark each rule as [verified] (lived) or [hypothesis] (
   saves to disk. The full snapshot is the last resort, not the first.
 - [verified] For repeated data (lists, cards, tables) use `browser_evaluate` with a
   targeted `querySelectorAll` and return a compact array, not the whole tree.
+- [verified 2026-10-20] To LOCATE one element without a full snapshot: `browser_find` (text or
+  regex) returns only the matching snapshot nodes with their refs — much cheaper than `browser_snapshot`.
 
 ### Act without a snapshot (frugal navigation)
 - [verified] The `target` of `browser_click`/`type`/`evaluate` accepts a **unique selector** in addition
@@ -132,9 +128,10 @@ website breaks something. Mark each rule as [verified] (lived) or [hypothesis] (
   the human asks.
 
 ### Saving snapshots to a file
-- [verified] `browser_snapshot(filename: "x.md")` saves relative to the MCP's cwd (ended up in `~`),
-  IGNORING `--output-dir` → it clutters the home. Use an ABSOLUTE path in filename, or don't pass filename
-  (the automatic reference already goes to the output-dir).
+- [verified 2026-10-20, 0.0.83] `filename` (snapshot/evaluate) only writes under the output dir
+  (`~/.claude/tandem/output/`) or the MCP's workspace root; anything else fails with "File access
+  denied … outside allowed roots". A RELATIVE name lands in the MCP's cwd (clutters it). Rule: pass an
+  ABSOLUTE path INSIDE `~/.claude/tandem/output/`, or omit filename (auto-named into the output dir).
 
 ### SPA / JS-rendered content
 - [verified] `browser_navigate` waits for the initial render (Playwright waits for 'load'): on

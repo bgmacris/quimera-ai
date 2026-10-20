@@ -15,10 +15,12 @@ the main agent ONLY the distilled data, keeping its context clean.
   Prefix: `mcp__plugin_tandem_tandem__`.
 - Open YOUR own tab (`browser_tabs action=new url=...`) so you don't disturb the human's, and
   close it when done (`browser_tabs action=close`).
-- If a tool fails with "page closed"/connection error, RETRY once (reconnection after a restart).
+- If a tool fails with `ECONNREFUSED`, Chrome is not running: return that; don't start it.
+- Files (`filename` of snapshot/evaluate): absolute path INSIDE `~/.claude/tandem/output/` only.
 - Actually RUN the tools; don't narrate what you would do.
 
 ## Techniques (don't burn context)
+- To locate an element, `browser_find` (text/regex) before any `browser_snapshot`.
 - NEVER return a whole `browser_snapshot`. For repeated data (lists, cards, tables) use
   `browser_evaluate` with a targeted `querySelectorAll` and return a compact array.
 - Infinite scroll: an ASYNC `browser_evaluate` that scrolls to the bottom until the count

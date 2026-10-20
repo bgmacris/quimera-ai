@@ -17,8 +17,9 @@ re-deriving the DOM every time.
 > you see and touch**, native to the terminal/Claude Code, with a **co-curated, human-readable** site
 > memory (`sites/<host>.md` in markdown you edit and commit, not an opaque store nor a cloud SaaS). On
 > top of that, `tandem:map` adds what is genuinely hard to find combined: structural-signal drift
-> detection + **executable locators** (`sel:`) to act **without re-snapshotting** (~18× less per
-> action, measured), with a fingerprint gate that makes skipping the snapshot honest.
+> detection + **executable locators** (`sel:`) to act **without re-snapshotting** (~18× fewer bytes per
+> action, measured vs @playwright/mcp 0.0.76 — see the caveat below), with a fingerprint gate that
+> makes skipping the snapshot honest.
 
 ## Why it pays: measured savings
 
@@ -37,6 +38,12 @@ profile** plus **executable `sel:`** locators:
 
 Reproducible method: `wc -c` of the profile `.md` vs of the file saved by `browser_snapshot(filename:)`
 (every figure here is a byte count; token cost tracks it, roughly bytes ÷ 4).
+
+> **Caveat (2026-10-20).** These figures were measured against @playwright/mcp **0.0.76**. Since
+> 0.0.78 the MCP distills its snapshots and adds `browser_find` (search the snapshot, return only
+> the matches), so the gap is now smaller than stated. They are also **bytes, not task success**:
+> richer observations can help strong models succeed more often. A re-measurement that scores
+> task success *and* cost is in progress; treat the numbers above as historical until then.
 
 ## What sets it apart: `tandem:map`
 
@@ -142,11 +149,9 @@ continues from the already-rendered page — that is the human-in-the-loop hando
 
 ## Troubleshooting
 
-- **First browser command after a (re)start says `Target page … has been closed`.** The MCP server
-  is persistent (one per session); Chrome is ephemeral (`browser-start`/`-stop`). After a
-  `stop`→`start`, the MCP reconnects on the first tool call — so that first call fails and the
-  second works. Retry once; it is not a fault in your install (root cause is in @playwright/mcp's
-  CDP reconnect). A first *virgin* start (no prior Chrome) is not affected.
+- **`File access denied … outside allowed roots`** when passing `filename` to a browser tool: since
+  @playwright/mcp 0.0.83 files can only be written under the output dir (`~/.claude/tandem/output/`)
+  or the MCP's workspace root. Use an absolute path inside the output dir, or omit `filename`.
 - **`ECONNREFUSED 127.0.0.1:9222`** means no Chrome is running → `/tandem:browser-start`.
 
 ## Development
