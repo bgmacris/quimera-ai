@@ -39,11 +39,11 @@ plugins/tandem/
 
 ## Data directory
 
-Default: `~/.local/share/tandem` (Chrome profile, site profiles, output).
+Default: `~/.claude/tandem` — the **same store as Claude Code** (Chrome profile, site profiles, output), so every IDE drives the same Chrome and shares the same site memory. Installs from before v0.8.0 used `~/.local/share/tandem`; `./install.sh` migrates it (moves it if the new dir doesn't exist; otherwise copies missing site profiles and leaves the old dir for you to remove).
 
 Override: `TANDEM_DATA_DIR` in `~/.local/bin/tandem-env.sh`.
 
-Site profiles: `~/.local/share/tandem/sites/<host>.md`
+Site profiles: `~/.claude/tandem/sites/<host>.md`
 
 ## Cursor
 

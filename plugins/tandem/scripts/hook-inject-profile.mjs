@@ -13,22 +13,22 @@
 //
 // The shared logic lives in scripts/map-inject-core.mjs (also consumed by the Cursor
 // and OpenCode adapters). This file is the thin Claude Code entry point: it resolves the
-// data dir (~/.claude/tandem by default), reads the hook JSON on stdin, and formats the
+// data dir (scripts/paths.mjs), reads the hook JSON on stdin, and formats the
 // Claude-specific output envelope.
 //
 // Usage: receives the hook JSON on stdin. No args = injection mode.
-//        with arg "cleanup" = deletes the session marker (called by SessionEnd).
+//        with arg "cleanup" = deletes the session marker (kept for compatibility; the
+//        lifecycle hooks now live in session-hook.mjs).
 
-import { homedir } from 'node:os';
-import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { normalizeHost } from './host.mjs';
+import { dataDir as resolveDataDir } from './paths.mjs';
 import {
-  resolveDataDir, tryInjectProfile, cleanupSessionMarkers,
+  tryInjectProfile, cleanupSessionMarkers,
   extractNavigateUrl, extractSessionId,
 } from './map-inject-core.mjs';
 
-const dataDir = resolveDataDir(join(homedir(), '.claude', 'tandem'));
+const dataDir = resolveDataDir();
 
 // Read stdin synchronously (simple for a hook).
 function readStdin() {

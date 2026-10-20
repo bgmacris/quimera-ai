@@ -24,6 +24,6 @@
   "instructions": [
     "Tandem shared Chrome: if browser_* fails with ECONNREFUSED on :9222, run tandem-browser start (or /browser-start).",
     "After browser-start or stop→start, first browser_* call may fail once; retry immediately.",
-    "Site memory lives in ~/.local/share/tandem/sites/<host>.md (tandem:map skill)."
+    "Site memory lives in ~/.claude/tandem/sites/<host>.md (tandem:map skill)."
   ]
 }

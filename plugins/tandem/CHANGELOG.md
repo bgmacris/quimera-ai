@@ -2,6 +2,41 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/); semantic versioning.
 
+## [0.8.0] — 2026-10-20
+
+Foundations: several sessions sharing one Chrome, one data dir for every IDE, and the site-profile
+memory hardened against poisoning (writes gated outside the model, reads marked as data).
+
+### Added
+- **Write gate for site profiles** (`scripts/guard-sites.mjs`, PreToolUse on Write/Edit/MultiEdit/Bash):
+  a write to `sites/*.md` becomes a permission prompt for the human. Rationale: profiles are re-injected
+  in every later session, and memory-poisoning research (PMPA, arXiv 2609.13889, tested on Claude Code)
+  shows prompt-level defenses barely help once memory is poisoned. Verified that `bypassPermissions`
+  does not auto-approve a hook's `ask`. Bash coverage is heuristic (defense in depth).
+- **Session leases** (`scripts/session-hook.mjs`): each session that uses a `browser_*` tool holds a
+  lease; SessionEnd stops Chrome only when no other live lease remains (12 h TTL for crashed sessions).
+  Also in the Cursor adapter.
+- Re-injection after compaction: SessionStart(`compact`) clears the session's injection markers.
+- `scripts/paths.mjs`: single node-side source for data dir and CDP port. `scripts/redact.mjs`.
+- `tests/lifecycle.test.mjs` (31 cases) + hooks.json integrity checks in `smoke.sh`.
+
+### Changed
+- **One data dir for all IDEs**: the Cursor/OpenCode adapters default to `~/.claude/tandem` (was
+  `~/.local/share/tandem`, same port → silent wrong profile + split site memory). `install.sh` migrates.
+- Injected profile wrapped as DATA with provenance (`<tandem-site-profile>`), capped at 9,000 chars
+  (Claude Code moves additionalContext over 10,000 chars to a file, leaving a 2,000-char preview),
+  and instruction-like lines are surfaced with a warning instead of passed silently.
+- `browser-start` refuses a CDP on the port that is not tandem's own profile; `status` flags it.
+- Port precedence: `TANDEM_CDP_PORT` now beats the `cdp-port` file (it used to be ignored once the
+  file existed, while the error message recommended it). Same rule in bash and node.
+- `stop` waits for Chrome to exit (SIGKILL after ~5 s); `restart` no longer races the profile lock.
+- Data dir is `0700`; intercept log is `0600` and redacts Authorization/Cookie/CSRF headers unless
+  `start --reveal`.
+- Skill: the profile is "separate", not "clean" — it holds every login done in it.
+
+### Fixed
+- Injection marker was written before reading the profile (a failed read marked the host as done).
+
 ## [0.7.0] — 2026-10-20
 
 Catch-up with @playwright/mcp (seven releases behind) + the Cursor/OpenCode adapters.

@@ -1,5 +1,16 @@
 {
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/guard-sites.mjs"
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "mcp__.*tandem__browser_navigate",
@@ -9,6 +20,26 @@
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/hook-inject-profile.mjs"
           }
         ]
+      },
+      {
+        "matcher": "mcp__.*tandem__browser_.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/session-hook.mjs touch"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/session-hook.mjs compact"
+          }
+        ]
       }
     ],
     "SessionEnd": [
@@ -16,11 +47,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/chrome-daemon.sh stop"
-          },
-          {
-            "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/hook-inject-profile.mjs cleanup"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/session-hook.mjs end",
+            "timeout": 15
           }
         ]
       }

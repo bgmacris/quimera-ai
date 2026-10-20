@@ -9,28 +9,23 @@
 //   Log: ~/.claude/tandem/intercept.ndjson
 //
 // Usage:
-//   cdp-intercept.mjs start [--duration <s>] [--tab <n>]         capture (foreground, Ctrl-C to stop)
+//   cdp-intercept.mjs start [--duration <s>] [--tab <n>] [--reveal]  capture (foreground, Ctrl-C to stop);
+//                           credential headers are redacted in the log unless --reveal
 //   cdp-intercept.mjs show  [--url <p>] [--method <m>]           filter and display
 //                           [--status <code|2xx|4xx|5xx>]
 //                           [--mime <type>] [--limit <n>] [--body]
 //   cdp-intercept.mjs clear                                       delete the log
 //   cdp-intercept.mjs count                                       number of entries
 
-import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { readFileSync, appendFileSync, existsSync, unlinkSync, createReadStream } from 'node:fs';
+import { appendFileSync, existsSync, unlinkSync, createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
+import { cdpPort, dataDir, ensureDataDir } from './paths.mjs';
+import { redactHeaders } from './redact.mjs';
 
 // --- config -----------------------------------------------------------------------
-function cdpPort() {
-  const dataDir = process.env.TANDEM_DATA_DIR || join(homedir(), '.claude', 'tandem');
-  try { return +readFileSync(join(dataDir, 'cdp-port'), 'utf8').trim() || 9222; }
-  catch { return +(process.env.TANDEM_CDP_PORT || 9222); }
-}
-function logPath() {
-  const dataDir = process.env.TANDEM_DATA_DIR || join(homedir(), '.claude', 'tandem');
-  return join(dataDir, 'intercept.ndjson');
-}
+function logPath() { return join(dataDir(), 'intercept.ndjson'); }
+
 
 // --- CDP client (native Node 22+ WebSocket + fetch) ------------------------------
 function cdpConnect(wsUrl) {
@@ -161,6 +156,8 @@ if (cmd === 'start') {
   const duration = flags.duration ? +flags.duration * 1000 : null;
   const tabIndex = flags.tab ? +flags.tab : 0;
   const BODY_CAP = 32 * 1024; // 32KB per body in the log
+  const reveal = !!flags.reveal;
+  ensureDataDir();
 
   const port = cdpPort();
   let ws;
@@ -193,7 +190,8 @@ if (cmd === 'start') {
 
   function writeEntry(entry) {
     try {
-      appendFileSync(logPath(), JSON.stringify(entry) + '\n', 'utf8');
+      if (!reveal) { entry.requestHeaders = redactHeaders(entry.requestHeaders); entry.responseHeaders = redactHeaders(entry.responseHeaders); }
+      appendFileSync(logPath(), JSON.stringify(entry) + '\n', { encoding: 'utf8', mode: 0o600 });
       captured++;
     } catch {}
   }

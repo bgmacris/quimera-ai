@@ -10,7 +10,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 case "${1:-status}" in
   start)   start_chrome ;;
   stop)    stop_chrome ;;
-  restart) stop_chrome; sleep 1; start_chrome ;;
+  restart) stop_chrome; start_chrome ;;   # stop_chrome waits for the process to exit
   status)  status_chrome ;;
   *) echo "usage: $(basename "$0") {start|stop|restart|status}" >&2; exit 2 ;;
 esac

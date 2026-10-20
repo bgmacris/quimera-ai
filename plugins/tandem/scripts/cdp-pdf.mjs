@@ -12,20 +12,12 @@
 //   --no-bg           no background colors (PDF only)
 //   --png-only        skip PDF attempt, go straight to screenshot
 
-import { homedir } from 'node:os';
-import { join, basename, dirname } from 'node:path';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { writeFileSync, mkdirSync } from 'node:fs';
+import { cdpPort, dataDir, ensureDataDir } from './paths.mjs';
 
 // --- config -----------------------------------------------------------------------
-function cdpPort() {
-  const dataDir = process.env.TANDEM_DATA_DIR || join(homedir(), '.claude', 'tandem');
-  try { return +readFileSync(join(dataDir, 'cdp-port'), 'utf8').trim() || 9222; }
-  catch { return +(process.env.TANDEM_CDP_PORT || 9222); }
-}
-function outputDir() {
-  const dataDir = process.env.TANDEM_DATA_DIR || join(homedir(), '.claude', 'tandem');
-  return join(dataDir, 'output');
-}
+function outputDir() { return join(ensureDataDir(dataDir()), 'output'); }
 
 // --- CDP client -------------------------------------------------------------------
 function cdpConnect(wsUrl) {

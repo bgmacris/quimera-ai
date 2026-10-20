@@ -44,10 +44,19 @@ PIDFILE="$DATA/chrome.pid"
 PORTFILE="$DATA/cdp-port"
 LOGDIR="$DATA/logs"
 
-# CDP port: cdp-port file if it exists, else env, else 9222.
+# CDP port: env TANDEM_CDP_PORT, else the cdp-port file of the last start, else 9222.
+# The env wins: an explicit override must not be shadowed by a stale file (same rule as paths.mjs).
 cdp_port() {
-  if [ -f "$PORTFILE" ]; then cat "$PORTFILE"
-  else printf '%s\n' "${TANDEM_CDP_PORT:-9222}"; fi
+  if [ -n "${TANDEM_CDP_PORT:-}" ]; then printf '%s\n' "$TANDEM_CDP_PORT"
+  elif [ -f "$PORTFILE" ]; then cat "$PORTFILE"
+  else printf '%s\n' 9222; fi
+}
+
+# The data dir holds a profile with live sessions, intercept logs and screenshots: 0700.
+# chmod (not just umask) so a dir created by an older version gets tightened too.
+ensure_data_dir() {
+  mkdir -p "$DATA" "$PROFILE" "$LOGDIR"
+  chmod 700 "$DATA" 2>/dev/null || true
 }
 
 # --- checks -------------------------------------------------------------------------
@@ -68,6 +77,25 @@ port_listener() {
   fi
 }
 
+# PID of the process LISTENING on the port (empty if none / no tool to ask).
+port_listener_pid() {
+  local port; port="$(cdp_port)"
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -tiTCP:"${port}" -sTCP:LISTEN 2>/dev/null | head -1
+  elif command -v ss >/dev/null 2>&1; then
+    ss -ltnpH "sport = :${port}" 2>/dev/null | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2
+  fi
+}
+
+# Is the CDP on the port OUR Chrome (launched with our --user-data-dir)? A healthy CDP alone
+# proves nothing: a personal Chrome with remote debugging, or an adapter with another data
+# dir, can answer on the same port — and attaching to it would act on the wrong profile.
+cdp_ours() {
+  local pid; pid="$(port_listener_pid)"
+  [ -n "$pid" ] || return 1
+  ps -o command= -p "$pid" 2>/dev/null | grep -qF -- "--user-data-dir=$PROFILE"
+}
+
 # Saved PID, if the process is still alive.
 saved_pid_alive() {
   [ -f "$PIDFILE" ] || return 1
@@ -84,13 +112,18 @@ start_chrome() {
     echo "        Install it, or export TANDEM_CHROME_BIN with the path to your binary." >&2
     return 1
   fi
-  mkdir -p "$PROFILE" "$LOGDIR"
+  ensure_data_dir
   local port; port="$(cdp_port)"
 
-  # Idempotent: if CDP already responds, assume our Chrome is alive.
+  # Idempotent: if CDP already responds AND it is our profile, nothing to do.
   if cdp_healthy; then
-    echo "tandem: Chrome already running (CDP at 127.0.0.1:${port})."
-    return 0
+    if cdp_ours; then
+      echo "tandem: Chrome already running (CDP at 127.0.0.1:${port})."
+      return 0
+    fi
+    echo "tandem: ERROR — port ${port} answers CDP but it is NOT tandem's Chrome (profile $PROFILE)." >&2
+    echo "        Another browser (or another tandem data dir) owns it. Close it or set TANDEM_CDP_PORT." >&2
+    return 1
   fi
 
   # Port taken by something that does NOT serve a healthy CDP → don't clobber, fail clearly.
@@ -139,9 +172,18 @@ stop_chrome() {
     kill "$pid" 2>/dev/null && stopped=0
   fi
   # Fallback: kill by user-data-dir (does not touch the personal Chrome: different profile).
-  if pgrep -f "user-data-dir=$PROFILE" >/dev/null 2>&1; then
-    pkill -f "user-data-dir=$PROFILE" 2>/dev/null && stopped=0
+  # pgrep/pkill take a regex; `--` keeps the leading dashes of the flag from parsing as options.
+  if pgrep -f -- "--user-data-dir=$PROFILE" >/dev/null 2>&1; then
+    pkill -f -- "--user-data-dir=$PROFILE" 2>/dev/null && stopped=0
   fi
+  # Wait for it to really exit (up to ~5s), then SIGKILL: a restart that races a dying Chrome
+  # finds the profile's SingletonLock still held.
+  local _
+  for _ in $(seq 1 20); do
+    pgrep -f -- "--user-data-dir=$PROFILE" >/dev/null 2>&1 || break
+    sleep 0.25
+  done
+  pkill -9 -f -- "--user-data-dir=$PROFILE" 2>/dev/null || true
   rm -f "$PIDFILE"
   if [ "$stopped" -eq 0 ]; then echo "tandem: Chrome stopped."; else echo "tandem: no active tandem Chrome found."; fi
 }
@@ -151,7 +193,9 @@ status_chrome() {
   echo "tandem — status:"
   echo "  profile:  $PROFILE"
   echo "  port:     ${port}"
-  if cdp_healthy; then
+  if cdp_healthy && ! cdp_ours; then
+    echo "  CDP:      ⚠ a browser answers on ${port} but it is NOT tandem's profile"
+  elif cdp_healthy; then
     local ver; ver="$(curl -s --max-time 2 "http://127.0.0.1:${port}/json/version" | sed -n 's/.*"Browser": *"\([^"]*\)".*/\1/p')"
     echo "  CDP:      ✅ active (${ver:-?})"
     local n; n="$(curl -s "http://127.0.0.1:${port}/json" | grep -c '"type": "page"' 2>/dev/null)"

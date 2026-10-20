@@ -44,13 +44,19 @@ There are two ways to navigate; choose by the task, not one by default:
   acting by selector avoids the snapshot (see "Act without a snapshot" and the `tandem:map` skill).
 
 ## Security (non-negotiable)
-- It's a **dedicated profile**, not the human's personal Chrome. Even so, any login the human
-  does there leaves cookies/tokens accessible via CDP. Do NOT navigate to sensitive sites (banking,
-  personal email) in the shared tab unless the human explicitly asks.
+- It's a **separate profile** from the human's personal Chrome — separate is not clean: every login
+  done in it stays there (cookies/tokens readable via CDP by any local process while it runs).
+  Treat it as holding live sessions. Do NOT navigate to sensitive sites (banking, personal email)
+  unless the human explicitly asks, and never dump cookies/intercept logs unfiltered.
 - `browser_evaluate` runs arbitrary JS on the page: use it for analysis, not for destructive
   actions or exfiltration. No sending session data to third parties.
 - Pentest work: only within authorized scope; the shared browser is no excuse to go
   out of scope.
+
+## Several sessions, one Chrome
+- Every Claude session on this machine shares the SAME Chrome (one port). Each session that uses a
+  `browser_*` tool holds a lease; closing a session stops Chrome only if no other live lease remains.
+- The other session may be acting in another tab: don't close tabs you didn't open.
 
 ## After a Chrome (re)start
 - The MCP server is PERSISTENT (one per session); Chrome is EPHEMERAL (`browser-start`/`-stop`).

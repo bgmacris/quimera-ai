@@ -1,20 +1,20 @@
 #!/usr/bin/env node
 // Cursor adapter: tandem:map profile auto-injection (postToolUse on browser_navigate).
 // Shared logic lives in upstream scripts/map-inject-core.mjs; this is the Cursor entry
-// point (resolves the adapter data dir and formats Cursor's output envelope).
+// point (shared data dir from scripts/paths.mjs; formats Cursor's output envelope).
 import { readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const tandemRoot = join(here, '..', '..', '..');
 const { normalizeHost } = await import(pathToFileURL(join(tandemRoot, 'scripts/host.mjs')).href);
+const { dataDir: resolveDataDir } = await import(pathToFileURL(join(tandemRoot, 'scripts/paths.mjs')).href);
 const {
-  resolveDataDir, tryInjectProfile, cleanupSessionMarkers, extractNavigateUrl, extractSessionId,
+  tryInjectProfile, cleanupSessionMarkers, extractNavigateUrl, extractSessionId,
 } = await import(pathToFileURL(join(tandemRoot, 'scripts/map-inject-core.mjs')).href);
 
-const dataDir = resolveDataDir(join(homedir(), '.local', 'share', 'tandem'));
+const dataDir = resolveDataDir();
 
 function readStdin() {
   try { return readFileSync(0, 'utf8'); } catch { return ''; }

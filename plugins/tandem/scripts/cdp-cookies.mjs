@@ -15,16 +15,7 @@
 //              is usually a session token): list masks it, and formats that exist to dump
 //              the full value (json/curl/headers/netscape) require explicit --reveal.
 
-import { homedir } from 'node:os';
-import { join } from 'node:path';
-import { readFileSync } from 'node:fs';
-
-// --- config (same logic as lib.sh for path consistency) ---------------------------
-function cdpPort() {
-  const dataDir = process.env.TANDEM_DATA_DIR || join(homedir(), '.claude', 'tandem');
-  try { return +readFileSync(join(dataDir, 'cdp-port'), 'utf8').trim() || 9222; }
-  catch { return +(process.env.TANDEM_CDP_PORT || 9222); }
-}
+import { cdpPort } from './paths.mjs';   // same port rule as lib.sh
 
 // --- minimal CDP client (native Node 22+ WebSocket) --------------------------------
 function cdpConnect(wsUrl) {

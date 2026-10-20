@@ -19,20 +19,19 @@
 //     - wait-url: /tickets/
 //     - return:   url
 
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { parseProfile, validate } from './recipe-parser.mjs';
 import { compileFast, compileSteps } from './recipe-compiler.mjs';
 import { normalizeHost } from './host.mjs';
+import { dataDir } from './paths.mjs';
 
 export { ACTIONS, parseLocators, parseRecipes, parseProfile, validate } from './recipe-parser.mjs';
 export { fillTemplate, compileFast, compileSteps } from './recipe-compiler.mjs';
 export { assertCompiledSafe } from './recipe-safety.mjs';
 
 // --- CLI ---------------------------------------------------------------------------
-function dataDir() { return process.env.TANDEM_DATA_DIR || join(homedir(), '.claude', 'tandem'); }
 function loadProfile(host) {
   const path = join(dataDir(), 'sites', `${normalizeHost(host)}.md`);
   if (!existsSync(path)) { process.stderr.write(`recipe: no profile for '${host}' (${path})\n`); process.exit(1); }

@@ -1,5 +1,4 @@
 import type { Plugin } from "@opencode-ai/plugin";
-import { homedir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -11,11 +10,14 @@ const { normalizeHost } = await import(
 );
 // Shared logic lives in upstream scripts/map-inject-core.mjs (also used by the Claude
 // Code hook and the Cursor adapter); this plugin is the OpenCode entry point.
-const { resolveDataDir, tryInjectProfile, cleanupSessionMarkers } = await import(
+const { tryInjectProfile, cleanupSessionMarkers } = await import(
   pathToFileURL(join(tandemRoot, "scripts/map-inject-core.mjs")).href
 );
+const { dataDir: resolveDataDir } = await import(
+  pathToFileURL(join(tandemRoot, "scripts/paths.mjs")).href
+);
 
-const dataDir = resolveDataDir(join(homedir(), ".local", "share", "tandem"));
+const dataDir = resolveDataDir();
 
 function isBrowserNavigate(tool: string): boolean {
   return /browser_navigate$/i.test(tool) || tool === "browser_navigate";

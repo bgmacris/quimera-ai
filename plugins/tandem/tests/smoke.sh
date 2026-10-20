@@ -42,7 +42,7 @@ for f in "$SCRIPTS"/*.mjs; do
 done
 # Executable bit: everything invoked by its PATH (not with `bash`/`node` or `source`) must
 # have +x, or it fails with 126 in production. lib.sh is `source`d, so it is excluded.
-for f in chrome-daemon.sh map.sh mcp-launch.sh fingerprint.mjs hook-inject-profile.mjs; do
+for f in chrome-daemon.sh map.sh mcp-launch.sh fingerprint.mjs hook-inject-profile.mjs session-hook.mjs guard-sites.mjs; do
   check "$f is executable (+x)" "[ -x '$SCRIPTS/$f' ]"
 done
 check "bin/tandem-browser is executable (+x)" "[ -x '$ROOT/bin/tandem-browser' ]"
@@ -193,6 +193,21 @@ if node "$HERE/host.test.mjs" 2>&1 | sed 's/^/  /'; then
 else
   bad "host.test.mjs"
 fi
+
+# --- 10. lifecycle: leases, write gate, injection envelope, redaction ----------------
+# v0.8.0 foundations: one Chrome shared by several sessions, profile writes gated outside the
+# model (memory poisoning), injected profile marked as data + capped, credential headers redacted.
+echo "[10] lifecycle (node tests/lifecycle.test.mjs)"
+if node "$HERE/lifecycle.test.mjs" 2>&1 | sed 's/^/  /'; then
+  ok "lifecycle.test.mjs green"
+else
+  bad "lifecycle.test.mjs"
+fi
+
+# hooks.json must parse and point only at scripts that exist and are executable.
+check "hooks.json is valid JSON" "node -e 'JSON.parse(require(\"fs\").readFileSync(\"$ROOT/hooks/hooks.json\",\"utf8\"))'"
+check "every hook command targets an executable script" \
+  "node -e 'const h=JSON.parse(require(\"fs\").readFileSync(\"$ROOT/hooks/hooks.json\",\"utf8\")).hooks;const fs=require(\"fs\");let ok=true;for(const e of Object.values(h))for(const m of e)for(const k of m.hooks){const f=k.command.replace(/\"\\\$\\{CLAUDE_PLUGIN_ROOT\\}\"/,\"$ROOT\").split(\" \")[0];try{fs.accessSync(f,fs.constants.X_OK)}catch{ok=false;console.error(f)}}process.exit(ok?0:1)'"
 
 # --- summary ------------------------------------------------------------------------
 echo ""

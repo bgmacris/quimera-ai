@@ -18,12 +18,12 @@
 // check:   compares stdin against saved; emits {status, added[], removed[]} on stdout.
 //          status = new (no prior) | match (identical) | drift (changed).
 
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { normalizeHost } from './host.mjs';
+import { dataDir as resolveDataDir } from './paths.mjs';
 
-const dataDir = process.env.TANDEM_DATA_DIR || join(homedir(), '.claude', 'tandem');
+const dataDir = resolveDataDir();
 const sitesDir = join(dataDir, 'sites');
 
 const [, , mode, rawHost, routeKey] = process.argv;

@@ -8,14 +8,15 @@
 #   ./install.sh --opencode   OpenCode only (+ bin/)
 #   ./install.sh --dry-run    Print actions without changing files
 #
-# Golden rule: never edit upstream core (scripts/, bin/, skills/, hooks/ at plugin root).
-# Only adapters/ and this script are fork-specific.
+# Data dir: ONE store shared with Claude Code (~/.claude/tandem, override TANDEM_DATA_DIR).
+# Older adapter installs used ~/.local/share/tandem: it is migrated (see migrate_legacy_data_dir).
 
 set -eu
 
 TANDEM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ADAPTERS="${TANDEM_ROOT}/adapters"
-DATA_DIR_DEFAULT="${HOME}/.local/share/tandem"
+DATA_DIR_DEFAULT="${HOME}/.claude/tandem"
+LEGACY_DATA_DIR="${HOME}/.local/share/tandem"
 BIN_DIR="${HOME}/.local/bin"
 ENV_FILE="${BIN_DIR}/tandem-env.sh"
 DRY_RUN=0
@@ -44,7 +45,8 @@ link() {
   fi
   mkdir -p "$(dirname "$linkpath")"
   if [ -e "$linkpath" ] && [ ! -L "$linkpath" ]; then
-    local backup="${linkpath}.bak.$(date +%s)"
+    local backup
+    backup="${linkpath}.bak.$(date +%s)"
     mv "$linkpath" "$backup"
     log "moved existing ${linkpath} -> ${backup}"
   fi
@@ -148,10 +150,33 @@ should_install_opencode() {
   { [ -d "${HOME}/.config/opencode" ] || command -v opencode >/dev/null 2>&1; }
 }
 
+# Two stores on the same CDP port meant a silent wrong Chrome profile and split site memory.
+#  - only the legacy dir exists → move it to the new location and leave a symlink behind;
+#  - both exist → never merge profiles automatically: copy site profiles that are missing in
+#    the new store (cp -n, no overwrite), keep the legacy dir, and say so.
+migrate_legacy_data_dir() {
+  [ -d "$LEGACY_DATA_DIR" ] && [ ! -L "$LEGACY_DATA_DIR" ] || return 0
+  if [ ! -e "$DATA_DIR_DEFAULT" ]; then
+    run mkdir -p "$(dirname "$DATA_DIR_DEFAULT")"
+    run mv "$LEGACY_DATA_DIR" "$DATA_DIR_DEFAULT"
+    link "$DATA_DIR_DEFAULT" "$LEGACY_DATA_DIR"
+    log "migrated $LEGACY_DATA_DIR -> $DATA_DIR_DEFAULT"
+    return 0
+  fi
+  if [ -d "$LEGACY_DATA_DIR/sites" ]; then
+    run mkdir -p "$DATA_DIR_DEFAULT/sites"
+    run cp -n "$LEGACY_DATA_DIR"/sites/*.md "$DATA_DIR_DEFAULT/sites/" 2>/dev/null || true
+  fi
+  log "WARN: both $LEGACY_DATA_DIR and $DATA_DIR_DEFAULT exist — copied missing site profiles,"
+  log "      left the legacy dir (and its Chrome profile) untouched. Remove it when you're done."
+}
+
 prepare_data_dir() {
+  migrate_legacy_data_dir
   run mkdir -p "${DATA_DIR_DEFAULT}/sites" "${DATA_DIR_DEFAULT}/output" "${DATA_DIR_DEFAULT}/logs"
+  run chmod 700 "$DATA_DIR_DEFAULT"
   # Legacy symlink for tools expecting ~/.cursor/tandem
-  if [ ! -e "${HOME}/.cursor/tandem" ]; then
+  if [ ! -e "${HOME}/.cursor/tandem" ] || [ -L "${HOME}/.cursor/tandem" ]; then
     link "$DATA_DIR_DEFAULT" "${HOME}/.cursor/tandem"
   fi
 }
