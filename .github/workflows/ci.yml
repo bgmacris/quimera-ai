@@ -5,22 +5,41 @@ on:
   pull_request:
 
 jobs:
-  # Engine + regression guards on Linux AND macOS. smoke.sh does NOT start Chrome
-  # (that needs a display, verified manually), so it runs headless in CI.
+  # Engine + regression guards on Linux AND macOS, across supported Node lines. smoke.sh does NOT
+  # start Chrome; the e2e job below does.
   test:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest]
+        node: ['22', '24', '26']
+        include:
+          - os: macos-latest
+            node: '22'
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: ${{ matrix.node }}
       - name: smoke + engine tests (no Chrome)
         working-directory: plugins/tandem
         run: bash tests/smoke.sh
+
+  # Real Chrome, headless: daemon start/ownership/stop, HAR recorder + intercept daemon over several
+  # tabs, cookies, pdf/png. --no-sandbox: ubuntu runners restrict unprivileged user namespaces.
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: e2e with headless Chrome
+        working-directory: plugins/tandem
+        env:
+          TANDEM_CHROME_ARGS: --headless=new --no-sandbox
+        run: bash tests/e2e.sh
 
   # Shell lint on Linux (shellcheck ships on ubuntu runners; install as a fallback).
   lint:
@@ -33,4 +52,16 @@ jobs:
           if ! command -v shellcheck >/dev/null 2>&1; then
             sudo apt-get update && sudo apt-get install -y shellcheck
           fi
-          shellcheck -x -S style scripts/*.sh bin/* tests/*.sh
+          shellcheck -x -S style scripts/*.sh bin/* tests/*.sh install.sh adapters/*/scripts/*.sh adapters/shared/*.sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: adapters parse
+        working-directory: plugins/tandem
+        run: |
+          node --check adapters/cursor/hooks/inject-profile.mjs
+          node --check adapters/opencode/merge-opencode-fragment.mjs
+          node -e 'JSON.parse(require("fs").readFileSync("adapters/cursor/hooks/hooks.json","utf8"))'
+          node -e 'JSON.parse(require("fs").readFileSync("adapters/opencode/opencode.fragment.jsonc","utf8").replace(/^\s*\/\/.*$/gm,""))'
+      - name: bench harness parses
+        run: for f in bench/webarena/*.mjs; do node --check "$f"; done

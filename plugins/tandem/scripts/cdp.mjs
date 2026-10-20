@@ -74,3 +74,23 @@ export class CdpClient {
 
   close() { try { this.ws.close(); } catch { /* already closed */ } }
 }
+
+// The tab the human is looking at: /json order is not "the current tab", so ask each page.
+// visible + focused > visible > first. `index` (explicit --tab) overrides the heuristic.
+export async function activePage({ port = cdpPort(), index = null } = {}) {
+  const pages = await listPages(port);
+  if (!pages.length) throw new Error('no open tabs');
+  if (index != null) return pages[index] || pages[0];
+  let visible = null;
+  for (const pg of pages) {
+    let c;
+    try {
+      c = await connect(pg.webSocketDebuggerUrl, { timeoutMs: 3000 });
+      const { result } = await c.call('Runtime.evaluate', { expression: '[document.visibilityState, document.hasFocus()]', returnByValue: true });
+      const [vis, focus] = result.value || [];
+      if (vis === 'visible' && focus) return pg;
+      if (vis === 'visible' && !visible) visible = pg;
+    } catch { /* busy/crashed tab: skip */ } finally { c?.close(); }
+  }
+  return visible || pages[0];
+}

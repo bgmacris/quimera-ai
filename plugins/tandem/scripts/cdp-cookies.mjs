@@ -1,45 +1,28 @@
 #!/usr/bin/env node
 // cdp-cookies.mjs — cookies from tandem's Chrome via direct CDP (no deps, Node 22+).
 //
-// Network.getAllCookies exposes the FULL profile jar, including HttpOnly and Secure cookies —
-// inaccessible from page JS. Useful for: security flag analysis, exporting authenticated
+// Storage.getCookies (browser target) exposes the FULL profile jar, including HttpOnly and Secure
+// cookies — inaccessible from page JS. Browser-level: needs no open tab (the old per-page
+// Network.getAllCookies did). Useful for: security flag analysis, exporting authenticated
 // sessions to Burp/curl, replaying requests with real auth context.
 //
 // Requires active Chrome (tandem-browser start). Node 22+ (native WebSocket + fetch).
 //
 // Usage: cdp-cookies.mjs [--domain <d>] [--format list|json|curl|headers|netscape] [--reveal]
-//   --domain   filter by domain substring (case-insensitive)
+//   --domain   cookies of that domain AND its subdomains (label boundary: "example.com" matches
+//              ".example.com" and "a.example.com", not "notexample.com")
 //   --format   list=readable table (default), json=full dump, curl=-H 'Cookie: ...',
 //              headers=raw Cookie: line (for Burp repeater), netscape=TXT for curl --cookie-jar
 //   --reveal   show VALUES in plaintext. By default the value is REDACTED (a cookie value
 //              is usually a session token): list masks it, and formats that exist to dump
 //              the full value (json/curl/headers/netscape) require explicit --reveal.
 
-import { cdpPort } from './paths.mjs';   // same port rule as lib.sh
+import { browserWsUrl, connect } from './cdp.mjs';
+import { domainMatches } from './cookie-match.mjs';
 
-// --- minimal CDP client (native Node 22+ WebSocket) --------------------------------
-function cdpConnect(wsUrl) {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(wsUrl);
-    ws.addEventListener('open', () => resolve(ws));
-    ws.addEventListener('error', (e) => reject(new Error(String(e.message || e))));
-  });
-}
+// Piped into `grep -q`/`head`: a closed stdout is the reader saying "enough", not an error.
+process.stdout.on('error', (e) => { if (e.code === 'EPIPE') process.exit(0); throw e; });
 
-let _id = 0;
-function cdpCall(ws, method, params = {}) {
-  return new Promise((resolve, reject) => {
-    const id = ++_id;
-    const handler = ({ data }) => {
-      const msg = JSON.parse(data);
-      if (msg.id !== id) return;
-      ws.removeEventListener('message', handler);
-      msg.error ? reject(new Error(msg.error.message)) : resolve(msg.result);
-    };
-    ws.addEventListener('message', handler);
-    ws.send(JSON.stringify({ id, method, params }));
-  });
-}
 
 // --- arg parsing ------------------------------------------------------------------
 const argv = process.argv.slice(2);
@@ -64,31 +47,24 @@ if (!reveal && ['json', 'curl', 'headers', 'netscape'].includes(format)) {
   process.exit(2);
 }
 
-// --- connect to page target (Network.getAllCookies requires page, not Browser target) --
-const port = cdpPort();
-let ws;
+// --- connect to the browser target and read the whole jar --------------------------
+let cdp; let cookies;
 try {
-  const tabs = await fetch(`http://127.0.0.1:${port}/json`).then((r) => r.json());
-  const tab = tabs.find((t) => t.type === 'page' && t.webSocketDebuggerUrl);
-  if (!tab) throw new Error('no active tabs');
-  ws = await cdpConnect(tab.webSocketDebuggerUrl);
+  cdp = await connect(await browserWsUrl());
+  ({ cookies } = await cdp.call('Storage.getCookies'));
 } catch (e) {
-  process.stderr.write(`cdp-cookies: cannot connect (Chrome active? tandem-browser status).\n  ${e.message}\n`);
+  process.stderr.write(`cdp-cookies: cannot read cookies (Chrome active? tandem-browser status).\n  ${e.message}\n`);
+  cdp?.close();
   process.exit(1);
 }
+cdp.close();
 
-// --- get cookies ------------------------------------------------------------------
-let cookies;
-try {
-  ({ cookies } = await cdpCall(ws, 'Network.getAllCookies'));
-} catch (e) {
-  process.stderr.write(`cdp-cookies: Network.getAllCookies failed: ${e.message}\n`);
-  ws.close();
-  process.exit(1);
+if (domainFilter) cookies = cookies.filter((c) => domainMatches(c.domain, domainFilter));
+// A Cookie header is per request/host: merging several sites into one is almost never what you want.
+const domains = new Set(cookies.map((c) => c.domain.replace(/^\./, '')));
+if (['curl', 'headers'].includes(format) && domains.size > 1) {
+  process.stderr.write(`cdp-cookies: warning — ${domains.size} domains merged into one Cookie header; narrow with --domain.\n`);
 }
-ws.close();
-
-if (domainFilter) cookies = cookies.filter((c) => c.domain.toLowerCase().includes(domainFilter));
 if (!cookies.length) {
   process.stderr.write(`cdp-cookies: no cookies${domainFilter ? ` for '${domainFilter}'` : ''}.\n`);
   process.exit(0);

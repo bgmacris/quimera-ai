@@ -17,6 +17,7 @@ const { touchLease, dropLease, liveLeases, LEASE_TTL_MS, leaseDir } = await impo
 const { decide, isProfilePath, bashTouchesProfiles } = await import('../scripts/guard-sites.mjs');
 const { profileContext, MAX_PROFILE_CHARS, suspiciousLines } = await import('../scripts/map-inject-core.mjs');
 const { redactHeaders } = await import('../scripts/redact.mjs');
+const { domainMatches } = await import('../scripts/cookie-match.mjs');
 
 let pass = 0; let fail = 0;
 function ok(desc, cond) {
@@ -84,6 +85,14 @@ const r = redactHeaders({ Authorization: 'Bearer abcdef', Cookie: 'sid=1', 'Cont
 ok('Authorization/Cookie redacted', r.Authorization.startsWith('[redacted') && r.Cookie.startsWith('[redacted'));
 ok('other headers kept', r['Content-Type'] === 'text/html');
 ok('null headers pass through', redactHeaders(null) === null);
+
+// --- cookie domain filter ------------------------------------------------------------
+process.stdout.write('[cookies --domain]\n');
+ok('subdomain matches', domainMatches('a.example.com', 'example.com'));
+ok('leading-dot cookie domain matches', domainMatches('.example.com', 'example.com'));
+ok('label boundary: notexample.com ≠ example.com', !domainMatches('notexample.com', 'example.com'));
+ok('IP exact: 0.0.1 ≠ 127.0.0.1', !domainMatches('127.0.0.1', '0.0.1'));
+ok('IP exact match', domainMatches('127.0.0.1', '127.0.0.1'));
 
 rmSync(TMP, { recursive: true, force: true });
 process.stdout.write(`\nlifecycle: ${pass} ok, ${fail} failures\n`);

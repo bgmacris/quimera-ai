@@ -146,10 +146,14 @@ start_chrome() {
   fi
   printf '\n===== tandem: start %s (port %s) =====\n' "$(date '+%Y-%m-%d %H:%M:%S %Z')" "${port}" >> "$LOGDIR/chrome.log"
   echo "tandem: launching Chrome (dedicated profile, CDP 127.0.0.1:${port})…"
+  # TANDEM_CHROME_ARGS: extra flags, word-split on purpose (e.g. "--headless=new --no-sandbox" in CI).
+  local -a extra=()
+  if [ -n "${TANDEM_CHROME_ARGS:-}" ]; then read -r -a extra <<< "$TANDEM_CHROME_ARGS"; fi
   nohup "$CHROME_BIN" \
     --remote-debugging-port="${port}" \
     --user-data-dir="$PROFILE" \
     --no-first-run --no-default-browser-check \
+    ${extra[@]+"${extra[@]}"} \
     about:blank \
     >>"$LOGDIR/chrome.log" 2>&1 &
   echo "$!" > "$PIDFILE"

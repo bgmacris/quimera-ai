@@ -14,6 +14,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/); semantic versio
   (pure CDP→HAR, `tests/har.test.mjs`).
 - `bench/webarena/` (repo root): benchmark harness — arms A–D, isolated `claude -p` per task,
   HAR + metrics per task, report by arm and by instance within template.
+- `tests/e2e.sh`: real Chrome end-to-end (daemon, recorder, intercept over several tabs, cookies,
+  pdf/png) + a headless CI job. `TANDEM_CHROME_ARGS` passes extra Chrome flags (e.g. `--headless=new`).
+
+### Changed
+- **intercept**: `start` runs the capture as a background daemon and returns at once (it used to
+  block the slash command until Ctrl-C); new `stop`/`status`; captures **all tabs** with the shared
+  engine `scripts/capture.mjs` (also used by `cdp-record`): redirect hops shown (`→ <url>`).
+- **pdf**: real PDF by default — `Page.printToPDF` works on headful Chrome now (verified, Chrome 155);
+  `--png` is a full-page capture that no longer resizes the human's window; captures the visible,
+  focused tab instead of whatever `/json` lists first.
+- **cookies**: whole jar via browser-level `Storage.getCookies` (no tab needed); `--domain` matches
+  the domain and its subdomains on a label boundary (`example.com` ≠ `notexample.com`; IPs exact);
+  warns when `curl`/`headers` merge several domains into one Cookie header.
+- The three CDP tools share `scripts/cdp.mjs` (timeouts on connect and calls).
+- CI: Node 22/24/26 matrix, shellcheck over install.sh and adapters, adapter + bench parse checks.
+
+### Fixed
+- New tabs: the capture now pauses them until Network is on (their document request was missed),
+  sending enable + resume together (awaiting enable on a paused tab deadlocked it at about:blank).
+- CLIs piped into `grep -q`/`head` crashed with EPIPE.
 
 ## [0.8.0] — 2026-10-20
 
