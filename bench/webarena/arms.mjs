@@ -4,10 +4,12 @@
 
 const MCP = 'mcp__tandem__';
 
+// Keys as the evaluator's model reads them (types/agent_response.py: task_type, status, retrieved_data,
+// error_details) — NOT the docs page's action/results, which score 0 (verified 2026-10-20).
 export const RESPONSE_CONTRACT = `When you are done, write the file ./agent_response.json (Write tool) with this JSON:
-{"action": "retrieve" | "navigate" | "mutate", "status": "SUCCESS" | "NOT_FOUND_ERROR" | "ACTION_NOT_ALLOWED_ERROR" | "PERMISSION_DENIED_ERROR" | "DATA_VALIDATION_ERROR" | "UNKNOWN_ERROR", "results": [...] or null, "error_details": null or "why"}
-- retrieve: you read information → results = array of the requested values (all of the same type).
-- mutate: you changed data → results = null. navigate: you ended on the requested page → results = null.
+{"task_type": "retrieve" | "navigate" | "mutate", "status": "SUCCESS" | "NOT_FOUND_ERROR" | "ACTION_NOT_ALLOWED_ERROR" | "PERMISSION_DENIED_ERROR" | "DATA_VALIDATION_ERROR" | "UNKNOWN_ERROR", "retrieved_data": [...] or null, "error_details": null or "why"}
+- retrieve: you read information → retrieved_data = array of the requested values, all of the same type;
+  numbers as numbers (not strings). mutate: you changed data → null. navigate: you ended on the requested page → null.
 - If the task cannot be done (target does not exist, not allowed…), use the matching error status — do not guess.
 There is no human: never ask questions, decide and finish.`;
 

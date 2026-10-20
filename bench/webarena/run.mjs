@@ -9,7 +9,8 @@
 // promoted to the arm's profile — a SIMULATED human approval (logged), since -p has no human.
 //
 // Usage: run.mjs --plan plan.json --arm A|B|C|D --out <dir> [--model sonnet] [--port 9444]
-//          [--envctrl http://localhost:7781] [--header "X-M2-Admin-Auto-Login: admin:admin1234"]
+//          [--reset-cmd ./reset-shopping-admin.sh | --no-reset] [--envctrl http://localhost:7781]
+//          [--app-url http://localhost:7780/admin] [--header "X-M2-Admin-Auto-Login: admin:admin1234"]
 //          [--budget 3] [--timeout 900] [--limit N] [--resume] [--no-reset]
 
 import { spawn, execFileSync } from 'node:child_process';
@@ -30,6 +31,7 @@ if (!arm || !opt('out')) { process.stderr.write('usage: run.mjs --plan plan.json
 const OUT = resolve(opt('out'), armKey);
 const model = opt('model', 'sonnet'); const port = opt('port', '9444');
 const envctrl = opt('envctrl', 'http://localhost:7781'); const header = opt('header', '');
+const appUrl = opt('app-url', 'http://localhost:7780/admin');
 const budget = opt('budget', '3'); const timeoutS = +opt('timeout', '900');
 const limit = +opt('limit', String(plan.length));
 
@@ -37,15 +39,22 @@ const env = { ...process.env, TANDEM_DATA_DIR: join(OUT, 'tandem-data'), TANDEM_
 const daemon = (cmd) => execFileSync(join(TANDEM, 'scripts/chrome-daemon.sh'), [cmd], { env, encoding: 'utf8' });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// --reset-cmd: shell command that restores a clean site (e.g. reset-shopping-admin.sh recreates the
+// container — the published image's env-ctrl has no /reset). Then wait for env-ctrl AND the app.
 async function resetSite() {
   if (has('no-reset')) return;
-  const r = await fetch(`${envctrl}/reset`, { method: 'POST' });
-  if (!r.ok) throw new Error(`env-ctrl reset → HTTP ${r.status}`);
+  if (!opt('reset-cmd')) throw new Error('--reset-cmd is required (or --no-reset)');
+  execFileSync('sh', ['-c', opt('reset-cmd')], { stdio: 'inherit' });
   for (let i = 0; i < 150; i++) {
-    try { if ((await fetch(`${envctrl}/health`, { signal: AbortSignal.timeout(3000) })).ok) return; } catch { /* booting */ }
+    // /status (success:true), not /health: the documented /health answers 404 "Not found" (verified 2026-10-20).
+    try {
+      const st = await fetch(`${envctrl}/status`, { signal: AbortSignal.timeout(5000) });
+      const app = await fetch(appUrl, { headers: header ? { [header.split(/:\s*/)[0]]: header.split(/:\s*/).slice(1).join(':') } : {}, redirect: 'manual', signal: AbortSignal.timeout(60000) });
+      if (st.ok && (await st.json()).success && app.status < 500) return;
+    } catch { /* booting */ }
     await sleep(2000);
   }
-  throw new Error('env-ctrl health timeout after reset');
+  throw new Error('env-ctrl status timeout after reset');
 }
 
 function startRecorder(harPath) {
@@ -119,7 +128,7 @@ for (const task of plan.slice(0, limit)) {
     rec.kill('SIGTERM'); await new Promise((r) => rec.on('exit', r));
     log.push(`claude exit ${code}`);
     if (!existsSync(join(dir, 'agent_response.json'))) {
-      writeFileSync(join(dir, 'agent_response.json'), JSON.stringify({ action: 'retrieve', status: 'UNKNOWN_ERROR', results: null, error_details: 'harness: agent wrote no agent_response.json' }));
+      writeFileSync(join(dir, 'agent_response.json'), JSON.stringify({ task_type: 'retrieve', status: 'UNKNOWN_ERROR', retrieved_data: null, error_details: 'harness: agent wrote no agent_response.json' }));
       log.push('no agent_response.json → UNKNOWN_ERROR written by harness');
     }
     const draft = join(dir, 'profile-draft.md');

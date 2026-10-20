@@ -30,14 +30,16 @@ without it), `--strict-mcp-config` with only tandem's MCP, `--tools Write` (for 
 ## Run
 
 ```bash
-# 1. Site (amd64 image; ~2.9 GB) — see webarena-verified docs for env start/reset.
-docker run -d --name webarena-verified-shopping_admin -p 7780:80 -p 7781:8877 am1n3e/webarena-verified-shopping_admin
+# 1. Site (amd64 image, 4.5 GB unpacked). On Apple Silicon: a Colima profile with Rosetta
+#    (`colima start wav --vm-type vz --vz-rosetta --cpus 4 --memory 6`). reset-shopping-admin.sh
+#    (re)creates the container — also the per-task reset: the image's env-ctrl has no /reset.
+./reset-shopping-admin.sh
 # 2. Rendered tasks for the site, then the pilot plan (10 templates × 4 instances, deterministic)
 uvx webarena-verified agent-input-get --sites shopping_admin --config config.json --output tasks.json
 node select.mjs tasks.json plan.json --templates 10 --instances 4
 # 3. One arm at a time (each task: env reset → fresh Chrome → HAR recorder → claude -p)
 node run.mjs --plan plan.json --arm A --out results --model sonnet \
-  --header "X-M2-Admin-Auto-Login: admin:admin1234"
+  --reset-cmd ./reset-shopping-admin.sh --header "X-M2-Admin-Auto-Login: admin:admin1234"
 # 4. Score + aggregate
 uvx webarena-verified eval-tasks --output-dir results/A --config config.json
 node report.mjs results
@@ -45,6 +47,13 @@ node report.mjs results
 
 `config.json` maps `__SHOPPING_ADMIN__` to the local URL (the credentials are the image's public
 test defaults). `--resume` skips tasks that already have `metrics.json`.
+
+## Environment quirks (verified 2026-10-20)
+
+- The published image's env-ctrl serves `/status`, `/is_ready`, `/init`, `/start`, `/stop`,
+  `/restart` — **no `/health`, no `/reset`** despite the docs. Readiness = `/status` `success:true`.
+- Under Rosetta, php-fpm segfaults in a loop with OPcache on (disabling only the JIT is not enough);
+  `rosetta/zz-rosetta-no-opcache.ini` turns OPcache off. Admin pages then answer in ~2 s.
 
 ## Honest limits
 
