@@ -149,8 +149,8 @@ continues from the already-rendered page — that is the human-in-the-loop hando
 
 ## Troubleshooting
 
-- **`File access denied … outside allowed roots`** when passing `filename` to a browser tool: since
-  @playwright/mcp 0.0.83 files can only be written under the output dir (`~/.claude/tandem/output/`)
+- **`File access denied … outside allowed roots`** when passing `filename` to a browser tool: @playwright/mcp
+  only writes files under the output dir (`~/.claude/tandem/output/`)
   or the MCP's workspace root. Use an absolute path inside the output dir, or omit `filename`.
 - **`ECONNREFUSED 127.0.0.1:9222`** means no Chrome is running → `/tandem:browser-start`.
 

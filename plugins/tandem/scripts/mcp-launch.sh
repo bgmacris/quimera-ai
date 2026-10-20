@@ -26,7 +26,7 @@ MCP_VERSION="${TANDEM_MCP_VERSION:-0.0.83}"
 
 # Only --cdp-endpoint (validated in PoC: without --browser, if Chrome is not running it gives
 # a CLEAN error instead of auto-launching its own browser). --output-dir avoids cluttering
-# the cwd with snapshots; since 0.0.83 file writes are only allowed under it (or the MCP's
+# the cwd with snapshots; file writes are only allowed under it (or the MCP's
 # workspace root). --file-paths absolute: tool results link files by absolute path, readable
 # as-is. --no-webmcp: tools a page registers via WebMCP are untrusted input → not exposed.
 exec npx -y "@playwright/mcp@${MCP_VERSION}" \

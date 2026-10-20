@@ -87,13 +87,16 @@ port_listener_pid() {
   fi
 }
 
-# Is the CDP on the port OUR Chrome (launched with our --user-data-dir)? A healthy CDP alone
-# proves nothing: a personal Chrome with remote debugging, or an adapter with another data
-# dir, can answer on the same port — and attaching to it would act on the wrong profile.
-cdp_ours() {
+# Who owns the CDP on the port? Prints: ours | foreign | unknown.
+# A healthy CDP alone proves nothing: a personal Chrome with remote debugging, or an adapter with
+# another data dir, can answer on the same port. But "foreign" is claimed only when a LOCAL listener
+# is identified and lacks our --user-data-dir. When the listener can't be seen — Windows (Git Bash:
+# no lsof/ss), or WSL driving the WINDOWS Chrome over mirrored networking (a real setup in use) — the
+# answer is "unknown" and callers keep the old behavior (accept it, with a note), not refuse it.
+cdp_owner() {
   local pid; pid="$(port_listener_pid)"
-  [ -n "$pid" ] || return 1
-  ps -o command= -p "$pid" 2>/dev/null | grep -qF -- "--user-data-dir=$PROFILE"
+  if [ -z "$pid" ]; then echo unknown; return; fi
+  if ps -o command= -p "$pid" 2>/dev/null | grep -qF -- "--user-data-dir=$PROFILE"; then echo ours; else echo foreign; fi
 }
 
 # Saved PID, if the process is still alive.
@@ -117,10 +120,10 @@ start_chrome() {
 
   # Idempotent: if CDP already responds AND it is our profile, nothing to do.
   if cdp_healthy; then
-    if cdp_ours; then
-      echo "tandem: Chrome already running (CDP at 127.0.0.1:${port})."
-      return 0
-    fi
+    case "$(cdp_owner)" in
+      ours)    echo "tandem: Chrome already running (CDP at 127.0.0.1:${port})."; return 0 ;;
+      unknown) echo "tandem: a browser already answers CDP at 127.0.0.1:${port} (its process is not visible here — e.g. Windows Chrome from WSL); using it."; return 0 ;;
+    esac
     echo "tandem: ERROR — port ${port} answers CDP but it is NOT tandem's Chrome (profile $PROFILE)." >&2
     echo "        Another browser (or another tandem data dir) owns it. Close it or set TANDEM_CDP_PORT." >&2
     return 1
@@ -197,9 +200,11 @@ status_chrome() {
   echo "tandem — status:"
   echo "  profile:  $PROFILE"
   echo "  port:     ${port}"
-  if cdp_healthy && ! cdp_ours; then
+  local owner=""; cdp_healthy && owner="$(cdp_owner)"
+  if [ "$owner" = foreign ]; then
     echo "  CDP:      ⚠ a browser answers on ${port} but it is NOT tandem's profile"
-  elif cdp_healthy; then
+  elif [ -n "$owner" ]; then
+    [ "$owner" = unknown ] && echo "  owner:    not visible from here (external browser, e.g. Windows Chrome from WSL)"
     local ver; ver="$(curl -s --max-time 2 "http://127.0.0.1:${port}/json/version" | sed -n 's/.*"Browser": *"\([^"]*\)".*/\1/p')"
     echo "  CDP:      ✅ active (${ver:-?})"
     local n; n="$(curl -s "http://127.0.0.1:${port}/json" | grep -c '"type": "page"' 2>/dev/null)"

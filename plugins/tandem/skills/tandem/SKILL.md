@@ -134,7 +134,7 @@ website breaks something. Mark each rule as [verified] (lived) or [hypothesis] (
   the human asks.
 
 ### Saving snapshots to a file
-- [verified 2026-10-20, 0.0.83] `filename` (snapshot/evaluate) only writes under the output dir
+- [verified 2026-10-20, 0.0.76 AND 0.0.83] `filename` (snapshot/evaluate) only writes under the output dir
   (`~/.claude/tandem/output/`) or the MCP's workspace root; anything else fails with "File access
   denied … outside allowed roots". A RELATIVE name lands in the MCP's cwd (clutters it). Rule: pass an
   ABSOLUTE path INSIDE `~/.claude/tandem/output/`, or omit filename (auto-named into the output dir).

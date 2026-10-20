@@ -94,8 +94,9 @@ Catch-up with @playwright/mcp (seven releases behind) + the Cursor/OpenCode adap
 - `UPSTREAM.md`: written for a fork workflow; the adapters now live in this repo.
 
 ### Fixed
-- Skill rule for `filename`: 0.0.83 only writes under the output dir or the MCP workspace root
-  ("File access denied … outside allowed roots"); the old "use any absolute path" advice now fails.
+- Skill rule for `filename`: the MCP only writes under the output dir or its workspace root ("File access
+  denied … outside allowed roots") — verified on 0.0.76 too, so the old "use any absolute path" advice
+  was already wrong (real usage logged 15 such errors on 0.0.76).
 
 ## [0.6.0] — 2026-06-26
 
