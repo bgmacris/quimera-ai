@@ -29,6 +29,7 @@ function summarize(rs) {
     success: mean(scored.map((r) => r.score)), costUsd: mean(rs.filter((r) => r.costUsd != null).map((r) => r.costUsd)),
     obsKB: mean(rs.filter((r) => r.observationBytes != null).map((r) => r.observationBytes / 1024)),
     turns: mean(rs.filter((r) => r.turns != null).map((r) => r.turns)),
+    load1: mean(rs.filter((r) => r.loadBefore).map((r) => r.loadBefore[0])),   // machine load at task start
   };
 }
 
@@ -41,10 +42,10 @@ for (const a of arms) {
 }
 if (process.argv.includes('--json')) { process.stdout.write(JSON.stringify(out, null, 2) + '\n'); process.exit(0); }
 
-process.stdout.write('arm  n   scored  success  cost$   obsKB   turns  harnessErr\n');
+process.stdout.write('arm  n   scored  success  cost$   obsKB   turns  load1  harnessErr\n');
 for (const a of arms) {
   const s = out.overall[a];
-  process.stdout.write(`${a}    ${String(s.n).padEnd(4)}${String(s.scored).padEnd(8)}${fmt(s.success).padEnd(9)}${fmt(s.costUsd, 3).padEnd(8)}${fmt(s.obsKB, 1).padEnd(8)}${fmt(s.turns, 1).padEnd(7)}${s.harnessErrors}\n`);
+  process.stdout.write(`${a}    ${String(s.n).padEnd(4)}${String(s.scored).padEnd(8)}${fmt(s.success).padEnd(9)}${fmt(s.costUsd, 3).padEnd(8)}${fmt(s.obsKB, 1).padEnd(8)}${fmt(s.turns, 1).padEnd(7)}${fmt(s.load1, 1).padEnd(7)}${s.harnessErrors}\n`);
 }
 process.stdout.write('\nby instance within template (1 = cold; C/D warm from 2):\n');
 for (const a of arms) {
