@@ -14,6 +14,9 @@ check() { if eval "$2"; then ok "$1"; else bad "$1"; fi; }
 
 TMP="$(mktemp -d)"
 export TANDEM_DATA_DIR="$TMP/data" TANDEM_CDP_PORT="${TANDEM_E2E_PORT:-9333}"
+# A cold Chrome on a CI runner can need more than the default 15 s (3rd CI run: start failed, Chrome
+# answered moments later). Generous here: the test is about behavior, not start-up speed.
+export TANDEM_CDP_WAIT="${TANDEM_CDP_WAIT:-60}"
 SITE_PORT=8766; SITE="http://127.0.0.1:$SITE_PORT"
 node "$HERE/fixtures/site.mjs" "$SITE_PORT" & SITE_PID=$!
 cleanup() {
