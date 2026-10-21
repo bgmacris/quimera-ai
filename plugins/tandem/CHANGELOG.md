@@ -39,6 +39,16 @@ mixed 9 different local apps.
   Windows paths use `\`. Now `path.relative` (checked with win32 path semantics). Bash detection also
   matches forward-slash forms of the store path.
 
+### Changed (positioning, after the WebArena mini-pilot)
+- tandem is presented as **human-in-the-loop browser + co-curated site memory**, no longer as a
+  context-saving tool. Pilot (Magento admin, 3 templates × 4 instances × 4 arms, Sonnet, MCP 0.0.83):
+  48/48 success in every arm; a warm profile read 4–7× fewer bytes but did not lower cost (the arm
+  without memory was cheapest). The "~16–30× smaller" figure (0.0.76) stays only as history.
+- Skills: `sel:` is still used when the fingerprint gate says `match`, but a snapshot is no longer
+  treated as something to avoid at any cost (0.0.83 snapshots are distilled, ~5 KB on an admin page).
+- `sel:` + fingerprint: **maintained, frozen** — nothing removed, no new features until a measurement
+  shows they raise success.
+
 ### Fixed (WebArena mini-pilot, 2026-10-21 — 48 runs on a machine at load ~20)
 - `chrome-daemon.sh start` removes a stale profile lock (`SingletonLock`/`Socket`/`Cookie`) when no
   process uses the profile. The lock is `<hostname>-<pid>` and the Mac's hostname follows the network:

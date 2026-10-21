@@ -6,7 +6,7 @@
     {
       "name": "tandem",
       "source": "./plugins/tandem",
-      "description": "A shared Chrome browser (human + Claude, CDP + Playwright MCP) that LEARNS how each site is navigated: per-site navigation memory (tandem:map) with durable locators, drift detection, and automatic profile injection on navigation."
+      "description": "A shared Chrome browser (human + Claude, CDP + Playwright MCP) for human-in-the-loop work (captchas, logins, certificates), with co-curated per-site memory (tandem:map): routes, locators, recipes, auto-injected on arrival."
     }
   ]
 }

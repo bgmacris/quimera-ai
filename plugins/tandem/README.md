@@ -20,30 +20,30 @@ re-deriving the DOM every time.
 > detection + **executable locators** (`sel:`) to act **without reading a snapshot to find the element**,
 > with a fingerprint gate that makes skipping the snapshot honest.
 
-## Why it pays: measured savings
+## What it is for — and what was measured
 
-Operating a *known* site the usual way means a full `browser_snapshot` every time you act — and the
-accessibility tree of a real page is large. tandem replaces that repeated snapshot with a **one-time
-profile** plus **executable `sel:`** locators:
+tandem is for work where **a human and Claude share one browser**: you clear what only you can
+(captchas, anti-bot checkpoints, 2FA, client certificates, AutoFirma), Claude does the rest in the same
+window, and what it learns about the site is kept as a profile you can read and edit.
 
-- A `browser_snapshot` of a real page (Wikipedia, *Web scraping*) = **~105 KB** (105,378 B measured),
-  and tandem writes it **to a file, not into the context**.
-- A per-site profile = **~3.5–6.7 KB**, injected **once per session** (not per action); a profile over
-  6,000 chars arrives as a ≤ 2 KB index and the agent fetches the section it needs.
-- Profile ↔ snapshot floor: **~16–30× smaller** depending on the profile (`wc -c`, measured
-  2026-06-29). On the expensive step — reading one record's full detail — targeted extraction vs its
-  snapshot measured **~110×** (see [`docs/01`](docs/01-navigation-memory.md)).
-- The `web-navigator` subagent absorbs the snapshot noise in *its own* context and returns only the
-  distilled data, so the main context stays clean.
+It is **not** a context-saving tool any more, and we measured that:
 
-Reproducible method: `wc -c` of the profile `.md` vs of the file saved by `browser_snapshot(filename:)`
-(every figure here is a byte count; token cost tracks it, roughly bytes ÷ 4).
+- **WebArena-Verified mini-pilot (2026-10-21)**: Magento admin, 3 task templates × 4 instances × 4
+  arms (A snapshot · B `browser_find` · C + site profile · D + recipes), Sonnet, @playwright/mcp 0.0.83.
+  **48/48 tasks succeeded in every arm** — these templates were too easy to separate the arms by success.
+- With a warm profile (instances 3–4) the agent **read 4–7× less of the page**: 2.3–3.6 KB per task
+  (C, D) vs 10–24 KB (A, B).
+- It did **not** make tasks cheaper: B (no memory) was the cheapest arm, 0.060 $/task vs 0.072 (C)
+  and 0.076 (D). Fixed overhead (system prompt, turns) dominates the cost; C/D only broke even with B
+  from the third instance. One site, one run per cell, machine load varied — an indication, not a law.
+- Why the old gap closed: since 0.0.78 the MCP distills its snapshots and adds `browser_find`. On that
+  admin a snapshot was ~5 KB (one measured task), not the ~105 KB measured on 0.0.76.
 
-> **Caveat (2026-10-20).** These figures were measured against @playwright/mcp **0.0.76**. Since
-> 0.0.78 the MCP distills its snapshots and adds `browser_find` (search the snapshot, return only
-> the matches), so the gap is now smaller than stated. They are also **bytes, not task success**:
-> richer observations can help strong models succeed more often. A re-measurement that scores
-> task success *and* cost is in progress; treat the numbers above as historical until then.
+Historical (0.0.76, 2026-06-29, bytes only): profile ↔ snapshot ~16–30× smaller, a targeted extraction
+vs its snapshot ~110× ([`docs/01`](docs/01-navigation-memory.md)). Kept for the record; not a current claim.
+
+**Open question, not answered yet:** whether site memory raises *success* on hard sites (long
+navigation, ambiguous pages). That needs a pilot with templates where the plain arms fail.
 
 ## What sets it apart: `tandem:map`
 
@@ -58,7 +58,8 @@ change between pages. `tandem:map` persists a **per-site profile**
   profile into Claude's context — once per session, silent if there's no profile.
 - **Drift by signal, not by date**: a fingerprint of the *skeleton* (not the data) detects when a
   page's structure changed, so only what's affected gets re-validated.
-- **Executable locators (`sel:`)**: the profile doesn't just *describe* locators, it makes them
+- **Executable locators (`sel:`)** — *maintained, frozen*: no new features until a measurement shows
+  they raise success (see above). The profile doesn't just *describe* locators, it makes them
   *actionable*. The agent clicks/types by durable selector (`role=button[name="…"]`) **without first
   reading a snapshot to get refs**. Where the saving is: an action's own result is small either way
   (with `--output-dir` the MCP files its page snapshot and returns ~0.2–0.3 KB — measured by an external
@@ -115,7 +116,7 @@ shipped in [`examples/`](examples/books.toscrape.com.md):
    Claude explores the rendered DOM, drafts the profile, you confirm, and it is saved to
    `~/.claude/tandem/sites/books.toscrape.com.md` (compare it with `examples/`).
 3. Next time you navigate there, the profile **auto-injects**; Claude acts by durable `sel:` (e.g.
-   extract all 20 book pods of a page) **without re-snapshotting** — the saving measured above.
+   extract all 20 book pods of a page) without first re-deriving the page.
 4. `/tandem:browser-stop`.
 
 If a site puts up a captcha or a login, you clear it with the mouse in that same window and Claude

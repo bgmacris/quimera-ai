@@ -124,8 +124,11 @@ you'd save the login skeleton under the wrong route-key. It's an auth wall → t
 
 ## Frugal flow (act by `sel:` without re-snapshotting)
 
-With a profile loaded, do NOT snapshot by default to act: reading a tree snapshot costs far more
-than the profile (measured once: 105 KB vs 5.6 KB on a large page). The snapshot goes from default mode to honest FALLBACK.
+With a profile loaded you can act by its `sel:` values instead of re-deriving the page. What this buys
+[verified 2026-10-21, WebArena-Verified pilot]: 4–7× fewer bytes read per task once the profile is warm,
+same success, NOT a lower cost (fixed overhead dominates; @playwright/mcp 0.0.83 snapshots are already
+small, ~5 KB on an admin page). So: use `sel:` when the gate says `match`; when anything is doubtful, a
+targeted snapshot is cheap and correct — success first. (Historical 0.0.76 figure: 105 KB vs 5.6 KB.)
 
 1. **Gate by fingerprint, not by faith.** Before trusting a route's `sel:` values,
    `fingerprint.mjs check <host> <route>`. `match` → the `sel:` values are good, act by them. `drift`/`new`

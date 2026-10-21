@@ -96,8 +96,10 @@ website breaks something. Mark each rule as [verified] (lived) or [hypothesis] (
 - [verified] The `target` of `browser_click`/`type`/`evaluate` accepts a **unique selector** in addition
   to the snapshot ref: CSS (`h1`) and Playwright engines (`role=button[name="X"]`, regex in `name=`).
   Tested resolving without a prior snapshot.
-- With a `tandem:map` profile that has `sel:`, act by selector and SKIP the snapshot
-  (reading it costs far more than the profile), validating the route first with `fingerprint.mjs check` (a gate, not faith).
+- With a `tandem:map` profile that has `sel:`, you may act by selector without a snapshot, validating
+  the route first with `fingerprint.mjs check` (a gate, not faith). [verified 2026-10-21] On
+  @playwright/mcp 0.0.83 snapshots are distilled (~5 KB on an admin page): when unsure, a snapshot is
+  cheap — don't contort the task to avoid one.
   Full flow: `tandem:map` skill, §"Frugal flow".
 - [verified] On deferred-render SPAs, `browser_wait_for` on the `sel` BEFORE acting: the
   first attempt may not find the element yet.

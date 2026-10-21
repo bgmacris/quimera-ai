@@ -5,10 +5,11 @@
 A [Claude Code](https://code.claude.com) plugin marketplace by [bgmacris](https://github.com/bgmacris).
 
 One plugin today — **[tandem](plugins/tandem)**: a Chrome browser **shared in real time** between you
-and Claude Code. You drive it with the mouse and clear the captchas/logins; Claude operates it over
-CDP and **learns how each site is navigated**, then acts by durable selectors instead of
-re-snapshotting the page — a site profile was **~16–30× smaller than one page snapshot** (bytes,
-`wc -c`, vs @playwright/mcp 0.0.76; being re-measured against task success — see the plugin README). The human-in-the-loop handoff is the point: the walls you clear, Claude continues past.
+and Claude Code. You drive it with the mouse and clear the captchas, logins and certificates; Claude
+operates it over CDP and continues past the walls you clear. It also keeps a **human-readable memory of
+each site** (routes, locators, recipes, gotchas) that you co-curate. The handoff is the point; the
+memory makes the next visit start from what was learned (measured: it reads less of each page, it does
+not make tasks cheaper — see the plugin README).
 
 ## Install
 
@@ -21,7 +22,7 @@ re-snapshotting the page — a site profile was **~16–30× smaller than one pa
 
 | Plugin | What it does |
 |---|---|
-| **[tandem](plugins/tandem)** | Shared human+Claude Chrome (CDP + Playwright MCP) with per-site navigation memory: human–AI handoff past captchas/logins, frugal navigation by durable `sel:` locators, recon and reverse-engineering of site logic. Full docs in [`plugins/tandem`](plugins/tandem). |
+| **[tandem](plugins/tandem)** | Shared human+Claude Chrome (CDP + Playwright MCP) with per-site navigation memory: human–AI handoff past captchas/logins, co-curated site memory (routes, locators, recipes), recon and reverse-engineering of site logic. Full docs in [`plugins/tandem`](plugins/tandem). |
 
 ## Adding a plugin
 
