@@ -23,6 +23,22 @@ mixed 9 different local apps.
 - `TANDEM_MCP_ARGS`: extra @playwright/mcp flags, appended last so they override tandem's defaults
   (verified: `--timeout-action 2000` → a hidden-element click fails at 2.0 s instead of 10.0 s).
 
+- **Node MCP launcher** (`scripts/mcp-launch.mjs`; `.mcp.json` now runs `node …/mcp-launch.mjs`):
+  Windows teammates no longer hand-patch `.mcp.json` to `bash.exe` in the plugin cache (lost on each
+  update). `npx.cmd` through cmd.exe with quoting (data dirs with spaces). `mcp-launch.sh` stays as a
+  wrapper for the adapters. Verified: MCP handshake (25 tools) with a data dir containing a space, and a
+  real `claude -p --plugin-dir` session loading the tools (`${CLAUDE_PLUGIN_ROOT}` expands in `args`).
+  CI gains a `windows-latest` job (engine tests + handshake). [Windows itself: verified only once CI runs.]
+- **External browser mode** (`TANDEM_BROWSER=external`, optional `TANDEM_BROWSER_START_CMD` /
+  `_STOP_CMD`): tandem only talks to the CDP port — for the Windows Chrome driven from WSL (certificates,
+  AutoFirma) and other browsers tandem cannot manage. e2e covers it (5 checks).
+- Chrome autodetection on Windows (Git Bash): Program Files / LocalAppData.
+
+### Fixed (platform)
+- The site-profile write gate never fired on **Windows**: it compared `startsWith(sitesDir + '/')`, and
+  Windows paths use `\`. Now `path.relative` (checked with win32 path semantics). Bash detection also
+  matches forward-slash forms of the store path.
+
 ### Changed (MCP defaults)
 - `--output-max-size 52428800`: the output dir (page snapshots/screenshots — a teammate's held 16 with
   tax IDs, another had 1,155 files) now evicts its oldest files past 50 MB (verified with a small threshold).

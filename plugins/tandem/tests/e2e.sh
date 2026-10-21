@@ -77,6 +77,23 @@ echo "[4] stop"
 check "stop" "'$ROOT/scripts/chrome-daemon.sh' stop | grep -q stopped"
 check "no Chrome left on our profile" "! pgrep -f -- '--user-data-dir=$TANDEM_DATA_DIR/chrome-profile' >/dev/null"
 
+
+echo "[5] external browser mode (TANDEM_BROWSER=external) — after tandem's own Chrome is gone"
+CHROME="$(bash -c ". '$ROOT/scripts/lib.sh'; printf '%s' \"\$CHROME_BIN\"")"
+OTHER="$TMP/other-profile"
+# Used inside the strings that check() evals (not visible to the linter).
+# shellcheck disable=SC2034
+START_CMD="'$CHROME' ${TANDEM_CHROME_ARGS:-} --remote-debugging-port=$TANDEM_CDP_PORT --user-data-dir='$OTHER' about:blank >/dev/null 2>&1 &"
+# shellcheck disable=SC2034
+STOP_CMD="pkill -f -- '--user-data-dir=$OTHER'"
+ext() { TANDEM_BROWSER=external TANDEM_DATA_DIR="$TMP/ext-data" "$ROOT/scripts/chrome-daemon.sh" "$@"; }
+cdp_up() { curl -s --max-time 2 "http://127.0.0.1:$TANDEM_CDP_PORT/json/version" >/dev/null; }
+check "external, nothing answering → start fails clearly" "! ext start >/dev/null 2>&1"
+check "external + START_CMD → started and ready" "TANDEM_BROWSER_START_CMD=\"\$START_CMD\" ext start | grep -q 'external browser ready'"
+check "status says external mode" "ext status | grep -q 'mode:     external'"
+check "stop without STOP_CMD leaves it running" "ext stop | grep -q 'not stopping' && cdp_up"
+check "stop with STOP_CMD stops it" "TANDEM_BROWSER_STOP_CMD=\"\$STOP_CMD\" ext stop | grep -q 'stopped' && sleep 1 && ! cdp_up"
+pkill -f -- "--user-data-dir=$OTHER" 2>/dev/null
 echo ""
 echo "e2e: $PASS ok, $FAIL failures"
 [ "$FAIL" -eq 0 ]

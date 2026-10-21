@@ -1,7 +1,10 @@
 {
   "mcpServers": {
     "tandem": {
-      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/mcp-launch.sh"
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/scripts/mcp-launch.mjs"
+      ]
     }
   }
 }

@@ -25,6 +25,27 @@ jobs:
       - name: smoke + engine tests (no Chrome)
         working-directory: plugins/tandem
         run: bash tests/smoke.sh
+      - name: MCP handshake through the node launcher
+        working-directory: plugins/tandem
+        run: node tests/mcp-handshake.mjs
+
+  # Windows NATIVE (real teammates run tandem there): the node launcher's MCP handshake (no Chrome
+  # needed — the MCP connects lazily) + the platform-independent engine tests. The bash lifecycle
+  # (lib.sh) is not exercised here: under Windows it runs in Git Bash and stays best effort.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: engine tests (node)
+        working-directory: plugins/tandem
+        shell: bash
+        run: for t in host selector page-signals recipe har profile review lifecycle; do node "tests/$t.test.mjs" || exit 1; done
+      - name: MCP handshake through the node launcher (initialize + tools/list)
+        working-directory: plugins/tandem
+        run: node tests/mcp-handshake.mjs
 
   # Real Chrome, headless: daemon start/ownership/stop, HAR recorder + intercept daemon over several
   # tabs, cookies, pdf/png. --no-sandbox: ubuntu runners restrict unprivileged user namespaces.

@@ -59,8 +59,10 @@ ok('Edit sites/x.md → ask', ask(decide({ tool_name: 'Edit', tool_input: { file
 ok('Write elsewhere → no opinion', decide({ tool_name: 'Write', tool_input: { file_path: join(TMP, 'notes.md') } }, SITES) === null);
 ok('fingerprints.json is not a profile', !isProfilePath(join(SITES, 'x.fingerprints.json'), SITES));
 ok('traversal sites/../x.md is not a profile', !isProfilePath(join(SITES, '..', 'x.md'), SITES));
-const LINK = join(TMP, 'link-to-sites'); symlinkSync(SITES, LINK);
-ok('write through a symlinked dir → still ask', ask(decide({ tool_name: 'Write', tool_input: { file_path: join(LINK, 'y.md') } }, SITES)));
+const LINK = join(TMP, 'link-to-sites');
+let linked = true; try { symlinkSync(SITES, LINK, 'junction'); } catch { linked = false; }   // Windows may refuse symlinks
+if (linked) ok('write through a symlinked dir → still ask', ask(decide({ tool_name: 'Write', tool_input: { file_path: join(LINK, 'y.md') } }, SITES)));
+else process.stdout.write('  - skip: symlink not permitted on this host\n');
 ok('Read tool → no opinion', decide({ tool_name: 'Read', tool_input: { file_path: join(SITES, 'x.md') } }, SITES) === null);
 ok('bash cat > profile → touches', bashTouchesProfiles(`cat > ${SITES}/x.md <<EOF`, SITES));
 ok('bash tee into profile → touches', bashTouchesProfiles(`echo hi | tee ${SITES}/x.md`, SITES));
@@ -101,6 +103,8 @@ ok('default: on, unless this host is WSL', autostartEnabled({}).on === !isWsl({}
 ok('WSL: off by default (external Windows Chrome)', autostartEnabled({ WSL_DISTRO_NAME: 'Ubuntu' }).on === false);
 ok('TANDEM_AUTOSTART=1 forces on, even in WSL', autostartEnabled({ WSL_DISTRO_NAME: 'Ubuntu', TANDEM_AUTOSTART: '1' }).on === true);
 ok('TANDEM_AUTOSTART=0 forces off', autostartEnabled({ TANDEM_AUTOSTART: '0' }).on === false);
+ok('external mode without a start command: off', autostartEnabled({ TANDEM_BROWSER: 'external' }).on === false);
+ok('external mode with TANDEM_BROWSER_START_CMD: on (even in WSL)', autostartEnabled({ TANDEM_BROWSER: 'external', TANDEM_BROWSER_START_CMD: 'x', WSL_DISTRO_NAME: 'U' }).on === true);
 
 rmSync(TMP, { recursive: true, force: true });
 process.stdout.write(`\nlifecycle: ${pass} ok, ${fail} failures\n`);

@@ -19,6 +19,13 @@ detect_chrome() {
         "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary"; do
         [ -x "$c" ] && { printf '%s\n' "$c"; return; }
       done ;;
+    MINGW*|MSYS*|CYGWIN*)  # Windows (Git Bash): the usual install locations. [unverified on Windows]
+      local pf86="${PROGRAMFILES:-C:/Program Files} (x86)"
+      for c in "/c/Program Files/Google/Chrome/Application/chrome.exe" \
+               "${pf86}/Google/Chrome/Application/chrome.exe" \
+               "${LOCALAPPDATA:-}/Google/Chrome/Application/chrome.exe"; do
+        [ -n "$c" ] && [ -f "$c" ] && { printf '%s\n' "$c"; return; }
+      done ;;
     *)  # Linux and other POSIX: search PATH for common names.
       for c in google-chrome google-chrome-stable chromium chromium-browser chrome brave-browser; do
         if command -v "$c" >/dev/null 2>&1; then command -v "$c"; return; fi
@@ -106,8 +113,46 @@ saved_pid_alive() {
   [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
 }
 
+# --- external browser mode -----------------------------------------------------------
+# TANDEM_BROWSER=external: tandem never launches or kills a browser — it only talks to the CDP port.
+# For a browser tandem cannot manage: e.g. the WINDOWS Chrome driven from WSL over mirrored networking
+# (certificates, AutoFirma), where tandem's own start would open a Linux Chrome without them, and its
+# stop (pkill) cannot reach the Windows process. Optional delegation, run with `sh -c`:
+#   TANDEM_BROWSER_START_CMD  how to start it (then tandem waits for CDP, up to ~15 s)
+#   TANDEM_BROWSER_STOP_CMD   how to stop it (SessionEnd uses it when the last session ends)
+external_mode() { [ "${TANDEM_BROWSER:-}" = external ]; }
+
+wait_cdp() {
+  local _
+  for _ in $(seq 1 30); do cdp_healthy && return 0; sleep 0.5; done
+  return 1
+}
+
+start_external() {
+  local port; port="$(cdp_port)"
+  if cdp_healthy; then echo "tandem: external browser answers (CDP 127.0.0.1:${port})."; return 0; fi
+  if [ -z "${TANDEM_BROWSER_START_CMD:-}" ]; then
+    echo "tandem: ERROR — external mode and no browser answers at 127.0.0.1:${port}." >&2
+    echo "        Start your browser with remote debugging on that port, or set TANDEM_BROWSER_START_CMD." >&2
+    return 1
+  fi
+  echo "tandem: starting the external browser (TANDEM_BROWSER_START_CMD)…"
+  sh -c "$TANDEM_BROWSER_START_CMD" >>"$LOGDIR/chrome.log" 2>&1 || true
+  if wait_cdp; then echo "tandem: external browser ready (CDP 127.0.0.1:${port})."; return 0; fi
+  echo "tandem: ERROR — TANDEM_BROWSER_START_CMD ran but no CDP at 127.0.0.1:${port} after 15s. See $LOGDIR/chrome.log" >&2
+  return 1
+}
+
+stop_external() {
+  if [ -z "${TANDEM_BROWSER_STOP_CMD:-}" ]; then
+    echo "tandem: external browser — not stopping it (no TANDEM_BROWSER_STOP_CMD)."; return 0
+  fi
+  sh -c "$TANDEM_BROWSER_STOP_CMD" >>"$LOGDIR/chrome.log" 2>&1 && echo "tandem: external browser stopped (TANDEM_BROWSER_STOP_CMD)."
+}
+
 # --- start / stop ------------------------------------------------------------------
 start_chrome() {
+  if external_mode; then mkdir -p "$LOGDIR"; chmod 700 "$DATA" 2>/dev/null || true; start_external; return; fi
   # Guard: locatable Chrome binary. Clear error instead of an opaque CDP timeout.
   if [ ! -x "$CHROME_BIN" ]; then
     echo "tandem: ERROR — Chrome/Chromium executable not found at:" >&2
@@ -173,6 +218,7 @@ start_chrome() {
 }
 
 stop_chrome() {
+  if external_mode; then mkdir -p "$LOGDIR"; stop_external; return; fi
   local stopped=1
   local pid; pid="$(cat "$PIDFILE" 2>/dev/null)"
   if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
@@ -198,9 +244,10 @@ stop_chrome() {
 status_chrome() {
   local port; port="$(cdp_port)"
   echo "tandem — status:"
-  echo "  profile:  $PROFILE"
+  if external_mode; then echo "  mode:     external browser (tandem does not start/stop it)"; else echo "  profile:  $PROFILE"; fi
   echo "  port:     ${port}"
   local owner=""; cdp_healthy && owner="$(cdp_owner)"
+  external_mode && [ -n "$owner" ] && owner=external   # a browser that is not ours is the point here
   if [ "$owner" = foreign ]; then
     echo "  CDP:      ⚠ a browser answers on ${port} but it is NOT tandem's profile"
   elif [ -n "$owner" ]; then

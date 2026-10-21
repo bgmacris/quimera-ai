@@ -8,7 +8,7 @@ The core targets **Claude Code** via the quimera-ai marketplace. The thin adapte
 
 - Google Chrome or Chromium (autodetected on macOS and Linux)
 - Node.js 22+ (`npx` for Playwright MCP)
-- **Linux** or **macOS** (Windows: use WSL2 as Linux)
+- **Linux** or **macOS**; Windows native and WSL→Windows-Chrome via external browser mode (see the main README)
 
 ## Quick install
 

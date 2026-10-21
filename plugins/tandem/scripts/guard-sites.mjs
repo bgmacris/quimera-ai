@@ -14,7 +14,7 @@
 
 import { readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dataDir } from './paths.mjs';
 
@@ -31,9 +31,11 @@ function real(p) {
 
 export function isProfilePath(filePath, sitesDir) {
   if (typeof filePath !== 'string' || !filePath) return false;
-  const f = real(filePath.replace(/^~(?=\/)/, homedir()));
+  const f = real(filePath.replace(/^~(?=[\\/])/, homedir()));
   const s = real(sitesDir);
-  return f.startsWith(s + '/') && f.endsWith('.md');
+  // path.relative, not startsWith(s + '/'): Windows paths use '\\' (the gate never fired there).
+  const rel = relative(s, f);
+  return !!rel && !rel.startsWith('..') && !isAbsolute(rel) && f.toLowerCase().endsWith('.md');
 }
 
 // Read-only engine invocations that mention the store are fine (list/show/path, recipe compile…).
@@ -45,7 +47,8 @@ export function bashTouchesProfiles(command, sitesDir) {
   // Redirections to /dev/null or stderr→stdout are not writes to the store.
   command = command.replace(/\d?>{1,2}\s*\/dev\/null|\d?>&\d/g, '');
   const home = homedir();
-  const forms = [sitesDir, sitesDir.replace(home, '~'), sitesDir.replace(home, '$HOME'), 'tandem/sites'];
+  const fwd = sitesDir.replace(/\\/g, '/');   // Git Bash on Windows writes C:/… or /c/…
+  const forms = [sitesDir, fwd, sitesDir.replace(home, '~'), sitesDir.replace(home, '$HOME'), 'tandem/sites', 'tandem\\sites'];
   if (!forms.some((f) => command.includes(f))) return false;
   if (READ_ONLY.test(command) && !/[>|]/.test(command)) return false;
   return WRITES.test(command);

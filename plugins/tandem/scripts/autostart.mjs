@@ -7,9 +7,10 @@
 //   no CDP, autostart on        → start tandem's Chrome now (chrome-daemon.sh start), tell the model.
 //   no CDP, autostart off/fails → DENY the call with a clear instruction, instead of a raw ECONNREFUSED.
 //
-// TANDEM_AUTOSTART=1|0 forces it. Default: ON, except under WSL — there the browser is often the
-// WINDOWS Chrome reached over mirrored networking (certificates, AutoFirma), and starting tandem's
-// Linux Chrome on the same port would put the wrong browser (no certificates) in front of the human.
+// TANDEM_AUTOSTART=1|0 forces it. In external browser mode (TANDEM_BROWSER=external) it is on only when
+// TANDEM_BROWSER_START_CMD says how to start that browser. Default: ON, except under WSL — there the
+// browser is often the WINDOWS Chrome reached over mirrored networking (certificates, AutoFirma), and
+// starting tandem's Linux Chrome on the same port would put the wrong browser in front of the human.
 
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -25,6 +26,11 @@ export function isWsl(env = process.env) {
 export function autostartEnabled(env = process.env) {
   if (env.TANDEM_AUTOSTART === '1') return { on: true };
   if (env.TANDEM_AUTOSTART === '0') return { on: false, why: 'TANDEM_AUTOSTART=0' };
+  // External browser: only the user knows how to start it — on if they said how, off otherwise.
+  if (env.TANDEM_BROWSER === 'external') {
+    return env.TANDEM_BROWSER_START_CMD ? { on: true }
+      : { on: false, why: 'external browser mode without TANDEM_BROWSER_START_CMD' };
+  }
   if (isWsl(env)) return { on: false, why: 'WSL (the browser may be an external Windows Chrome; set TANDEM_AUTOSTART=1 to let tandem start its own)' };
   return { on: true };
 }

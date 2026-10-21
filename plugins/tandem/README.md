@@ -181,9 +181,22 @@ The real start/stop of Chrome needs a display and is tested by hand: `/tandem:br
 ## Requirements and scope
 
 - **macOS**: supported and tested (CI + manual).
-- **Linux**: supported. The `tandem:map` engine, the parsing of every script, and `shellcheck`
-  run in CI on `ubuntu-latest`; Chromium autodetection uses `lsof` (fallback `ss`). The Chrome
-  start/stop lifecycle needs a display and is verified by hand.
-- **Windows**: native is **not supported** (the lifecycle is bash/POSIX). Run it under **WSL2**,
-  where it behaves as Linux.
+- **Linux**: supported. Engine tests, shellcheck and a real headless-Chrome e2e (daemon, recorder,
+  intercept over several tabs, cookies, pdf, external mode) run in CI on `ubuntu-latest`.
+- **Windows native** (people do run it): the MCP launcher is node (`scripts/mcp-launch.mjs`, no more
+  hand-patched `.mcp.json`), and the engine + MCP handshake run in CI on `windows-latest`. The browser
+  lifecycle (`lib.sh`) runs in Git Bash and is **best effort** — Chrome is autodetected under Program
+  Files / LocalAppData but start/stop is not verified there. Reliable option: start Chrome yourself and
+  use **external browser mode** (below).
+- **WSL2**: behaves as Linux. If the browser is the **Windows** Chrome reached over mirrored networking,
+  use external browser mode — tandem's own start would open a Linux Chrome instead (autostart is off
+  under WSL by default for that reason).
+
+### External browser mode
+
+`TANDEM_BROWSER=external`: tandem never launches or kills a browser; it only talks to the CDP port.
+`browser-start` checks that something answers, `browser-stop` and `SessionEnd` leave it alone,
+`status` says `mode: external`. To delegate the lifecycle (e.g. a script that starts the Windows
+Chrome with its certificates), set `TANDEM_BROWSER_START_CMD` / `TANDEM_BROWSER_STOP_CMD` (run with
+`sh -c`); with a start command, autostart uses it.
 - Google Chrome or Chromium · Node 22+ · Claude Code v2.1.120+.
