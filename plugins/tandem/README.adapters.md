@@ -106,6 +106,18 @@ The hook code is correct against the [Hooks reference](https://cursor.com/docs/h
 starts working once the platform bug is resolved. OpenCode injects directly into the tool
 output and Claude Code uses `hookSpecificOutput.additionalContext`, so neither is affected.
 
+**No site-profile write gate in Cursor or OpenCode.** In Claude Code a hook puts the human between a
+write to `sites/*.md` and the next session (profiles are injected into every later session, and a web
+page can try to plant instructions in one). The adapters do not have that gate yet — not verified
+whether each IDE's hook API can block an edit before it happens. There, review what the agent writes to
+`~/.claude/tandem/sites/` yourself; injection still wraps profiles as data and flags instruction-like lines.
+
+**Shared Chrome lifetime.** All three IDEs drive the same Chrome; each session that uses a browser tool
+holds a lease, and Chrome is stopped only when the last one goes. Cursor renews its lease on every
+browser tool and drops it at `sessionEnd`; OpenCode renews it on every browser tool and drops it on
+`session.deleted` without ever stopping Chrome (no reliable end-of-session event there). A lease left
+by a crash expires after 12 h.
+
 ## License
 
 MIT — [bgmacris/quimera-ai](https://github.com/bgmacris/quimera-ai).

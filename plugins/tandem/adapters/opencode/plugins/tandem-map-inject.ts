@@ -13,6 +13,12 @@ const { normalizeHost } = await import(
 const { tryInjectProfile, cleanupSessionMarkers } = await import(
   pathToFileURL(join(tandemRoot, "scripts/map-inject-core.mjs")).href
 );
+// Leases (scripts/session-hook.mjs): an OpenCode session using the shared Chrome must hold one, or the
+// last Claude Code session to end stops the browser under it. Touched on every browser tool; dropped
+// on session.deleted WITHOUT stopping Chrome (a lease left by a crash expires after its TTL).
+const { touchLease, dropLease } = await import(
+  pathToFileURL(join(tandemRoot, "scripts/session-hook.mjs")).href
+);
 const { dataDir: resolveDataDir } = await import(
   pathToFileURL(join(tandemRoot, "scripts/paths.mjs")).href
 );
@@ -26,6 +32,9 @@ function isBrowserNavigate(tool: string): boolean {
 export const TandemMapInject: Plugin = async () => {
   return {
     "tool.execute.after": async (input, output) => {
+      if (/browser_/i.test(input.tool)) {
+        try { touchLease(dataDir, input.sessionID); } catch { /* never break the tool */ }
+      }
       if (!isBrowserNavigate(input.tool)) return;
 
       const url = input.args?.url;
@@ -46,6 +55,7 @@ export const TandemMapInject: Plugin = async () => {
       const sessionID = (event.properties as { sessionID?: string })?.sessionID;
       if (!sessionID) return;
       cleanupSessionMarkers(sessionID, dataDir);
+      try { dropLease(dataDir, sessionID); } catch { /* best effort */ }
     },
   };
 };

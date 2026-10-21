@@ -4,6 +4,34 @@ Format based on [Keep a Changelog](https://keepachangelog.com/); semantic versio
 
 ## [Unreleased]
 
+## [0.9.1] — 2026-10-21
+
+From an external audit of 0.9.0; each point reproduced or checked before fixing.
+
+### Fixed
+- **`/clear` and `/resume` killed the shared Chrome** (tabs and session cookies lost): they fire
+  SessionEnd (`reason` clear/resume) and `end` didn't look at it. Now the lease is kept and handed to
+  the new session (SessionStart `clear|resume` → `session-hook.mjs handoff`). Idea from PR #4 (Gabriel).
+- **The MCP's own tools could write site profiles past the gate**: `filename` on evaluate/snapshot/
+  screenshot/… writes wherever the MCP's roots allow (verified with the real MCP 0.0.83: evaluate +
+  filename wrote `sites/evil.example.md`). The gate now checks `filename` (relative paths resolve
+  against `output/`) and the code of `run_code_unsafe` (heuristic). It runs inside the autostart
+  hook — one node process per browser call, not two.
+- **Instruction-like lines hidden in a JSON-escaped file** (what evaluate+filename writes) escaped the
+  ⚠ notice: escaped line breaks are decoded before scanning.
+- **Autostart drove whatever answered CDP**: a personal Chrome with remote debugging (real sessions)
+  on tandem's port was used silently. Now a foreign owner → deny (as browser-start does); external
+  mode and an invisible owner (`unknown`, e.g. Windows Chrome from WSL) are still allowed. Fast path
+  via tandem's pidfile: +30 ms per call (measured), the full check only when that fails.
+- **A page could choose which profile gets injected** by printing `Page URL: https://…` in its content
+  or console. The URL now comes only from the MCP's own line-anchored `### Page` section, and never
+  from read-only tools (evaluate, console, run_code, network, find). In 0.0.83 that section precedes
+  anything the page controls (verified with a hostile console.log on click).
+- **Adapters**: Cursor renews its lease on every browser tool (was only `browser_navigate`); OpenCode
+  now holds a lease (touched on every browser tool, dropped on `session.deleted`, never stops Chrome) —
+  before, the last Claude Code session to end stopped the Chrome an OpenCode user was driving.
+  README.adapters.md documents that neither has the site-profile write gate.
+
 ## [0.9.0] — 2026-10-21
 
 First public release since 0.6.0: **0.7.0 and 0.8.0 below were never published on their own** — coming

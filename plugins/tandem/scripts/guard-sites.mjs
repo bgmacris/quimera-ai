@@ -44,16 +44,30 @@ export function isProfilePath(filePath, sitesDir) {
 const READ_ONLY = /^\s*(\S*\/)?(map\.sh\s+(list|show|path|index)|recipe\.mjs\s+(validate|compile)|cat|less|head|tail|grep|rg|wc|ls)\b/;
 const WRITES = /(>|>>|\btee\b|\bcp\b|\bmv\b|\bsed\s+-i|\bperl\s+-i|\bdd\b|\bpython3?\b|\bnode\b|\bruby\b|\binstall\b|\brm\b|\bln\b|\bcurl\b|\bwget\b|\brsync\b|\btar\b|\bunzip\b|\bpatch\b)/;
 
+function mentionsStore(text, sitesDir) {
+  const home = homedir();
+  const fwd = sitesDir.replace(/\\/g, '/');   // Git Bash on Windows writes C:/… or /c/…
+  const forms = [sitesDir, fwd, sitesDir.replace(home, '~'), sitesDir.replace(home, '$HOME'), 'tandem/sites', 'tandem\\sites'];
+  return forms.some((f) => text.includes(f));
+}
+
 export function bashTouchesProfiles(command, sitesDir) {
   if (typeof command !== 'string') return false;
   // Redirections to /dev/null or stderr→stdout are not writes to the store.
   command = command.replace(/\d?>{1,2}\s*\/dev\/null|\d?>&\d/g, '');
-  const home = homedir();
-  const fwd = sitesDir.replace(/\\/g, '/');   // Git Bash on Windows writes C:/… or /c/…
-  const forms = [sitesDir, fwd, sitesDir.replace(home, '~'), sitesDir.replace(home, '$HOME'), 'tandem/sites', 'tandem\\sites'];
-  if (!forms.some((f) => command.includes(f))) return false;
+  if (!mentionsStore(command, sitesDir)) return false;
   if (READ_ONLY.test(command) && !/[>|]/.test(command)) return false;
   return WRITES.test(command);
+}
+
+// The MCP's own tools write files too: `filename` on evaluate/snapshot/screenshot/… lands wherever the
+// MCP's roots allow — with Claude Code started from $HOME that includes the store (verified with the
+// real MCP 0.0.83: evaluate+filename wrote sites/<host>.md). A relative filename goes to output/.
+// run_code_unsafe runs Node-side Playwright code: heuristic, like Bash.
+export function mcpTouchesProfiles(toolInput, sitesDir, outputDir = join(dirname(sitesDir), 'output')) {
+  const ti = toolInput || {};
+  if (typeof ti.filename === 'string' && ti.filename && isProfilePath(resolve(outputDir, ti.filename.replace(/^~(?=[\\/])/, homedir())), sitesDir)) return true;
+  return typeof ti.code === 'string' && mentionsStore(ti.code, sitesDir);
 }
 
 export function decide(input, sitesDir = join(dataDir(), 'sites')) {
@@ -62,6 +76,7 @@ export function decide(input, sitesDir = join(dataDir(), 'sites')) {
   let hit = false;
   if (/^(Write|Edit|MultiEdit)$/.test(tool)) hit = isProfilePath(ti.file_path, sitesDir);
   else if (tool === 'Bash') hit = bashTouchesProfiles(ti.command, sitesDir);
+  else if (/__browser_/.test(tool)) hit = mcpTouchesProfiles(ti, sitesDir);
   if (!hit) return null;
   // An interactive session in bypassPermissions approves a hook's `ask` by itself, with no prompt
   // (verified 2026-10-21: decision source "config"/"mode", 40 ms after the hook). Bypass is the human's

@@ -34,6 +34,15 @@
     ],
     "SessionStart": [
       {
+        "matcher": "clear|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/session-hook.mjs handoff"
+          }
+        ]
+      },
+      {
         "matcher": "compact",
         "hooks": [
           {

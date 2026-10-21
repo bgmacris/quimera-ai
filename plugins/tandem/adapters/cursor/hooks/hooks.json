@@ -6,7 +6,103 @@
         "command": "./scripts/run-hook-inject.sh"
       },
       {
+        "matcher": "MCP:browser_click",
+        "command": "./scripts/run-session-hook.sh touch"
+      },
+      {
+        "matcher": "MCP:browser_close",
+        "command": "./scripts/run-session-hook.sh touch"
+      },
+      {
+        "matcher": "MCP:browser_console_messages",
+        "command": "./scripts/run-session-hook.sh touch"
+      },
+      {
+        "matcher": "MCP:browser_drag",
+        "command": "./scripts/run-session-hook.sh touch"
+      },
+      {
+        "matcher": "MCP:browser_drop",
+        "command": "./scripts/run-session-hook.sh touch"
+      },
+      {
+        "matcher": "MCP:browser_emulate_media",
+        "command": "./scripts/run-session-hook.sh touch"
+      },
+      {
+        "matcher": "MCP:browser_evaluate",
+        "command": "./scripts/run-session-hook.sh touch"
+      },
+      {
+        "matcher": "MCP:browser_file_upload",
+        "command": "./scripts/run-session-hook.sh touch"
+      },
+      {
+        "matcher": "MCP:browser_fill_form",
+        "command": "./scripts/run-session-hook.sh touch"
+      },
+      {
+        "matcher": "MCP:browser_find",
+        "command": "./scripts/run-session-hook.sh touch"
+      },
+      {
+        "matcher": "MCP:browser_handle_dialog",
+        "command": "./scripts/run-session-hook.sh touch"
+      },
+      {
+        "matcher": "MCP:browser_hover",
+        "command": "./scripts/run-session-hook.sh touch"
+      },
+      {
         "matcher": "MCP:browser_navigate",
+        "command": "./scripts/run-session-hook.sh touch"
+      },
+      {
+        "matcher": "MCP:browser_navigate_back",
+        "command": "./scripts/run-session-hook.sh touch"
+      },
+      {
+        "matcher": "MCP:browser_network_request",
+        "command": "./scripts/run-session-hook.sh touch"
+      },
+      {
+        "matcher": "MCP:browser_network_requests",
+        "command": "./scripts/run-session-hook.sh touch"
+      },
+      {
+        "matcher": "MCP:browser_press_key",
+        "command": "./scripts/run-session-hook.sh touch"
+      },
+      {
+        "matcher": "MCP:browser_resize",
+        "command": "./scripts/run-session-hook.sh touch"
+      },
+      {
+        "matcher": "MCP:browser_run_code_unsafe",
+        "command": "./scripts/run-session-hook.sh touch"
+      },
+      {
+        "matcher": "MCP:browser_select_option",
+        "command": "./scripts/run-session-hook.sh touch"
+      },
+      {
+        "matcher": "MCP:browser_snapshot",
+        "command": "./scripts/run-session-hook.sh touch"
+      },
+      {
+        "matcher": "MCP:browser_tabs",
+        "command": "./scripts/run-session-hook.sh touch"
+      },
+      {
+        "matcher": "MCP:browser_take_screenshot",
+        "command": "./scripts/run-session-hook.sh touch"
+      },
+      {
+        "matcher": "MCP:browser_type",
+        "command": "./scripts/run-session-hook.sh touch"
+      },
+      {
+        "matcher": "MCP:browser_wait_for",
         "command": "./scripts/run-session-hook.sh touch"
       }
     ],

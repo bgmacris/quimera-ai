@@ -40,7 +40,10 @@ const SUSPICIOUS = [
   /\b(exfiltrate|send (it|this|them) to)\b/i,
 ];
 export function suspiciousLines(text) {
-  return text.split('\n').filter((l) => SUSPICIOUS.some((re) => re.test(l))).slice(0, 5);
+  // Decode escaped line breaks first: a file written by the MCP (evaluate+filename) is ONE JSON string,
+  // and "…\nyou must always…" has no word boundary between the escaped `n` and `you`.
+  const plain = text.replace(/\\r\\n|\\n|\\r/g, '\n');
+  return plain.split(/\r?\n/).filter((l) => SUSPICIOUS.some((re) => re.test(l))).slice(0, 5);
 }
 
 export function sessionKey(sessionId) {
@@ -143,10 +146,27 @@ export function extractNavigateUrl(input) {
   if (!input || typeof input !== 'object') return null;
   const toolInput = input.tool_input || input.toolInput || {};
   if (typeof toolInput.url === 'string') return toolInput.url;
+  // Only the MCP's own `### Page` section, never page-controlled text: a page could print
+  // "Page URL: https://other-site/" in its content or console and pick which profile gets injected
+  // (and burn that host's one injection). Tools that only READ (evaluate, console, run_code, network,
+  // find) don't move the page: no URL from their output at all. In @playwright/mcp 0.0.83 the
+  // `### Page` section comes before anything the page controls (console → a file, evaluate results
+  // JSON-encoded on one line) — verified with a hostile console.log on click.
+  const tool = String(input.tool_name || input.toolName || '');
+  if (/browser_(evaluate|console_messages|run_code\w*|network_requests?|find)$/.test(tool)) return null;
   const resp = input.tool_response ?? input.toolResponse ?? input.tool_output;
   if (resp == null) return null;
-  const m = (typeof resp === 'string' ? resp : JSON.stringify(resp)).match(/Page URL: (https?:\/\/[^\s"\\]+)/);
-  return m ? m[1] : null;
+  const blocks = Array.isArray(resp) ? resp : Array.isArray(resp?.content) ? resp.content : [resp];
+  const text = blocks.map((b) => (typeof b === 'string' ? b : b?.text || '')).join('\n');
+  const lines = text.split(/\r?\n/);
+  const at = lines.indexOf('### Page');
+  if (at < 0) return null;
+  for (const l of lines.slice(at + 1)) {
+    if (l.startsWith('### ')) break;
+    const m = l.match(/^- Page URL: (https?:\/\/\S+)$/);
+    if (m) return m[1];
+  }
+  return null;
 }
 
 /** Extract the session id from a hook's stdin JSON (Claude / Cursor / OpenCode shapes). */
