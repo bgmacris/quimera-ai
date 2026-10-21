@@ -4,6 +4,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/); semantic versio
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-10-21
+
+First public release since 0.6.0: **0.7.0 and 0.8.0 below were never published on their own** — coming
+from 0.6.0, read all three. Upgrade notes: the data dir is `~/.claude/tandem` (migrated by
+`install.sh`; the Claude Code plugin always used it); profiles for `host:port` are now saved per port
+(old port-less profiles are still read); Windows no longer needs `.mcp.json` patched by hand.
+
 From real usage (two teammates on 0.6.0, 1.903 + 1.846 tool calls): the site profile never reached the
 model whole — a 26 KB profile became a 2 KB preview on every navigate — and one `localhost` profile
 mixed 9 different local apps.
