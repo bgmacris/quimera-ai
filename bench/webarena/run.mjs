@@ -33,6 +33,13 @@ const has = (k) => argv.includes(`--${k}`);
 const plan = JSON.parse(readFileSync(opt('plan'), 'utf8'));
 const armKeys = (opt('arms') || opt('arm') || '').split(',').filter(Boolean);
 if (!armKeys.length || armKeys.some((k) => !ARMS[k]) || !opt('out')) { process.stderr.write('usage: run.mjs --plan plan.json --arms A,B,C,D --out <dir> […]\n'); process.exit(2); }
+// Claude Code treats every file under ~/.claude as SENSITIVE: in -p a Write there is denied, so the
+// agent's agent_response.json and profile-draft.md silently never existed (a whole run scored 0 and
+// arms C/D ran without memory, 2026-10-21). Refuse such an --out up front.
+if (resolve(opt('out')).startsWith(resolve(process.env.HOME || '', '.claude'))) {
+  process.stderr.write('run.mjs: --out must not be under ~/.claude (Claude Code denies writes there in -p). Use e.g. ~/dev/tandem-bench/results\n');
+  process.exit(2);
+}
 const model = opt('model', 'sonnet'); const port = opt('port', '9444');
 const envctrl = opt('envctrl', 'http://localhost:7781'); const header = opt('header', '');
 const appUrl = opt('app-url', 'http://localhost:7780/admin');
@@ -93,6 +100,7 @@ function analyze(transcriptPath) {
   return {
     costUsd: final?.total_cost_usd ?? null, turns: final?.num_turns ?? null, durationMs: final?.duration_ms ?? null,
     isError: final?.is_error ?? true, usage: final?.usage ?? null, perTool,
+    permissionDenials: (final?.permission_denials || []).map((d) => `${d.tool_name} ${d.tool_input?.file_path || ''}`.trim()),
     observationBytes: Object.entries(perTool).filter(([k]) => k.startsWith('mcp__tandem__')).reduce((s, [, v]) => s + v.resultBytes, 0),
   };
 }
@@ -162,6 +170,8 @@ for (const task of plan.slice(0, limit)) {
       }
       const m = { task_id: task.task_id, template: task.template, instance: task.instance, arm: armKey, model, profileIn: !!profile,
         wallMs: Date.now() - started, loadBefore, loadAfter: loadavg(), log, ...analyze(join(dir, 'transcript.jsonl')) };
+      // A denied tool call is the harness's fault, not the agent's: flag it so it is not scored, and --resume reruns it.
+      if (m.permissionDenials.length) m.harnessError = `permission denied: ${m.permissionDenials.join('; ')}`;
       writeFileSync(join(dir, 'metrics.json'), JSON.stringify(m, null, 2) + '\n');
       process.stdout.write(`[${armKey}] task ${task.task_id} (tpl ${task.template} #${task.instance}) $${m.costUsd ?? '?'} obs=${m.observationBytes}B turns=${m.turns} load=${loadBefore[0].toFixed(1)}\n`);
     } catch (e) {
