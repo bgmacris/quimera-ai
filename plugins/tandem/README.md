@@ -56,6 +56,12 @@ change between pages. `tandem:map` persists a **per-site profile**
 - **Recipes** for navigation and **gotchas**, each line dated and tagged `[verified]`/`[hypothesis]`.
 - **Auto-injection**: when you navigate to a host with a profile, a `PostToolUse` hook injects the
   profile into Claude's context — once per session, silent if there's no profile.
+- **Profile writes need you**: profiles are drafted from web pages (which can carry injected
+  instructions) and reach every later session, so a `PreToolUse` hook asks before anything writes
+  `sites/*.md` — Write/Edit by path, the MCP's own `filename`, and Bash heuristically (defense in depth,
+  not a sandbox). Not covered: other MCP servers' file tools, and `*.fingerprints.json` (never injected;
+  tampering only fakes drift/match). In bypass-permissions mode the write goes through with a notice
+  (`TANDEM_PROFILE_GATE=strict` denies).
 - **Drift by signal, not by date**: a fingerprint of the *skeleton* (not the data) detects when a
   page's structure changed, so only what's affected gets re-validated.
 - **Executable locators (`sel:`)** — *maintained, frozen*: no new features until a measurement shows

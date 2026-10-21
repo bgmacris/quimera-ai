@@ -87,6 +87,12 @@ mkdir -p "$TMP/sock"; node -e "require('net').createServer().listen(process.argv
 ln -sfn "$TMP/sock/SingletonSocket" "$P/SingletonSocket"   # a REAL socket file nobody listens on
 check "start with a stale lock from another hostname" "'$ROOT/scripts/chrome-daemon.sh' start >/dev/null"
 "$ROOT/scripts/chrome-daemon.sh" stop >/dev/null
+# Chrome down + a tool whose filename lands in the store: the gate asks AND Chrome is already up for the
+# approved call (0.9.2 asked first and exited — the approved call then hit ECONNREFUSED).
+GATE_IN="{\"tool_name\":\"mcp__plugin_tandem_tandem__browser_evaluate\",\"permission_mode\":\"default\",\"tool_input\":{\"function\":\"() => 1\",\"filename\":\"$TANDEM_DATA_DIR/sites/x.md\"}}"
+check "autostart: gate asks AND Chrome was started first" \
+  "printf '%s' '$GATE_IN' | TANDEM_AUTOSTART=1 node '$ROOT/scripts/autostart.mjs' | grep -q '\"ask\"' && curl -s --max-time 2 http://127.0.0.1:$TANDEM_CDP_PORT/json/version >/dev/null"
+"$ROOT/scripts/chrome-daemon.sh" stop >/dev/null
 
 
 echo "[5] external browser mode (TANDEM_BROWSER=external) — after tandem's own Chrome is gone"

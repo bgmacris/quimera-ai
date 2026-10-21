@@ -2,11 +2,20 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Write|Edit|MultiEdit|Bash",
+        "matcher": "Write|Edit|MultiEdit",
         "hooks": [
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/guard-sites.mjs"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'i=$(cat); case \"$i\" in *sites*) printf %s \"$i\" | node \"$0\";; esac' \"${CLAUDE_PLUGIN_ROOT}\"/scripts/guard-sites.mjs"
           }
         ]
       },

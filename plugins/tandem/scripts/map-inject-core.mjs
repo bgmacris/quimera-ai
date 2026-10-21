@@ -160,13 +160,25 @@ export function extractNavigateUrl(input) {
   const text = blocks.map((b) => (typeof b === 'string' ? b : b?.text || '')).join('\n');
   const lines = text.split(/\r?\n/);
   const at = lines.indexOf('### Page');
-  if (at < 0) return null;
+  if (at < 0) return /browser_tabs$/.test(tool) ? currentTabUrl(lines) : null;
   for (const l of lines.slice(at + 1)) {
     if (l.startsWith('### ')) break;
     const m = l.match(/^- Page URL: (https?:\/\/\S+)$/);
     if (m) return m[1];
   }
   return null;
+}
+
+// `browser_tabs select` prints only the tab list — no `### Page` (MCP 0.0.83, verified): returning to
+// an open tab of a profiled site injected nothing. The list line is `- N: (current) [title](url)`, and
+// the TITLE is page-controlled (and the path, via pushState): a title like `x](https://other-site/`
+// would forge the URL. document.title collapses newlines, so a forged LINE can't appear, but take the
+// URL only when it is unambiguous — exactly one current line with exactly one `](` — else inject nothing.
+function currentTabUrl(lines) {
+  const cur = lines.filter((l) => /^- \d+: \(current\) \[/.test(l));
+  if (cur.length !== 1 || cur[0].split('](').length !== 2) return null;
+  const m = cur[0].match(/\]\((https?:\/\/\S+)\)( \[crashed\])?$/);
+  return m ? m[1] : null;
 }
 
 /** Extract the session id from a hook's stdin JSON (Claude / Cursor / OpenCode shapes). */

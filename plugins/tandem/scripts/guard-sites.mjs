@@ -6,10 +6,13 @@
 // poisoned, prompt-level defenses barely help (cross-session attack success stayed ~97%).
 // The skill's "show the draft to the human first" rule IS a prompt-level defense, so the
 // write itself is gated here, outside the model: the hook answers "ask" and Claude Code shows
-// a permission prompt — verified 2026-10-20 that bypassPermissions does not auto-approve it.
+// a permission prompt. Interactive bypassPermissions approves an `ask` by itself (verified
+// 2026-10-21), so that mode gets its own answer below.
 //
 // Covers Write/Edit/MultiEdit by path. Bash is covered heuristically (a command that mentions
-// the sites dir and looks like it writes): defense in depth, not a sandbox.
+// the store and looks like it writes): defense in depth, not a sandbox. Not covered at all: other
+// MCP servers' file tools (e.g. a filesystem MCP) and the fingerprint store (*.fingerprints.json —
+// never injected into context; poisoning it only fakes drift/match).
 // Silent (no output) = no opinion → normal permission flow.
 
 import { readFileSync, realpathSync } from 'node:fs';
@@ -42,13 +45,18 @@ export function isProfilePath(filePath, sitesDir) {
 
 // Read-only engine invocations that mention the store are fine (list/show/path, recipe compile…).
 const READ_ONLY = /^\s*(\S*\/)?(map\.sh\s+(list|show|path|index)|recipe\.mjs\s+(validate|compile)|cat|less|head|tail|grep|rg|wc|ls)\b/;
-const WRITES = /(>|>>|\btee\b|\bcp\b|\bmv\b|\bsed\s+-i|\bperl\s+-i|\bdd\b|\bpython3?\b|\bnode\b|\bruby\b|\binstall\b|\brm\b|\bln\b|\bcurl\b|\bwget\b|\brsync\b|\btar\b|\bunzip\b|\bpatch\b)/;
+const WRITES = /(>|>>|\btee\b|\bsponge\b|\btruncate\b|\bcp\b|\bmv\b|\bsed\s+-i|\bperl\s+-i|\bdd\b|\bpython3?\b|\bnode\b|\bruby\b|\binstall\b|\brm\b|\bln\b|\bcurl\b|\bwget\b|\brsync\b|\btar\b|\bunzip\b|\bpatch\b)/;
 
-function mentionsStore(text, sitesDir) {
+// The sites dir spelled out, OR the data dir plus the word "sites" anywhere: that is how an agent
+// usually writes a file — `cd ~/.claude/tandem && … > sites/x.md`, `S=$HOME/.claude/tandem; … > $S/sites/x.md`
+// (both slipped through in 0.9.2, external audit). A bare data-dir mention (output/, intercept) stays silent.
+function forms(dir) {
   const home = homedir();
-  const fwd = sitesDir.replace(/\\/g, '/');   // Git Bash on Windows writes C:/… or /c/…
-  const forms = [sitesDir, fwd, sitesDir.replace(home, '~'), sitesDir.replace(home, '$HOME'), 'tandem/sites', 'tandem\\sites'];
-  return forms.some((f) => text.includes(f));
+  return [dir, dir.replace(/\\/g, '/'), dir.replace(home, '~'), dir.replace(home, '$HOME')];   // Git Bash on Windows writes C:/… or /c/…
+}
+function mentionsStore(text, sitesDir) {
+  if ([...forms(sitesDir), 'tandem/sites', 'tandem\\sites'].some((f) => text.includes(f))) return true;
+  return /\bsites\b/.test(text) && [...forms(dirname(sitesDir)), '.claude/tandem', '.claude\\tandem'].some((f) => text.includes(f));
 }
 
 export function bashTouchesProfiles(command, sitesDir) {

@@ -175,7 +175,9 @@ prepare_data_dir() {
   migrate_legacy_data_dir
   run mkdir -p "${DATA_DIR_DEFAULT}/sites" "${DATA_DIR_DEFAULT}/output" "${DATA_DIR_DEFAULT}/logs"
   run chmod 700 "$DATA_DIR_DEFAULT"
-  # Legacy symlink for tools expecting ~/.cursor/tandem
+  # Legacy symlink for tools expecting ~/.cursor/tandem — only where Cursor is (linking it created
+  # ~/.cursor, and then should_install_cursor saw it and installed the adapter on Cursor-less machines).
+  [ -d "${HOME}/.cursor" ] || return 0
   if [ ! -e "${HOME}/.cursor/tandem" ] || [ -L "${HOME}/.cursor/tandem" ]; then
     link "$DATA_DIR_DEFAULT" "${HOME}/.cursor/tandem"
   fi
@@ -195,17 +197,21 @@ main() {
   done
 
   log "tandem root: ${TANDEM_ROOT}"
+  # Detect the IDEs before writing anything under $HOME.
+  local want_cursor=0 want_opencode=0
+  should_install_cursor && want_cursor=1
+  should_install_opencode && want_opencode=1
   prepare_data_dir
   write_env_file
   install_bin_wrappers
 
-  if should_install_cursor; then
+  if [ "$want_cursor" -eq 1 ]; then
     install_cursor
   else
     log "skip Cursor (not detected; use --cursor)"
   fi
 
-  if should_install_opencode; then
+  if [ "$want_opencode" -eq 1 ]; then
     install_opencode
   else
     log "skip OpenCode (not detected; use --opencode)"

@@ -231,8 +231,25 @@ fi
 
 # hooks.json must parse and point only at scripts that exist and are executable.
 check "hooks.json is valid JSON" "node -e 'JSON.parse(require(\"fs\").readFileSync(\"$ROOT/hooks/hooks.json\",\"utf8\"))'"
-check "every hook command targets an executable script" \
-  "node -e 'const h=JSON.parse(require(\"fs\").readFileSync(\"$ROOT/hooks/hooks.json\",\"utf8\")).hooks;const fs=require(\"fs\");let ok=true;for(const e of Object.values(h))for(const m of e)for(const k of m.hooks){const f=k.command.replace(/\"\\\$\\{CLAUDE_PLUGIN_ROOT\\}\"/,\"$ROOT\").split(\" \")[0];try{fs.accessSync(f,fs.constants.X_OK)}catch{ok=false;console.error(f)}}process.exit(ok?0:1)'"
+# Every "${CLAUDE_PLUGIN_ROOT}"/… in a command (also inside a `sh -c` prefilter) must be executable.
+hook_targets_ok() {
+  node - "$ROOT" <<'JS'
+const fs = require('fs'); const root = process.argv[2]; let ok = true;
+const h = JSON.parse(fs.readFileSync(`${root}/hooks/hooks.json`, 'utf8')).hooks;
+for (const e of Object.values(h)) for (const m of e) for (const k of m.hooks) {
+  const files = [...k.command.matchAll(/"\$\{CLAUDE_PLUGIN_ROOT\}"(\/\S+)/g)].map((x) => root + x[1]);
+  if (!files.length) { ok = false; console.error(`no plugin script in: ${k.command}`); }
+  for (const f of files) { try { fs.accessSync(f, fs.constants.X_OK); } catch { ok = false; console.error(f); } }
+}
+process.exit(ok ? 0 : 1);
+JS
+}
+check "every hook command targets an executable script" hook_targets_ok
+
+# install.sh on a clean HOME must not invent a Cursor install (0.9.2 created ~/.cursor for a legacy
+# symlink, then detected "Cursor" from it).
+mkdir -p "$TMP/home"
+check "install.sh on a clean HOME: no ~/.cursor" "HOME='$TMP/home' bash '$ROOT/install.sh' >/dev/null 2>&1 && [ ! -e '$TMP/home/.cursor' ]"
 
 # --- summary ------------------------------------------------------------------------
 echo ""

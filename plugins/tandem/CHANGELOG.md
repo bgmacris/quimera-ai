@@ -4,6 +4,34 @@ Format based on [Keep a Changelog](https://keepachangelog.com/); semantic versio
 
 ## [Unreleased]
 
+## [0.9.3] — 2026-10-21
+
+From an external audit of 0.9.2; each point reproduced before fixing, each with a regression test.
+
+### Fixed
+- **`install.sh` installed the Cursor adapter on machines without Cursor**: the legacy `~/.cursor/tandem`
+  symlink created `~/.cursor`, which then read as "Cursor detected". IDEs are now detected before
+  anything is written, and the legacy link is made only where `~/.cursor` already exists.
+- **Bash slipped past the site-profile gate** with `cd ~/.claude/tandem && … > sites/x.md`,
+  `S=$HOME/.claude/tandem; … > $S/sites/x.md` and `… | sponge …`: the store now counts as mentioned
+  when the data dir and the word `sites` both appear; `sponge`/`truncate` count as writers.
+- **The gate asked before there was a browser**: with Chrome down, the approved call failed with
+  ECONNREFUSED. The autostart hook now ensures Chrome first and answers the gate after (a deny still wins).
+- **Switching tabs didn't inject the profile**: `browser_tabs select` prints only the tab list, no
+  `### Page` (MCP 0.0.83, verified). The URL comes from the `(current)` line — only when unambiguous
+  (one current line, one `](`), since the title and path are page-controlled.
+
+### Changed
+- **The Bash gate costs ~14 ms instead of ~80 ms per Bash call** (every Bash call of every session, not
+  just browser ones): an `sh` prefilter runs node only when the input contains `sites`, which every Bash
+  hit needs (asserted in the tests). Write/Edit keep going through node — a symlinked path may contain
+  neither `tandem` nor `sites`.
+- Chrome starts with `--disable-sync` (a dedicated profile was syncing/dialing Google in the background).
+  Not `--disable-background-networking`: it also stops Safe Browsing and component updates in a browser
+  the human logs into.
+- README documents what the profile-write gate covers and what it doesn't; the gate's header comment no
+  longer claims bypass mode leaves an `ask` alone (it doesn't, since 0.9.0).
+
 ## [0.9.2] — 2026-10-21
 
 ### Fixed

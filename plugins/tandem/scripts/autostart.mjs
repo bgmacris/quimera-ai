@@ -7,9 +7,11 @@
 //   no CDP, autostart on        → start tandem's Chrome now (chrome-daemon.sh start), tell the model.
 //   no CDP, autostart off/fails → DENY the call with a clear instruction, instead of a raw ECONNREFUSED.
 //
-// Also, before anything else:
+// Also:
 //   - the site-profile write gate for the MCP's own file writes (guard-sites.mjs decide(): `filename`,
-//     run_code) — here, not in a separate hook, to spawn one node process per call instead of two;
+//     run_code) — here, not in a separate hook, to spawn one node process per call instead of two. Its
+//     answer goes out AFTER the browser is ensured: asking first and exiting left Chrome down, so the
+//     approved call failed with ECONNREFUSED (external audit of 0.9.2). A deny still wins over it;
 //   - OWNERSHIP: CDP answering is not enough. If the listener is another Chrome (a personal one started
 //     with remote debugging, with the human's real sessions), deny instead of driving it — the check
 //     browser-start already did, which autostart made almost never run. ~30 ms (lsof).
@@ -65,10 +67,14 @@ if (isCli) {
   let input = null;
   try { input = JSON.parse(readFileSync(0, 'utf8')); } catch { /* no/invalid stdin */ }
   const gate = input && decide(input);
-  if (gate) { process.stdout.write(JSON.stringify(gate)); process.exit(0); }
 
   const port = cdpPort();
-  const out = (o) => { process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', ...o } })); process.exit(0); };
+  // Every exit goes through here: the gate's answer replaces anything but a deny.
+  const out = (o) => {
+    if (gate && o?.permissionDecision !== 'deny') process.stdout.write(JSON.stringify(gate));
+    else if (o) process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', ...o } }));
+    process.exit(0);
+  };
   const daemon = join(dirname(fileURLToPath(import.meta.url)), 'chrome-daemon.sh');
   if (await cdpUp(port)) {
     // External mode: the browser is foreign BY DESIGN. 'unknown' (process not visible, e.g. Windows
@@ -80,7 +86,7 @@ if (isCli) {
         out({ permissionDecision: 'deny', permissionDecisionReason: `tandem: port ${port} answers CDP but it is NOT tandem's Chrome (another browser — maybe a personal Chrome with remote debugging, with the human's real sessions). Not driving it. Ask the human to close it or set TANDEM_CDP_PORT; to drive it on purpose, TANDEM_BROWSER=external.` });
       }
     }
-    process.exit(0);
+    out(null);
   }
 
   const mode = autostartEnabled();

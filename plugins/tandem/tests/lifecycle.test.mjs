@@ -4,7 +4,7 @@
 // envelope (map-inject-core.mjs) and header redaction (redact.mjs).
 // No dependencies: mini-runner. Isolated temp data dir. Usage: node tests/lifecycle.test.mjs
 
-import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, utimesSync, rmSync, existsSync, realpathSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, symlinkSync, utimesSync, rmSync, existsSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -85,6 +85,29 @@ ok('bash read with 2>/dev/null → no', !bashTouchesProfiles(`cat ${SITES}/x.md 
 ok('bash map.sh show → no', !bashTouchesProfiles(`scripts/map.sh show ${SITES}/x.md`, SITES));
 ok('bash unrelated write → no', !bashTouchesProfiles('echo x > /tmp/a.md', SITES));
 ok('bash cp into ~/.claude/tandem/sites → touches', bashTouchesProfiles('cp draft.md ~/.claude/tandem/sites/x.md', SITES));
+// 0.9.2 let these through (external audit): the sites dir never appeared spelled out.
+const DATA = TMP;   // SITES = <data>/sites
+ok('bash cd into the data dir, then > sites/x.md → touches', bashTouchesProfiles(`cd ${DATA} && echo x > sites/b.md`, SITES));
+ok('bash cd ~/.claude/tandem && … > sites/ → touches', bashTouchesProfiles('cd ~/.claude/tandem && echo x > sites/b.md', SITES));
+ok('bash S=$HOME/.claude/tandem; … > $S/sites/ → touches', bashTouchesProfiles('S=$HOME/.claude/tandem; cat draft.md > $S/sites/d.md', SITES));
+ok('bash … | sponge into the store → touches', bashTouchesProfiles('echo x | sponge ~/.claude/tandem/sites/f.md', SITES));
+ok('bash write elsewhere in the data dir (no "sites") → no', !bashTouchesProfiles('rm ~/.claude/tandem/intercept.ndjson', SITES));
+// The Bash hook runs node only when the input contains "sites" (sh prefilter in hooks.json, ~80 → ~14 ms
+// per Bash call). Sound only while every Bash hit needs that word: check it on every hit above, and run
+// the real hook command both ways.
+{
+  const hits = [`cat > ${SITES}/x.md <<EOF`, `cd ${DATA} && echo x > sites/b.md`, 'S=$HOME/.claude/tandem; cat d > $S/sites/d.md', 'echo x | sponge ~/.claude/tandem/sites/f.md'];
+  ok('every Bash hit contains "sites" (the prefilter is a superset)', hits.every((c) => bashTouchesProfiles(c, SITES) && c.includes('sites')));
+  if (process.platform !== 'win32') {
+    const { execFileSync } = await import('node:child_process');
+    const hooksJson = JSON.parse(readFileSync(new URL('../hooks/hooks.json', import.meta.url), 'utf8'));
+    const cmd = hooksJson.hooks.PreToolUse.find((m) => m.matcher === 'Bash').hooks[0].command;
+    const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '');
+    const run = (command) => execFileSync('sh', ['-c', cmd], { input: JSON.stringify({ tool_name: 'Bash', tool_input: { command } }), env: { ...process.env, CLAUDE_PLUGIN_ROOT: root, TANDEM_DATA_DIR: DATA }, encoding: 'utf8' });
+    ok('Bash hook command: write into the store → ask', /"ask"/.test(run(`echo x > ${SITES}/x.md`)));
+    ok('Bash hook command: unrelated → silent', run('ls -la') === '');
+  }
+}
 
 // --- injection envelope --------------------------------------------------------------
 process.stdout.write('[inject]\n');
