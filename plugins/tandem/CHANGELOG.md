@@ -69,6 +69,11 @@ mixed 9 different local apps.
   Linux/macOS could not catch engine-test failures. `run_suite` returns the suite's own status
   (verified by forcing a failure).
 - Bench: `--until` earlier than now means tomorrow; no hang waiting for a recorder that already exited.
+- **CRLF profiles lost their locators** (first Windows CI run: 3 of 8 parsed): the parsers split on
+  `\n` and every line-anchored regex failed on the trailing `\r`. A Windows checkout (autocrlf) or
+  editor produces exactly that. Line endings are normalized before parsing.
+- CI: test failures are emitted as GitHub annotations (public; job logs need auth to download), with
+  the Chrome log tail for e2e.
 
 ### Fixed (WebArena mini-pilot, 2026-10-21 — 48 runs on a machine at load ~20)
 - `chrome-daemon.sh start` removes a stale profile lock (`SingletonLock`/`Socket`/`Cookie`) when no

@@ -26,6 +26,9 @@ const L = parseLocators(ex);
 ok('shipped example: all 8 locators parsed (was 3)', L.size === 8);
 ok('one-line form, trailing "| verified" dropped', L.get('detail-title')?.sel === '.product_main h1');
 ok('one-line form, trailing "(comment)" dropped', L.get('detail-stock')?.sel === '.product_main .availability');
+const exCrlf = ex.replace(/\r?\n/g, '\r\n');   // as a Windows checkout (autocrlf) or editor leaves it
+ok('CRLF profile: same 8 locators, no trailing \\r in selectors', parseLocators(exCrlf).size === 8 && [...parseLocators(exCrlf).values()].every((v) => !/\r/.test(v.sel)));
+ok('CRLF profile: no line reported as unparseable', unparsedLocatorLines(exCrlf).length === unparsedLocatorLines(ex).length);
 ok('selector parens kept (:nth-child)', parseLocators('## Locators\n- x:   sel: li:nth-child(2) a   | verified\n').get('x')?.sel === 'li:nth-child(2) a');
 ok('unparseable locator lines are reported, not dropped silently', unparsedLocatorLines('## Locators\n- bad line here\n').length === 1);
 

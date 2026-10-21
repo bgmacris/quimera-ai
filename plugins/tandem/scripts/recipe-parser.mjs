@@ -8,7 +8,7 @@ export const ACTIONS = new Set(['navigate', 'type', 'click', 'wait-url', 'return
 
 // --- profile parsing ---------------------------------------------------------------
 function section(md, title) {
-  const lines = md.split('\n');
+  const lines = md.replace(/\r\n?/g, '\n').split('\n');   // CRLF (Windows checkout/editor) broke every line-anchored regex
   const start = lines.findIndex((l) => l.trim().startsWith(`## ${title}`));
   if (start < 0) return [];
   const rest = lines.slice(start + 1);

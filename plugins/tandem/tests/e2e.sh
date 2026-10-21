@@ -93,14 +93,15 @@ OTHER="$TMP/other-profile"
 # shellcheck disable=SC2034
 START_CMD="'$CHROME' ${TANDEM_CHROME_ARGS:-} --remote-debugging-port=$TANDEM_CDP_PORT --user-data-dir='$OTHER' about:blank >/dev/null 2>&1 &"
 # shellcheck disable=SC2034
-STOP_CMD="pkill -f -- '--user-data-dir=$OTHER'"
+STOP_CMD="pkill -f -- '[-]-user-data-dir=$OTHER'"   # [-]: the pattern must not match the `sh -c` running it (dash on Linux)
 ext() { TANDEM_BROWSER=external TANDEM_DATA_DIR="$TMP/ext-data" "$ROOT/scripts/chrome-daemon.sh" "$@"; }
 cdp_up() { curl -s --max-time 2 "http://127.0.0.1:$TANDEM_CDP_PORT/json/version" >/dev/null; }
 check "external, nothing answering → start fails clearly" "! ext start >/dev/null 2>&1"
 check "external + START_CMD → started and ready" "TANDEM_BROWSER_START_CMD=\"\$START_CMD\" ext start | grep -q 'external browser ready'"
 check "status says external mode" "ext status | grep -q 'mode:     external'"
 check "stop without STOP_CMD leaves it running" "ext stop | grep -q 'not stopping' && cdp_up"
-check "stop with STOP_CMD stops it" "TANDEM_BROWSER_STOP_CMD=\"\$STOP_CMD\" ext stop | grep -q 'stopped' && sleep 1 && ! cdp_up"
+cdp_gone() { local _; for _ in $(seq 1 20); do cdp_up || return 0; sleep 0.25; done; return 1; }
+check "stop with STOP_CMD stops it" "TANDEM_BROWSER_STOP_CMD=\"\$STOP_CMD\" ext stop | grep -q 'stopped' && cdp_gone"
 pkill -f -- "--user-data-dir=$OTHER" 2>/dev/null
 echo ""
 # CI: job logs need auth to download, annotations are public — ship the Chrome log tail as one.

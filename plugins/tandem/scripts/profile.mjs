@@ -43,7 +43,7 @@ export function resolveProfile(raw, dir = dataDir()) {
 
 // Frontmatter (between the first two '---') + `## ` sections with their char sizes.
 export function parseSections(md) {
-  const lines = md.split('\n');
+  const lines = md.replace(/\r\n?/g, '\n').split('\n');   // CRLF: see recipe-parser.mjs
   let i = 0; const front = {};
   if (lines[0] === '---') {
     for (i = 1; i < lines.length && lines[i] !== '---'; i++) {
