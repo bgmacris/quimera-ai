@@ -17,9 +17,8 @@ re-deriving the DOM every time.
 > you see and touch**, native to the terminal/Claude Code, with a **co-curated, human-readable** site
 > memory (`sites/<host>.md` in markdown you edit and commit, not an opaque store nor a cloud SaaS). On
 > top of that, `tandem:map` adds what is genuinely hard to find combined: structural-signal drift
-> detection + **executable locators** (`sel:`) to act **without re-snapshotting** (~18× fewer bytes per
-> action, measured vs @playwright/mcp 0.0.76 — see the caveat below), with a fingerprint gate that
-> makes skipping the snapshot honest.
+> detection + **executable locators** (`sel:`) to act **without reading a snapshot to find the element**,
+> with a fingerprint gate that makes skipping the snapshot honest.
 
 ## Why it pays: measured savings
 
@@ -29,7 +28,8 @@ profile** plus **executable `sel:`** locators:
 
 - A `browser_snapshot` of a real page (Wikipedia, *Web scraping*) = **~105 KB** (105,378 B measured),
   and tandem writes it **to a file, not into the context**.
-- A per-site profile = **~3.5–6.7 KB**, injected **once per session** (not per action).
+- A per-site profile = **~3.5–6.7 KB**, injected **once per session** (not per action); a profile over
+  6,000 chars arrives as a ≤ 2 KB index and the agent fetches the section it needs.
 - Profile ↔ snapshot floor: **~16–30× smaller** depending on the profile (`wc -c`, measured
   2026-06-29). On the expensive step — reading one record's full detail — targeted extraction vs its
   snapshot measured **~110×** (see [`docs/01`](docs/01-navigation-memory.md)).
@@ -59,9 +59,11 @@ change between pages. `tandem:map` persists a **per-site profile**
 - **Drift by signal, not by date**: a fingerprint of the *skeleton* (not the data) detects when a
   page's structure changed, so only what's affected gets re-validated.
 - **Executable locators (`sel:`)**: the profile doesn't just *describe* locators, it makes them
-  *actionable*. The agent clicks/types by durable selector (`role=button[name="…"]`) **without
-  re-snapshotting** — a tree snapshot weighs ~18× the whole profile. Skip it only when the route's
-  fingerprint returns `match` (a gate, not faith).
+  *actionable*. The agent clicks/types by durable selector (`role=button[name="…"]`) **without first
+  reading a snapshot to get refs**. Where the saving is: an action's own result is small either way
+  (with `--output-dir` the MCP files its page snapshot and returns ~0.2–0.3 KB — measured by an external
+  review); what a known locator avoids is the snapshot READ needed to find the element (KBs to tens of
+  KBs). Skip it only when the route's fingerprint returns `match` (a gate, not faith).
 - **Executable recipes** (*procedural memory*): repeated, named tasks (`open-ticket-by-id
   TCK-2026-123`) live as **parameterized** recipes that compile to observable steps (`--step`) or to a
   single-tool-call Playwright function (`--fast`). Co-curated and human-readable.
@@ -133,7 +135,7 @@ continues from the already-rendered page — that is the human-in-the-loop hando
 | Variable | Default | Purpose |
 |---|---|---|
 | `TANDEM_CHROME_BIN` | autodetect (macOS/Linux) | path to the Chrome/Chromium binary |
-| `TANDEM_CDP_PORT`   | `9222` | CDP port on loopback |
+| `TANDEM_CDP_PORT`   | `9222` | CDP port on loopback. Wins over the port saved by the last start (`cdp-port`); set it where Claude Code gets its env (shell or settings `env`) so the MCP, commands and hooks all see it |
 | `TANDEM_DATA_DIR`   | `~/.claude/tandem` | Chrome profile, logs, and site profiles |
 
 ## Security

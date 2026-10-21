@@ -22,7 +22,8 @@
 
 import { readFileSync } from 'node:fs';
 import { normalizeHost } from './host.mjs';
-import { dataDir as resolveDataDir } from './paths.mjs';
+import { touchLease } from './session-hook.mjs';
+import { dataDir as resolveDataDir, ensureDataDir } from './paths.mjs';
 import {
   tryInjectProfile, cleanupSessionMarkers,
   extractNavigateUrl, extractSessionId,
@@ -52,6 +53,10 @@ if (process.argv[2] === 'cleanup') {
 
 // --- injection mode: need valid JSON input ----------------------------------------
 if (!input) silent();
+
+// This hook fires on every browser_* call: it also renews the session's lease on the shared Chrome
+// (session-hook.mjs), so one node process per call does both.
+try { ensureDataDir(dataDir); touchLease(dataDir, sessionId); } catch { /* never break the session */ }
 
 const url = extractNavigateUrl(input);
 const result = tryInjectProfile({

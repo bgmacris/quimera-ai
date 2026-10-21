@@ -41,7 +41,7 @@ auth: { wall: "none", bypassed_by: none }
 ## Recipes
 extract-catalogue-page(page-url):
   - navigate: <- {page-url}
-  - extract:  item-catalogue
+  - extract-all: item-catalogue
 
 ## Gotchas
 - [verified 2026-06-26] RATING is not text: it is in the CLASS → `.star-rating Three|Four|...`. Read className, not textContent.
@@ -50,4 +50,4 @@ extract-catalogue-page(page-url):
 - [verified 2026-06-26] 50 pages in the catalogue → iterate with an explicit LIMIT, never blindly.
 - [verified 2026-06-29] BY-CATEGORY extraction: `.side_categories` lists 51 links = 50 children + root "Books". The root (`books_1`) and the general catalogue give the SAME 1000 books; the 50 children sum to 1000 (exact partition). Iterate ONLY the 50 children; mixing root or general DUPLICATES.
 - [verified 2026-06-29] Large categories PAGINATE like the catalogue (Fiction: 65 results, 4 pages); small ones do not (Travel: 11, no `.pager`). Iterate each category following `pagination-next` with a LIMIT; do not assume 1 page.
-- [verified 2026-06-29] FINGERPRINT unreliable on list routes here: `h3` elements are book TITLES (content), not headings → `fingerprint check` gives FALSE drift between pages of the same template (Fiction p1 vs p2: 20 h3 added/removed, 7 stable signals identical). On these routes do NOT rely on the gate; use direct signal (`.pager` / 20 pods). Mechanism limit, not a site issue: see `docs/01` §T015.
+- [verified 2026-06-29, fixed 2026-10-21] FINGERPRINT used to give FALSE drift on list routes here (`h3` = book TITLES, content). Page-signals algo 2 counts headings by level only, so pages of one template match again; recapture fingerprints taken before (they report `stale`). See `docs/01` §T015.

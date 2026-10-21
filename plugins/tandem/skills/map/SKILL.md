@@ -40,7 +40,7 @@ Invoke it by its path within the plugin (`scripts/map.sh`); there's no bin on PA
    Keep profiles structured in `## ` sections — the index is built from them.
 2. **Before trusting a route's locators** (cheap re-check): validate with
    `fingerprint.mjs check <host> <route>` (structural signal, small JSON), NOT with a
-   targeted `browser_snapshot` (it weighs ~18× the whole profile). `match` → trust that route's `sel:`
+   targeted `browser_snapshot` (reading one costs far more than the profile — tens of KB on real pages). `match` → trust that route's `sel:`
    values WITHOUT a snapshot (see "Frugal flow"). `drift` → point 4. No fingerprint yet → a one-off
    targeted snapshot, and capture the fingerprint for next time.
 3. **After a recon worth keeping**: draft the profile, show it to the human,
@@ -124,8 +124,8 @@ you'd save the login skeleton under the wrong route-key. It's an auth wall → t
 
 ## Frugal flow (act by `sel:` without re-snapshotting)
 
-With a profile loaded, do NOT snapshot by default to act: the tree snapshot weighs ~18× the
-profile entire (measured: 105 KB vs 5.6 KB). The snapshot goes from default mode to honest FALLBACK.
+With a profile loaded, do NOT snapshot by default to act: reading a tree snapshot costs far more
+than the profile (measured once: 105 KB vs 5.6 KB on a large page). The snapshot goes from default mode to honest FALLBACK.
 
 1. **Gate by fingerprint, not by faith.** Before trusting a route's `sel:` values,
    `fingerprint.mjs check <host> <route>`. `match` → the `sel:` values are good, act by them. `drift`/`new`
@@ -153,7 +153,9 @@ open-ticket-by-id(id):
 ```
 - Header `name(params):`. Each step = `action: locator [<- {param}|"literal"]`. The `{param}`
   fills the `sel:` TEMPLATE (the slot must be named the same as the param). v1 actions:
-  `navigate`, `type`, `click`, `wait-url`, `return`/`extract`. Do NOT type the Playwright syntax by
+  `navigate` (http/https only), `type`, `click`, `wait-url`, `return`/`extract` (ONE element — strict:
+  several matches is an error) and `extract-all` (a list → array of texts). Locators may be written on
+  one line (`- name:   sel: <selector>   | verified …`) or with `sel:` on the next line. Do NOT type the Playwright syntax by
   hand: `recipe.mjs` compiles it. When saving a recipe in recon: `recipe.mjs validate <host>`.
 
 ### Running it — two modes (`recipe.mjs` COMPILES, the agent EXECUTES):

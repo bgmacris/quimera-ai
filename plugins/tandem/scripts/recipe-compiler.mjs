@@ -28,6 +28,18 @@ export function fillTemplate(sel, argByHole) {
   });
 }
 
+// --- navigate: http(s) only ----------------------------------------------------------
+// The MCP's own browser_navigate refuses file: ("Access to file: protocol is blocked"), so a --step
+// recipe could not read local files — but --fast runs page.goto inside browser_run_code_unsafe, where
+// that guard does not apply: an untrusted ARGUMENT (file:///etc/hostname, javascript:…) changed what
+// the recipe does. Both modes now accept only absolute http(s) URLs.
+export function safeUrl(u) {
+  let parsed;
+  try { parsed = new URL(String(u)); } catch { throw new Error(`navigate: not an absolute URL: '${String(u).slice(0, 60)}'`); }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error(`navigate: only http(s) URLs (got '${parsed.protocol}')`);
+  return parsed.href;
+}
+
 // --- value resolution -------------------------------------------------------------
 function argValue(arg, args) {
   if (!arg) return undefined;
@@ -48,7 +60,7 @@ export function compileFast(recipe, locators, args = {}) {
   for (const step of recipe.steps) {
     switch (step.action) {
       case 'navigate': {
-        const url = step.arg ? String(argValue(step.arg, args) ?? step.operand) : step.operand;
+        const url = safeUrl(step.arg ? String(argValue(step.arg, args) ?? step.operand) : step.operand);
         lines.push(`await page.goto(${J(url)});`); break;
       }
       case 'type': {
@@ -72,6 +84,10 @@ export function compileFast(recipe, locators, args = {}) {
         lines.push(`return ${returnExpr(step.operand, locators)};`); break;
       case 'extract':
         lines.push(`return ${extractExpr(step.operand, locators)};`); break;
+      case 'extract-all': {
+        const { sel } = locSel(step.operand, locators);
+        lines.push(`return (await page.locator(${J(sel)}).allTextContents()).map((t) => t.trim());`); break;
+      }
       default:
         throw new Error(`unknown action: ${step.action}`);
     }
@@ -81,19 +97,19 @@ export function compileFast(recipe, locators, args = {}) {
   return code;
 }
 
+// One element's text, STRICT: a locator matching several elements throws (as clicks do) instead of
+// silently taking the first — that hid a list being read as one record. Lists: `extract-all`.
+const one = (sel) => `((await page.locator(${J(sel)}).textContent()) || '').trim()`;
+
 function returnExpr(operand, locators) {
   if (operand === 'url') return 'page.url()';
-  const { sel } = locSel(operand, locators);
-  return `((await page.locator(${J(sel)}).first().textContent()) || '').trim()`;
+  return one(locSel(operand, locators).sel);
 }
 
 // extract operand: plain locator name  OR  `{ key: source, ... }`  source = url | url:/regex/ | <locator>
 function extractExpr(operand, locators) {
   // plain locator: `extract: item-catalogue`
-  if (!operand.startsWith('{')) {
-    const { sel } = locSel(operand, locators);
-    return `((await page.locator(${J(sel)}).first().textContent()) || '').trim()`;
-  }
+  if (!operand.startsWith('{')) return one(locSel(operand, locators).sel);
   // map syntax: `extract: { title: detail-title, price: detail-price }`
   const inner = operand.replace(/^\{/, '').replace(/\}$/, '').trim();
   const pairs = inner.split(',').map((p) => p.trim()).filter(Boolean);
@@ -105,8 +121,7 @@ function extractExpr(operand, locators) {
     if (src === 'url') return `${J(key)}: page.url()`;
     const m = src.match(/^url:\/(.*)\/$/);
     if (m) return `${J(key)}: (page.url().match(new RegExp(${J(m[1])})) || [])[1]`;
-    const { sel } = locSel(src, locators);
-    return `${J(key)}: ((await page.locator(${J(sel)}).first().textContent()) || '').trim()`;
+    return `${J(key)}: ${one(locSel(src, locators).sel)}`;
   });
   return `{ ${fields.join(', ')} }`;
 }
@@ -116,7 +131,7 @@ export function compileSteps(recipe, locators, args = {}) {
   return recipe.steps.map((step) => {
     switch (step.action) {
       case 'navigate': {
-        const url = step.arg ? String(argValue(step.arg, args) ?? step.operand) : step.operand;
+        const url = safeUrl(step.arg ? String(argValue(step.arg, args) ?? step.operand) : step.operand);
         return { action: 'navigate', value: url };
       }
       case 'type': return { action: 'type', target: locSel(step.operand, locators).sel, value: String(argValue(step.arg, args) ?? '') };
@@ -134,6 +149,7 @@ export function compileSteps(recipe, locators, args = {}) {
       case 'wait-url': return { action: 'wait', waitFor: 'url', value: step.operand };
       case 'return': return { action: 'extract', source: step.operand };
       case 'extract': return { action: 'extract', map: step.operand };
+      case 'extract-all': return { action: 'extract-all', target: locSel(step.operand, locators).sel };
       default: throw new Error(`unknown action: ${step.action}`);
     }
   });

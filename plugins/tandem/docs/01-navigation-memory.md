@@ -189,6 +189,12 @@ saved one. Implemented: `scripts/fingerprint.mjs` + canonical evaluate (in `skil
   dashboards/forms), which is why the single source isn't redesigned over a single case — logged to
   revisit if it reappears on a site with real stake. Mitigation today: on the list-route, skip the gate
   and use a direct signal (`.pager`, item count).
+- `[RESOLVED 2026-10-21, n=2]` **It reappeared** — on DETAIL routes, the most common kind: two products
+  of one template drifted on the `h1` (the product title), found by an external review. Page-signals
+  **algo 2**: headings count by level only (`heading:h1`), never by text; the set carries `algo:2`, and
+  `fingerprint check` answers `stale` (recapture) for captures made with the old algorithm instead of a
+  false `drift`. Verified on Chrome: another product → `match`; an added button → `drift` naming it.
+  Cost accepted: a renamed section no longer shows as drift.
 
 ## v2 — frugal navigation via `sel:` (DONE 2026-06-22)
 

@@ -4,7 +4,7 @@
 // structures, and validates a recipe against its locators. Hand-parsed flat-YAML (no deps).
 // Does NOT compile or execute: only "understands" the text. Compilation lives in recipe-compiler.mjs.
 
-export const ACTIONS = new Set(['navigate', 'type', 'click', 'wait-url', 'return', 'extract']);
+export const ACTIONS = new Set(['navigate', 'type', 'click', 'wait-url', 'return', 'extract', 'extract-all']);
 
 // --- profile parsing ---------------------------------------------------------------
 function section(md, title) {
@@ -16,21 +16,38 @@ function section(md, title) {
   return (end < 0 ? rest : rest.slice(0, end));
 }
 
-// Locators: `- name:` and below, `sel: <selector>`. isTemplate if sel has {holes}.
+// The selector part of a `sel:` value: profiles annotate after it — `  (comment)` or `| verified DATE`.
+// A comment starts at 2+ spaces followed by '(' or '|', or at ' | '. Selectors themselves never contain
+// those (`:has(…)`, `:nth-child(2)` have no double space before the paren).
+export function selValue(raw) {
+  return raw.split(/\s{2,}[(|]|\s\|\s/)[0].trim();
+}
+
+// Locators, in either form (both appear in real profiles — the shipped example uses both):
+//   - name:                     - name:   sel: <selector>   | verified …
+//       sel: <selector>
+// isTemplate if sel has {holes}. A `- name:` line without any sel: stays (sel null → validate says so).
 export function parseLocators(md) {
   const out = new Map();
   let cur = null;
   for (const line of section(md, 'Locators')) {
-    const head = line.match(/^-\s+([a-z0-9-]+):\s*$/);
-    if (head) { cur = head[1]; out.set(cur, { sel: null, holes: [] }); continue; }
-    const sel = line.match(/^\s+sel:\s*(.+?)\s*$/);
+    const one = line.match(/^-\s+([a-z0-9-]+):\s+sel:\s*(.+)$/);
+    const head = one || line.match(/^-\s+([a-z0-9-]+):\s*$/);
+    if (head) { cur = head[1]; out.set(cur, { sel: null, holes: [] }); }
+    const sel = one ? [null, one[2]] : (!head && line.match(/^\s+sel:\s*(.+?)\s*$/));
     if (sel && cur) {
-      const value = sel[1];
+      const value = selValue(sel[1]);
       const holes = [...value.matchAll(/\{([^}]+)\}/g)].map((m) => m[1]);
       out.set(cur, { sel: value, holes });
     }
   }
   return out;
+}
+
+// `- name: …` lines in Locators that are neither form above: dropped silently before, now reported.
+export function unparsedLocatorLines(md) {
+  return section(md, 'Locators').filter((l) => /^-\s+\S/.test(l)
+    && !/^-\s+([a-z0-9-]+):\s*$/.test(l) && !/^-\s+([a-z0-9-]+):\s+sel:\s*\S/.test(l));
 }
 
 // Recipes: header `name(params):` and steps `- action: operand [<- {param}|"lit"]`.
@@ -79,8 +96,10 @@ export function validate(recipe, locators) {
     if (step.arg?.kind === 'param' && !recipe.params.includes(step.arg.name)) {
       errors.push(`param not declared in signature: {${step.arg.name}} (step ${step.action})`);
     }
-    // navigate: warn if operand contains {…} (probably meant <- {param})
+    // navigate: only http(s) — a literal is checked here, an argument at compile time.
     if (step.action === 'navigate') {
+      const lit = step.arg?.kind === 'literal' ? step.arg.value : (!step.arg ? step.operand : null);
+      if (lit != null && lit && !/\{[^}]+\}/.test(lit) && !/^https?:\/\//i.test(lit)) errors.push(`navigate: only http(s) URLs ('${lit.slice(0, 40)}')`);
       if (/\{[^}]+\}/.test(step.operand) && !step.arg) {
         warnings.push(`navigate: operand contains '{…}' — did you mean '<- {param}' to pass it as an argument?`);
       }
@@ -88,12 +107,20 @@ export function validate(recipe, locators) {
     }
     // wait-url does not use a locator
     if (step.action === 'wait-url') continue;
-    // extract: plain locator → must exist and have sel; map {…} → basic validation
-    if (step.action === 'extract') {
-      if (!step.operand.startsWith('{')) {
-        const loc = locators.get(step.operand);
-        if (!loc) { errors.push(`locator not found: '${step.operand}' (step extract)`); continue; }
-        if (!loc.sel) { errors.push(`locator '${step.operand}' has no sel: — not actionable (step extract)`); continue; }
+    // extract / extract-all: plain locator, or (extract only) a map {key: url | url:/re/ | <locator>} —
+    // every locator named in the map is checked too (it used to pass validate and fail at compile).
+    if (step.action === 'extract' || step.action === 'extract-all') {
+      const names = step.operand.startsWith('{')
+        ? step.operand.replace(/^\{|\}$/g, '').split(',').map((p) => p.trim()).filter(Boolean)
+          .map((p) => (p.indexOf(':') < 0 ? null : p.slice(p.indexOf(':') + 1).trim()))
+        : [step.operand];
+      if (step.action === 'extract-all' && step.operand.startsWith('{')) errors.push('extract-all takes one locator, not a {…} map');
+      for (const n of names) {
+        if (n == null) { errors.push(`extract: pair without ':' in map '${step.operand}'`); continue; }
+        if (n === 'url' || /^url:\/.*\/$/.test(n)) continue;
+        const loc = locators.get(n);
+        if (!loc) errors.push(`locator not found: '${n}' (step ${step.action})`);
+        else if (!loc.sel) errors.push(`locator '${n}' has no sel: — not actionable (step ${step.action})`);
       }
       continue;
     }

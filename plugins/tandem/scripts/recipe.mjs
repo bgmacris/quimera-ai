@@ -21,7 +21,7 @@
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { parseProfile, validate } from './recipe-parser.mjs';
+import { parseProfile, unparsedLocatorLines, validate } from './recipe-parser.mjs';
 import { compileFast, compileSteps } from './recipe-compiler.mjs';
 import { normalizeHost } from './host.mjs';
 import { resolveProfile } from './profile.mjs';
@@ -35,7 +35,8 @@ export { assertCompiledSafe } from './recipe-safety.mjs';
 function loadProfile(host) {
   const r = resolveProfile(host);
   if (!r) { process.stderr.write(`recipe: no profile for '${normalizeHost(host)}'\n`); process.exit(1); }
-  return parseProfile(readFileSync(r.path, 'utf8'));
+  const md = readFileSync(r.path, 'utf8');
+  return { ...parseProfile(md), unparsed: unparsedLocatorLines(md) };
 }
 
 const isCli = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
@@ -46,12 +47,14 @@ if (isCli) {
   const pos = argv.slice(1).filter((a) => !a.startsWith('--'));
   try {
     if (cmd === 'validate') {
-      const { locators, recipes } = loadProfile(pos[0]);
+      const { locators, recipes, unparsed } = loadProfile(pos[0]);
       let bad = 0;
+      for (const l of unparsed) process.stdout.write(`⚠ Locators: line not understood (use "- name:   sel: …" or "- name:" + indented "sel:"): ${l.trim().slice(0, 100)}\n`);
       for (const [name, r] of recipes) {
         const v = validate(r, locators);
         if (!v.ok) { bad++; process.stdout.write(`✗ ${name}\n${v.errors.map((e) => `    ${e}`).join('\n')}\n`); }
         else process.stdout.write(`✓ ${name}\n`);
+        for (const w of v.warnings) process.stdout.write(`    ⚠ ${w}\n`);
       }
       process.exit(bad ? 1 : 0);
     }

@@ -94,7 +94,7 @@ website breaks something. Mark each rule as [verified] (lived) or [hypothesis] (
   to the snapshot ref: CSS (`h1`) and Playwright engines (`role=button[name="X"]`, regex in `name=`).
   Tested resolving without a prior snapshot.
 - With a `tandem:map` profile that has `sel:`, act by selector and SKIP the snapshot
-  (it costs ~18× the profile), validating the route first with `fingerprint.mjs check` (a gate, not faith).
+  (reading it costs far more than the profile), validating the route first with `fingerprint.mjs check` (a gate, not faith).
   Full flow: `tandem:map` skill, §"Frugal flow".
 - [verified] On deferred-render SPAs, `browser_wait_for` on the `sel` BEFORE acting: the
   first attempt may not find the element yet.

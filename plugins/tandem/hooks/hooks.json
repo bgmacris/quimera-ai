@@ -13,20 +13,11 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "mcp__.*tandem__browser_navigate",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/hook-inject-profile.mjs"
-          }
-        ]
-      },
-      {
         "matcher": "mcp__.*tandem__browser_.*",
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/session-hook.mjs touch"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/hook-inject-profile.mjs"
           }
         ]
       }

@@ -43,7 +43,29 @@ mixed 9 different local apps.
 - The three CDP tools share `scripts/cdp.mjs` (timeouts on connect and calls).
 - CI: Node 22/24/26 matrix, shellcheck over install.sh and adapters, adapter + bench parse checks.
 
-### Fixed
+### Fixed (external review of 0.6.0, 2026-10-21 — each confirmed, then re-verified on the branch)
+- **One-line locators were dropped silently** (`- name:   sel: … | verified …`): the shipped example
+  lost 5 of its 8. Both forms now parse; trailing annotations are separated from the selector;
+  `recipe.mjs validate` reports Locators lines it cannot read.
+- **`navigate` accepted `file:`/`javascript:` through `--fast`.** The MCP's browser_navigate blocks
+  `file:`, but `--fast` runs `page.goto` in browser_run_code_unsafe: an untrusted argument changed what
+  the recipe does. Both modes now take absolute http(s) URLs only (literal checked by validate).
+- **`extract` took the first of N silently** (`.first()`): now strict (several matches = error, like
+  clicks); new **`extract-all`** returns a list. The example recipe reads its listing with it.
+- `validate` now checks the locators inside an `extract: {…}` map (they passed and failed at compile).
+- **Fingerprint false drift on detail routes** (h1 = product title) — the `[n=1]` list-route limit
+  reappeared: page-signals **algo 2** counts headings by level only; old captures report `stale`
+  (recapture), not `drift`. Verified on Chrome: another product → match; an added button → drift.
+- Anchored regex selectors end in `\b` when the name ends in a word character
+  (`^TCK-2026-016` no longer also matches `TCK-2026-0161` — verified live).
+- `selector.mjs` docs: `[name="X"]` is exact AND case-sensitive (verified: "save" ≠ Save; `"save"i` works).
+- The profile is injected when the agent ARRIVES at a site by any browser tool (click, tab, recipe
+  goto — URL taken from the result's "Page URL"), not only browser_navigate (verified in a real
+  `claude -p` session: injected after a click). `www.` and non-`www.` twins share a profile. One
+  node process per browser call now does injection + lease.
+- README: the saving of `sel:` is not reading a snapshot to find the element (an action's own result
+  is small with `--output-dir`); the "~18× per action" figure is gone. `TANDEM_CDP_PORT` precedence
+  documented.
 - New tabs: the capture now pauses them until Network is on (their document request was missed),
   sending enable + resume together (awaiting enable on a paused tab deadlocked it at about:blank).
 - CLIs piped into `grep -q`/`head` crashed with EPIPE.

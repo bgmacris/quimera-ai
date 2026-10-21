@@ -17,6 +17,13 @@
 // collapses spaces, trims, and reduces each digit sequence to '#'
 // ('Inbox 112' and 'Inbox 115' → 'Inbox #'). This is the piece that prevents false drift.
 
+// ALGO 2 (2026-10-21): headings count by LEVEL only, not by text. Heading text is content on the most
+// common routes — list items (h3 = book title, books.toscrape) and detail pages (h1 = product title,
+// two products of one template drifted) — so it produced false drift twice. Cost: a renamed section
+// no longer shows as drift. The version travels INSIDE the signal set ('algo:2'), so fingerprint.mjs
+// can tell an old capture (stale: recapture) from a real change (drift).
+export const ALGO = 2;
+
 export const norm = (s) => (s || '').replace(/\s+/g, ' ').trim().replace(/\d+/g, '#').replace(/[\x00-\x1F\x7F]/g, '').slice(0, 120);
 
 // collectSignals(document[, normFn]): SORTED set of structural signals for the page.
@@ -28,7 +35,8 @@ export function collectSignals(document, normFn = norm) {
   ['header', 'nav', 'main', 'aside', 'footer', 'form'].forEach((t) => { if (document.querySelector(t)) sig.add('landmark:' + t); });
   document.querySelectorAll('button').forEach((b) => { const n = normFn(b.getAttribute('aria-label') || b.textContent); if (n) sig.add('button:' + n); });
   document.querySelectorAll('input,textarea').forEach((i) => { const n = normFn(i.getAttribute('placeholder') || i.getAttribute('aria-label') || ''); if (n) sig.add('textbox:' + n); });
-  document.querySelectorAll('h1,h2,h3').forEach((h) => { const n = normFn(h.textContent); if (n) sig.add(h.tagName.toLowerCase() + ':' + n); });
+  document.querySelectorAll('h1,h2,h3').forEach((h) => sig.add('heading:' + h.tagName.toLowerCase()));
+  sig.add('algo:2');
   document.querySelectorAll('nav a,[role=navigation] a').forEach((a) => { const n = normFn(a.textContent); if (n) sig.add('nav-link:' + n); });
   return [...sig].sort();
 }

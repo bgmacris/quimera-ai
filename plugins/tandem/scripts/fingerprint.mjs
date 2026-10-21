@@ -16,7 +16,8 @@
 //
 // capture: saves/updates the route set in sites/<host>.fingerprints.json.
 // check:   compares stdin against saved; emits {status, added[], removed[]} on stdout.
-//          status = new (no prior) | match (identical) | drift (changed).
+//          status = new (no prior) | match (identical) | drift (changed) |
+//                   stale (saved with another page-signals algorithm → recapture).
 
 import { join } from 'node:path';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
@@ -89,6 +90,12 @@ const store = loadStore({ fallback: true });
 const prev = store[routeKey];
 if (!prev) {
   process.stdout.write(JSON.stringify({ status: 'new', routeKey, hint: 'no fingerprint saved; use capture' }) + '\n');
+  process.exit(0);
+}
+// A capture made with an older page-signals algorithm can't be compared (every route would "drift").
+if (prev.signals.includes('algo:2') !== signals.includes('algo:2')) {
+  process.stdout.write(JSON.stringify({ status: 'stale', routeKey, captured: prev.captured,
+    hint: 'fingerprint captured with another page-signals version; recapture this route (capture)' }) + '\n');
   process.exit(0);
 }
 const prevSet = new Set(prev.signals);

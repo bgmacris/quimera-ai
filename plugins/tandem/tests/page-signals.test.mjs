@@ -66,7 +66,8 @@ t('landmark absent (nav not present)', sigs.includes('landmark:nav'), false);
 t('button by aria-label', sigs.includes('button:Submit'), true);
 t('button normalized (112→#)', sigs.includes('button:Order #'), true);
 t('textbox by placeholder', sigs.includes('textbox:Search'), true);
-t('heading with tag + norm', sigs.includes('h1:Tickets #'), true);
+t('heading by level only (algo 2: its text is content, not structure)', sigs.includes('heading:h1') && !sigs.some((x) => x.startsWith('h1:')), true);
+t('signal set carries its algorithm version', sigs.includes('algo:2'), true);
 t('nav-link', sigs.includes('nav-link:Tickets'), true);
 
 // dedup: two buttons that normalize to the same text → one signal.

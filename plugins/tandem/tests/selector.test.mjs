@@ -36,7 +36,8 @@ t('simple substring', buildSelector({ role: 'textbox', name: 'Search by number',
 t('metacharacters escaped', buildSelector({ role: 'textbox', name: 'N.º (1)', regex: true }), 'role=textbox[name=/N\\.º \\(1\\)/]');
 t('slash delimiter escaped', buildSelector({ role: 'link', name: 'a/b', regex: true }), 'role=link[name=/a\\/b/]');
 // hyphen outside [...] is literal in regex → NOT escaped (would be noise).
-t('anchor at start (template with concrete id)', buildSelector({ role: 'row', name: 'TCK-2026-016', regex: true, anchor: true }), 'role=row[name=/^TCK-2026-016/]');
+t('anchor at start + \\b (TCK-2026-016 must not match TCK-2026-0161)', buildSelector({ role: 'row', name: 'TCK-2026-016', regex: true, anchor: true }), 'role=row[name=/^TCK-2026-016\\b/]');
+t('anchor, name ending in non-word char → no \\b', buildSelector({ role: 'button', name: 'Save:', regex: true, anchor: true }), 'role=button[name=/^Save:/]');
 t('anchor without regex is ignored (string mode)', buildSelector({ role: 'button', name: 'X', anchor: true }), 'role=button[name="X"]');
 
 // --- unit escapes -----------------------------------------------------------------

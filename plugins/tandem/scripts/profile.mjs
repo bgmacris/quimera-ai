@@ -10,7 +10,8 @@
 // The high level of the memory is always present; the detail is fetched (cf. HMT, R01).
 //
 // Resolution: key = normalizeHost(url) (`host` or `host_port`); if `sites/<key>.md` is missing, fall
-// back to the legacy port-less `sites/<host>.md` (profiles written before ports were part of the key).
+// back to the legacy port-less `sites/<host>.md` (profiles written before ports were part of the key),
+// then to the `www.` / non-`www.` twin.
 //
 // CLI:  profile.mjs resolve  <url|key>           → path of the profile that applies (exit 1 if none)
 //       profile.mjs index    <url|key>           → the index
@@ -27,13 +28,16 @@ export const INLINE_MAX = 6000;
 export const INDEX_MAX = 2000;
 
 // → { key, path, legacy } for the profile that applies to `raw`, or null.
+// Candidates, in order: the exact key, the legacy port-less host, and each with/without `www.`
+// (`www.example.com` and `example.com` are almost always one site; a profile saved under either is found).
 export function resolveProfile(raw, dir = dataDir()) {
   const key = normalizeHost(raw);
-  const own = join(dir, 'sites', `${key}.md`);
-  if (existsSync(own)) return { key, path: own, legacy: false };
-  const host = hostOf(key);
-  const legacy = join(dir, 'sites', `${host}.md`);
-  if (host !== key && existsSync(legacy)) return { key, path: legacy, legacy: true };
+  const www = (k) => (k.startsWith('www.') ? k.slice(4) : `www.${k}`);
+  const cands = [...new Set([key, hostOf(key), www(key), www(hostOf(key))])];
+  for (const c of cands) {
+    const path = join(dir, 'sites', `${c}.md`);
+    if (existsSync(path)) return { key, path, legacy: c !== key };
+  }
   return null;
 }
 

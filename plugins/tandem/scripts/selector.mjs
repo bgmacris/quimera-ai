@@ -3,7 +3,7 @@
 //
 // A site profile (sites/<host>.md) stores, per locator, an EXECUTABLE `sel:` that the agent
 // passes as `target` to browser_click/type/evaluate to act WITHOUT browser_snapshot (the
-// accessibility tree snapshot weighs ~18× the entire profile — see docs/01). That `target`
+// accessibility tree snapshot is much bigger than the profile — see docs/01). That `target`
 // goes to page.locator(), which accepts CSS and Playwright engines (role=, text=, ...).
 //
 // Why a helper instead of typing selectors by hand: the syntax has non-obvious escapes —
@@ -12,18 +12,21 @@
 // critical syntax lives in tested code, not prose. This is an AUTHORING helper (used when
 // writing the `sel:` during recon); at runtime the MCP already receives the written `sel:`.
 //
-// Relevant Playwright semantics: `role=R[name="X"]` matches the EXACT accessible name (case-
-// insensitive, trimmed); for SUBSTRING (robust against long/dynamic names) use regex
-// `role=R[name=/X/]`. locator() is strict: if the selector matches >1 element, the action
-// throws — so CLASS locators (rows, items) are TEMPLATE with a concrete id, not a prefix.
+// Relevant Playwright semantics (verified 2026-10-21, MCP 0.0.83): `role=R[name="X"]` matches the
+// EXACT accessible name and is CASE-SENSITIVE ("save" does not match Save; `"save"i` does). For a
+// SUBSTRING (robust against long/dynamic names) use regex `role=R[name=/X/]`. locator() is strict:
+// if the selector matches >1 element, the action throws — so CLASS locators (rows, items) are
+// TEMPLATE with a concrete id, not a prefix.
 //
 // CLI:  selector.mjs <role> <name> [--regex] [--anchor]
 //   --regex   name as substring pattern (robust for long/dynamic names)
-//   --anchor  with --regex, anchors to start (^) — e.g. a row 'TCK-2026-016…'
+//   --anchor  with --regex, anchors to start (^) — e.g. a row 'TCK-2026-016…'. When the name ends in a
+//             word character, a \b is added so the prefix cannot run into a longer id
+//             (^TCK-2026-016 would also match TCK-2026-0161; ^TCK-2026-016\b does not).
 // Examples:
 //   selector.mjs button "New ticket"                   → role=button[name="New ticket"]
 //   selector.mjs textbox "Search" --regex              → role=textbox[name=/Search/]
-//   selector.mjs row "TCK-2026-016" --regex --anchor   → role=row[name=/^TCK\-2026\-016/]
+//   selector.mjs row "TCK-2026-016" --regex --anchor   → role=row[name=/^TCK-2026-016\b/]
 
 // Escapes a literal for placement inside double quotes in a Playwright selector.
 export function escapeStringName(s) {
@@ -42,7 +45,7 @@ export function buildSelector({ role, name, regex = false, anchor = false } = {}
   if (!role || typeof role !== 'string') throw new Error('role is required');
   if (name == null || name === '') return `role=${role}`;
   if (regex) {
-    const pat = (anchor ? '^' : '') + escapeRegexName(name);
+    const pat = (anchor ? '^' : '') + escapeRegexName(name) + (anchor && /\w$/.test(name) ? '\\b' : '');
     return `role=${role}[name=/${pat}/]`;
   }
   return `role=${role}[name="${escapeStringName(name)}"]`;
