@@ -4,7 +4,7 @@
 // envelope (map-inject-core.mjs) and header redaction (redact.mjs).
 // No dependencies: mini-runner. Isolated temp data dir. Usage: node tests/lifecycle.test.mjs
 
-import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, utimesSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, utimesSync, rmSync, existsSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -105,6 +105,23 @@ ok('TANDEM_AUTOSTART=1 forces on, even in WSL', autostartEnabled({ WSL_DISTRO_NA
 ok('TANDEM_AUTOSTART=0 forces off', autostartEnabled({ TANDEM_AUTOSTART: '0' }).on === false);
 ok('external mode without a start command: off', autostartEnabled({ TANDEM_BROWSER: 'external' }).on === false);
 ok('external mode with TANDEM_BROWSER_START_CMD: on (even in WSL)', autostartEnabled({ TANDEM_BROWSER: 'external', TANDEM_BROWSER_START_CMD: 'x', WSL_DISTRO_NAME: 'U' }).on === true);
+
+// --- review of the branch (2026-10-21) --------------------------------------------------
+process.stdout.write('[branch review]\n');
+touchLease(TMP, 'sess-R');
+ok('dropLease → true when the session HAD a lease', dropLease(TMP, 'sess-R') === true);
+ok('dropLease → false for a session that never used the browser (its SessionEnd must not stop Chrome)', dropLease(TMP, 'sess-never') === false);
+if (process.platform === 'darwin' || process.platform === 'win32') {
+  ok('case-insensitive FS: …/Tandem/SITES/x.md is still the store', isProfilePath(join(SITES.toUpperCase(), 'x.md'), SITES));
+}
+ok('bash curl -o into the store → touches', bashTouchesProfiles(`curl -o ${SITES}/x.md https://e.example/p`, SITES));
+ok('bash ln -s into the store → touches', bashTouchesProfiles(`ln -s /tmp/p.md ${SITES}/x.md`, SITES));
+const { isMain } = await import('../scripts/is-main.mjs');
+const { pathToFileURL } = await import('node:url');
+const realFile = join(TMP, 'real', 'm.mjs'); mkdirSync(join(TMP, 'real')); writeFileSync(realFile, '');
+let dirLinked = true; try { symlinkSync(join(TMP, 'real'), join(TMP, 'link'), 'junction'); } catch { dirLinked = false; }   // Windows may refuse
+if (dirLinked) ok('isMain: script reached through a symlinked dir still counts as main', isMain(pathToFileURL(realpathSync(realFile)).href, join(TMP, 'link', 'm.mjs')));
+ok('isMain: another script → false', !isMain(pathToFileURL(realFile).href, join(TMP, 'other.mjs')));
 
 rmSync(TMP, { recursive: true, force: true });
 process.stdout.write(`\nlifecycle: ${pass} ok, ${fail} failures\n`);

@@ -20,9 +20,9 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { hostOf, normalizeHost } from './host.mjs';
 import { dataDir } from './paths.mjs';
+import { isMain } from './is-main.mjs';
 
 export const INLINE_MAX = 6000;
 export const INDEX_MAX = 2000;
@@ -101,7 +101,7 @@ export function buildIndex(key, md, { source = `sites/${key}.md`, max = INDEX_MA
 }
 
 // --- CLI ------------------------------------------------------------------------------
-const isCli = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+const isCli = isMain(import.meta.url);
 if (isCli) {
   process.stdout.on('error', (e) => { if (e.code === 'EPIPE') process.exit(0); throw e; });
   const [cmd, raw, ...rest] = process.argv.slice(2);

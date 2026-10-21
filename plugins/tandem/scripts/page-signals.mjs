@@ -36,7 +36,7 @@ export function collectSignals(document, normFn = norm) {
   document.querySelectorAll('button').forEach((b) => { const n = normFn(b.getAttribute('aria-label') || b.textContent); if (n) sig.add('button:' + n); });
   document.querySelectorAll('input,textarea').forEach((i) => { const n = normFn(i.getAttribute('placeholder') || i.getAttribute('aria-label') || ''); if (n) sig.add('textbox:' + n); });
   document.querySelectorAll('h1,h2,h3').forEach((h) => sig.add('heading:' + h.tagName.toLowerCase()));
-  sig.add('algo:2');
+  sig.add('algo:2');   // literal: this function is serialized and runs IN the page (no module scope) — keep = ALGO
   document.querySelectorAll('nav a,[role=navigation] a').forEach((a) => { const n = normFn(a.textContent); if (n) sig.add('nav-link:' + n); });
   return [...sig].sort();
 }
@@ -48,8 +48,8 @@ export function browserBlob() {
 }
 
 // --- CLI: `page-signals.mjs print` -------------------------------------------------
-import { fileURLToPath } from 'node:url';
-const isCli = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+import { isMain } from './is-main.mjs';
+const isCli = isMain(import.meta.url);
 if (isCli) {
   if (process.argv[2] === 'print') {
     process.stdout.write(browserBlob() + '\n');

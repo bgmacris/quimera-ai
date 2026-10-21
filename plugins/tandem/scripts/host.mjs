@@ -51,8 +51,8 @@ export function hostOf(key) {
 }
 
 // --- CLI ----------------------------------------------------------------------------
-import { fileURLToPath } from 'node:url';
-const isCli = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+import { isMain } from './is-main.mjs';
+const isCli = isMain(import.meta.url);
 if (isCli) {
   try {
     process.stdout.write(normalizeHost(process.argv[2] ?? '') + '\n');

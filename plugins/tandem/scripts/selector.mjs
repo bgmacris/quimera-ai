@@ -64,8 +64,8 @@ export function isWellFormed(sel) {
 }
 
 // --- CLI ----------------------------------------------------------------------------
-import { fileURLToPath } from 'node:url';
-const isCli = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+import { isMain } from './is-main.mjs';
+const isCli = isMain(import.meta.url);
 if (isCli) {
   const argv = process.argv.slice(2);
   const flags = new Set(argv.filter((a) => a.startsWith('--')));

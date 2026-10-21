@@ -18,7 +18,7 @@
 //                           [--mime <type>] [--limit <n>] [--body]
 //   cdp-intercept.mjs clear | count
 
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { appendFileSync, createReadStream, existsSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -47,7 +47,11 @@ for (let i = 1; i < argv.length; i++) {
 function runningPid() {
   try {
     const pid = +readFileSync(pidPath(), 'utf8');
-    process.kill(pid, 0); return pid;
+    process.kill(pid, 0);
+    // A stale pidfile (reboot, SIGKILL) may name a recycled PID: it must be OUR daemon, or we'd
+    // SIGTERM someone else's process on `stop` and claim "already capturing" forever on `start`.
+    if (process.platform !== 'win32' && !/cdp-intercept\.mjs\s+__run/.test(execFileSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8' }))) return null;
+    return pid;
   } catch { return null; }
 }
 function countLines() {

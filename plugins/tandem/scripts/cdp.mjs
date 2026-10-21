@@ -80,7 +80,10 @@ export class CdpClient {
 export async function activePage({ port = cdpPort(), index = null } = {}) {
   const pages = await listPages(port);
   if (!pages.length) throw new Error('no open tabs');
-  if (index != null) return pages[index] || pages[0];
+  if (index != null) {
+    if (!pages[index]) throw new Error(`no tab #${index} (${pages.length} open)`);   // never capture another tab silently
+    return pages[index];
+  }
   let visible = null;
   for (const pg of pages) {
     let c;

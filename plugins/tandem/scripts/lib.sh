@@ -237,10 +237,10 @@ stop_chrome() {
   if pgrep -f -- "--user-data-dir=$PROFILE" >/dev/null 2>&1; then
     pkill -f -- "--user-data-dir=$PROFILE" 2>/dev/null && stopped=0
   fi
-  # Wait for it to really exit (up to ~5s), then SIGKILL: a restart that races a dying Chrome
-  # finds the profile's SingletonLock still held.
+  # Wait for it to really exit (up to ~10s, inside SessionEnd's 15 s budget: on a loaded machine Chrome is slow to flush cookies/session
+  # to the profile), then SIGKILL: a restart that races a dying Chrome finds the SingletonLock held.
   local _
-  for _ in $(seq 1 20); do
+  for _ in $(seq 1 40); do
     pgrep -f -- "--user-data-dir=$PROFILE" >/dev/null 2>&1 || break
     sleep 0.25
   done

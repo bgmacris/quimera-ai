@@ -20,11 +20,11 @@
 //     - return:   url
 
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { parseProfile, unparsedLocatorLines, validate } from './recipe-parser.mjs';
 import { compileFast, compileSteps } from './recipe-compiler.mjs';
 import { normalizeHost } from './host.mjs';
 import { resolveProfile } from './profile.mjs';
+import { isMain } from './is-main.mjs';
 
 export { ACTIONS, parseLocators, parseRecipes, parseProfile, validate } from './recipe-parser.mjs';
 export { fillTemplate, compileFast, compileSteps } from './recipe-compiler.mjs';
@@ -39,7 +39,7 @@ function loadProfile(host) {
   return { ...parseProfile(md), unparsed: unparsedLocatorLines(md) };
 }
 
-const isCli = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+const isCli = isMain(import.meta.url);
 if (isCli) {
   const argv = process.argv.slice(2);
   const cmd = argv[0];

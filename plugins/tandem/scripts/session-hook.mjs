@@ -16,11 +16,12 @@
 // Reads the hook JSON on stdin; never prints to stdout (hooks stay silent).
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dataDir, ensureDataDir } from './paths.mjs';
 import { cleanupSessionMarkers, extractSessionId, sessionKey } from './map-inject-core.mjs';
+import { isMain } from './is-main.mjs';
 
 export const LEASE_TTL_MS = 12 * 60 * 60 * 1000;
 
@@ -31,8 +32,12 @@ export function touchLease(dir, sessionId) {
   writeFileSync(join(leaseDir(dir), sessionKey(sessionId)), String(Date.now()));
 }
 
+// → true if this session HAD a lease (it used the shared browser).
 export function dropLease(dir, sessionId) {
-  rmSync(join(leaseDir(dir), sessionKey(sessionId)), { force: true });
+  const p = join(leaseDir(dir), sessionKey(sessionId));
+  const had = existsSync(p);
+  rmSync(p, { force: true });
+  return had;
 }
 
 // Live leases (expired ones are deleted on the way). `now` is injectable for tests.
@@ -48,7 +53,7 @@ export function liveLeases(dir, now = Date.now()) {
   });
 }
 
-const isCli = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+const isCli = isMain(import.meta.url);
 if (isCli) {
   const mode = process.argv[2];
   let input = null;
@@ -62,11 +67,13 @@ if (isCli) {
     } else if (mode === 'compact') {
       cleanupSessionMarkers(sid, dir);
     } else if (mode === 'end') {
-      dropLease(dir, sid);
+      const had = dropLease(dir, sid);
       cleanupSessionMarkers(sid, dir);
-      if (liveLeases(dir).length === 0) {
+      // Only the LAST session that used the browser stops it: a session that never touched it (a
+      // `claude -p`, a cron, an OpenCode user, a human who only ran /tandem:browser-start) must not.
+      if (had && liveLeases(dir).length === 0) {
         const daemon = join(dirname(fileURLToPath(import.meta.url)), 'chrome-daemon.sh');
-        execFileSync(daemon, ['stop'], { stdio: 'ignore', timeout: 10000 });
+        execFileSync('bash', [daemon, 'stop'], { stdio: 'ignore', timeout: 14000 });   // bash: Windows can't exec a .sh
       }
     }
   } catch { /* a hook must never break the session */ }

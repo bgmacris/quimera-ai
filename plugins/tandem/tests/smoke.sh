@@ -22,6 +22,10 @@ SCRIPTS="$ROOT/scripts"
 PASS=0; FAIL=0
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$1"; PASS=$((PASS+1)); }
 bad()  { printf '  \033[31m✗\033[0m %s\n' "$1"; FAIL=$((FAIL+1)); }
+# Run a node test suite, indent its output, return ITS exit status. (`node x | sed` returned sed's
+# status: a failing suite never failed smoke — nor CI on Linux/macOS.)
+run_suite() { local out rc; out="$(node "$@" 2>&1)"; rc=$?; printf '%s\n' "$out" | sed 's/^/  /'; return "$rc"; }
+
 check() { if eval "$2"; then ok "$1"; else bad "$1"; fi; }
 
 # Isolated data sandbox (removed on exit).
@@ -158,7 +162,7 @@ jassert "dedup/order: sorted check → match"   "$(fp_check '["a","b","c"]' /nor
 # The norm/collectSignals logic is tested with a mock DOM in its own runner (node, no deps);
 # here we invoke it and reflect its verdict in the global count.
 echo "[6] page-signals.mjs (node tests/page-signals.test.mjs)"
-if node "$HERE/page-signals.test.mjs" 2>&1 | sed 's/^/  /'; then
+if run_suite "$HERE/page-signals.test.mjs"; then
   ok "page-signals.test.mjs green"
 else
   bad "page-signals.test.mjs"
@@ -168,7 +172,7 @@ fi
 # Generates the executable `sel:` the profile stores for frugal navigation; the test covers
 # escapes (quotes, regex, '/'). Invoked here, its verdict enters the global count.
 echo "[7] selector.mjs (node tests/selector.test.mjs)"
-if node "$HERE/selector.test.mjs" 2>&1 | sed 's/^/  /'; then
+if run_suite "$HERE/selector.test.mjs"; then
   ok "selector.test.mjs green"
 else
   bad "selector.test.mjs"
@@ -178,7 +182,7 @@ fi
 # Compiles profile recipes to Playwright (--fast) or steps (--step); the test covers parsing,
 # validation, template filling, and INJECTION (browser_run_code_unsafe is RCE-equivalent).
 echo "[8] recipe.mjs (node tests/recipe.test.mjs)"
-if node "$HERE/recipe.test.mjs" 2>&1 | sed 's/^/  /'; then
+if run_suite "$HERE/recipe.test.mjs"; then
   ok "recipe.test.mjs green"
 else
   bad "recipe.test.mjs"
@@ -188,7 +192,7 @@ fi
 # Single source that recipe/fingerprint/hook/map use for "URL or host" → store key; the test
 # covers URLs/bare hosts, uppercase scheme, userinfo/port, IDN, and rejection of traversal.
 echo "[9] host.mjs (node tests/host.test.mjs)"
-if node "$HERE/host.test.mjs" 2>&1 | sed 's/^/  /'; then
+if run_suite "$HERE/host.test.mjs"; then
   ok "host.test.mjs green"
 else
   bad "host.test.mjs"
@@ -198,28 +202,28 @@ fi
 # v0.8.0 foundations: one Chrome shared by several sessions, profile writes gated outside the
 # model (memory poisoning), injected profile marked as data + capped, credential headers redacted.
 echo "[10] lifecycle (node tests/lifecycle.test.mjs)"
-if node "$HERE/lifecycle.test.mjs" 2>&1 | sed 's/^/  /'; then
+if run_suite "$HERE/lifecycle.test.mjs"; then
   ok "lifecycle.test.mjs green"
 else
   bad "lifecycle.test.mjs"
 fi
 
 echo "[11] har (node tests/har.test.mjs)"
-if node "$HERE/har.test.mjs" 2>&1 | sed 's/^/  /'; then
+if run_suite "$HERE/har.test.mjs"; then
   ok "har.test.mjs green"
 else
   bad "har.test.mjs"
 fi
 
 echo "[12] profile (node tests/profile.test.mjs)"
-if node "$HERE/profile.test.mjs" 2>&1 | sed 's/^/  /'; then
+if run_suite "$HERE/profile.test.mjs"; then
   ok "profile.test.mjs green"
 else
   bad "profile.test.mjs"
 fi
 
 echo "[13] review regressions (node tests/review.test.mjs)"
-if node "$HERE/review.test.mjs" 2>&1 | sed 's/^/  /'; then
+if run_suite "$HERE/review.test.mjs"; then
   ok "review.test.mjs green"
 else
   bad "review.test.mjs"

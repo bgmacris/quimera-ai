@@ -130,7 +130,7 @@ function runClaude(arm, env, dir, systemPrompt, intent, startUrl) {
 
 // --until HH:MM: start no new task row after that time (the current row finishes): a shutdown never
 // cuts a task in half, and the rows done are balanced across arms. Resume later with --resume.
-const until = opt('until') ? (() => { const [h, m] = opt('until').split(':').map(Number); const d = new Date(); d.setHours(h, m, 0, 0); return d; })() : null;
+const until = opt('until') ? (() => { const [h, m] = opt('until').split(':').map(Number); const d = new Date(); d.setHours(h, m, 0, 0); if (d <= new Date()) d.setDate(d.getDate() + 1); return d; })() : null;   // already past today → tomorrow
 // --resume skips tasks already measured — but retries those that ended in a harness error.
 // A task counts as done only if it ran to completion: no harness error, claude exited 0 and its result
 // record is not an error — a run cut by sleep or a closed lid is retried, not scored as a failure.
@@ -161,7 +161,8 @@ for (const task of plan.slice(0, limit)) {
       const profile = arm.profile && existsSync(profilePath) ? readFileSync(profilePath, 'utf8') : null;
       const site = new URL(task.start_urls[0]).origin;
       const code = await runClaude(arm, env, dir, arm.prompt(site, profile), task.intent, task.start_urls[0]);
-      rec.kill('SIGTERM'); await new Promise((r) => rec.on('exit', r));
+      // The recorder may have exited already (Chrome closed under it): don't wait for an 'exit' already emitted.
+      if (rec.exitCode === null && rec.signalCode === null) { rec.kill('SIGTERM'); await new Promise((r) => rec.on('exit', r)); }
       daemon(env, 'stop');
       log.push(`claude exit ${code}`);
       if (!existsSync(join(dir, 'agent_response.json'))) {

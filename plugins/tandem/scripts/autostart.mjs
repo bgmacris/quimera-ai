@@ -17,6 +17,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { cdpPort } from './paths.mjs';
+import { isMain } from './is-main.mjs';
 
 export function isWsl(env = process.env) {
   if (env.WSL_DISTRO_NAME) return true;
@@ -39,7 +40,7 @@ async function cdpUp(port) {
   try { return (await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(800) })).ok; } catch { return false; }
 }
 
-const isCli = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+const isCli = isMain(import.meta.url);
 if (isCli) {
   try { readFileSync(0, 'utf8'); } catch { /* stdin unused */ }
   const port = cdpPort();
@@ -49,7 +50,9 @@ if (isCli) {
   const mode = autostartEnabled();
   if (mode.on) {
     try {
-      execFileSync(join(dirname(fileURLToPath(import.meta.url)), 'chrome-daemon.sh'), ['start'], { stdio: 'ignore', timeout: 30000 });
+      // bash explicitly: Windows can't exec a .sh. 40 s stays under the hook's 45 s; a TANDEM_CDP_WAIT
+      // beyond that is cut here (Chrome keeps starting, nohup) — the next call then finds it up.
+      execFileSync('bash', [join(dirname(fileURLToPath(import.meta.url)), 'chrome-daemon.sh'), 'start'], { stdio: 'ignore', timeout: 40000 });
     } catch { /* reported below */ }
     if (await cdpUp(port)) {
       out({ additionalContext: `tandem: the shared Chrome was not running; started it (CDP 127.0.0.1:${port}). The human may need to log in again in that window.` });

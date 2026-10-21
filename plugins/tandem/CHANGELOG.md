@@ -49,6 +49,27 @@ mixed 9 different local apps.
 - `sel:` + fingerprint: **maintained, frozen** — nothing removed, no new features until a measurement
   shows they raise success.
 
+### Fixed (review of the whole branch, 2026-10-21 — each reproduced or read in the code first)
+- **Scripts launched through a symlinked path did nothing** (`isCli` compared the typed path with the
+  real one): the MCP launcher exited 0 and the tools vanished; hooks silently no-op'd. Shared
+  `scripts/is-main.mjs` (realpath) in all 9 entry points.
+- **SessionEnd stopped Chrome for sessions that never used it** (a `claude -p`, a cron, an OpenCode
+  user, a human who only ran `/tandem:browser-start`): now only the last session that HAD a lease stops it.
+- **Cursor adapter**: `run-session-hook.sh` left the linked dir (`../../..` without `cd -P`), and
+  `mcp-cursor-launch.sh` pointed at a non-existent `adapters/cursor/shared` (already broken on 0.6.0).
+- **Windows**: autostart and SessionEnd exec'd `chrome-daemon.sh` directly (Node can't run a `.sh`) →
+  `bash <script>`. Autostart's exec timeout 30 → 40 s (under the hook's 45 s).
+- **Write gate**: case-insensitive on macOS/Windows (`…/Tandem/sites/x.md` bypassed it); Bash writers
+  `ln`, `curl`, `wget`, `rsync`, `tar`, `unzip`, `patch` added (still a heuristic).
+- `stop_chrome` waits up to ~10 s (was 5) before SIGKILL — a loaded machine flushes cookies slowly.
+- intercept: a stale pidfile naming a recycled PID is ignored (command line checked) instead of
+  SIGTERMing someone else's process.
+- `--tab N` out of range is an error, not a silent capture of tab 0.
+- **tests/smoke.sh never failed on a failing suite** (`node x | sed` returned sed's status), so CI on
+  Linux/macOS could not catch engine-test failures. `run_suite` returns the suite's own status
+  (verified by forcing a failure).
+- Bench: `--until` earlier than now means tomorrow; no hang waiting for a recorder that already exited.
+
 ### Fixed (WebArena mini-pilot, 2026-10-21 — 48 runs on a machine at load ~20)
 - `chrome-daemon.sh start` removes a stale profile lock (`SingletonLock`/`Socket`/`Cookie`) when no
   process uses the profile. The lock is `<hostname>-<pid>` and the Mac's hostname follows the network:

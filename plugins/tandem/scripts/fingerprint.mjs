@@ -23,6 +23,9 @@ import { join } from 'node:path';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { hostOf, normalizeHost } from './host.mjs';
 import { dataDir as resolveDataDir } from './paths.mjs';
+import { ALGO } from './page-signals.mjs';
+
+const ALGO_SIG = `algo:${ALGO}`;
 
 const dataDir = resolveDataDir();
 const sitesDir = join(dataDir, 'sites');
@@ -93,7 +96,7 @@ if (!prev) {
   process.exit(0);
 }
 // A capture made with an older page-signals algorithm can't be compared (every route would "drift").
-if (prev.signals.includes('algo:2') !== signals.includes('algo:2')) {
+if (prev.signals.includes(ALGO_SIG) !== signals.includes(ALGO_SIG)) {
   process.stdout.write(JSON.stringify({ status: 'stale', routeKey, captured: prev.captured,
     hint: 'fingerprint captured with another page-signals version; recapture this route (capture)' }) + '\n');
   process.exit(0);

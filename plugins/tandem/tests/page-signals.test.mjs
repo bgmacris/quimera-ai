@@ -10,7 +10,7 @@
 
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { norm, collectSignals, browserBlob } from '../scripts/page-signals.mjs';
+import { norm, collectSignals, browserBlob, ALGO } from '../scripts/page-signals.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -84,6 +84,7 @@ t('blob produces identical result to collectSignals', eq(fromBlob, sigs), true);
 const { execFileSync } = await import('node:child_process');
 const printed = execFileSync('node', [join(HERE, '..', 'scripts', 'page-signals.mjs'), 'print'], { encoding: 'utf8' }).trim();
 t('CLI print == browserBlob()', printed, browserBlob());
+t('in-page literal algo:N == ALGO (the serialized function cannot read the constant)', collectSignals.toString().includes(`'algo:${ALGO}'`), true);
 
 // --- summary ----------------------------------------------------------------------
 process.stdout.write(`\npage-signals: ${pass} ok, ${fail} failures\n`);

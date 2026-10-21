@@ -15,8 +15,8 @@
 import { readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { dataDir } from './paths.mjs';
+import { isMain } from './is-main.mjs';
 
 // Resolve symlinks of the deepest existing ancestor (the file itself may not exist yet).
 function real(p) {
@@ -31,8 +31,10 @@ function real(p) {
 
 export function isProfilePath(filePath, sitesDir) {
   if (typeof filePath !== 'string' || !filePath) return false;
-  const f = real(filePath.replace(/^~(?=[\\/])/, homedir()));
-  const s = real(sitesDir);
+  // macOS (APFS) and Windows are case-insensitive: ~/.claude/Tandem/sites IS the store there.
+  const fold = (p) => (process.platform === 'darwin' || process.platform === 'win32' ? p.toLowerCase() : p);
+  const f = fold(real(filePath.replace(/^~(?=[\\/])/, homedir())));
+  const s = fold(real(sitesDir));
   // path.relative, not startsWith(s + '/'): Windows paths use '\\' (the gate never fired there).
   const rel = relative(s, f);
   return !!rel && !rel.startsWith('..') && !isAbsolute(rel) && f.toLowerCase().endsWith('.md');
@@ -40,7 +42,7 @@ export function isProfilePath(filePath, sitesDir) {
 
 // Read-only engine invocations that mention the store are fine (list/show/path, recipe compile…).
 const READ_ONLY = /^\s*(\S*\/)?(map\.sh\s+(list|show|path|index)|recipe\.mjs\s+(validate|compile)|cat|less|head|tail|grep|rg|wc|ls)\b/;
-const WRITES = /(>|>>|\btee\b|\bcp\b|\bmv\b|\bsed\s+-i|\bperl\s+-i|\bdd\b|\bpython3?\b|\bnode\b|\bruby\b|\binstall\b|\brm\b)/;
+const WRITES = /(>|>>|\btee\b|\bcp\b|\bmv\b|\bsed\s+-i|\bperl\s+-i|\bdd\b|\bpython3?\b|\bnode\b|\bruby\b|\binstall\b|\brm\b|\bln\b|\bcurl\b|\bwget\b|\brsync\b|\btar\b|\bunzip\b|\bpatch\b)/;
 
 export function bashTouchesProfiles(command, sitesDir) {
   if (typeof command !== 'string') return false;
@@ -72,7 +74,7 @@ export function decide(input, sitesDir = join(dataDir(), 'sites')) {
   };
 }
 
-const isCli = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+const isCli = isMain(import.meta.url);
 if (isCli) {
   let input = null;
   try { input = JSON.parse(readFileSync(0, 'utf8')); } catch { process.exit(0); }

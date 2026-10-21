@@ -19,8 +19,8 @@
 import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { cdpPort, dataDir, ensureDataDir } from './paths.mjs';
+import { isMain } from './is-main.mjs';
 
 export const MCP_VERSION_PIN = '0.0.83';
 
@@ -38,7 +38,7 @@ export function mcpArgs(env = process.env) {
 // cmd.exe quoting for the Windows `npx.cmd` shim (data dirs live under "C:\Users\First Last\…").
 const winQuote = (a) => (/[\s"&|<>^]/.test(a) ? `"${a.replace(/"/g, '""')}"` : a);
 
-const isCli = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+const isCli = isMain(import.meta.url);
 if (isCli) {
   const args = mcpArgs();
   const win = process.platform === 'win32';
