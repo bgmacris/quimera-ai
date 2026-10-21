@@ -7,6 +7,7 @@
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, utimesSync, rmSync, existsSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const TMP = mkdtempSync(join(tmpdir(), 'tandem-lc-'));
 process.env.TANDEM_DATA_DIR = TMP;
@@ -140,7 +141,7 @@ ok('suspiciousLines sees through a JSON-escaped file (evaluate+filename)', suspi
 {
   const { execFileSync } = await import('node:child_process');
   const HS = join(TMP, 'handoff'); mkdirSync(HS);
-  const hook = (mode, payload) => execFileSync(process.execPath, [new URL('../scripts/session-hook.mjs', import.meta.url).pathname, mode], { input: JSON.stringify(payload), env: { ...process.env, TANDEM_DATA_DIR: HS } });
+  const hook = (mode, payload) => execFileSync(process.execPath, [fileURLToPath(new URL('../scripts/session-hook.mjs', import.meta.url)), mode], { input: JSON.stringify(payload), env: { ...process.env, TANDEM_DATA_DIR: HS } });
   touchLease(HS, 'old-sess');
   hook('end', { session_id: 'old-sess', reason: 'clear' });
   ok('/clear: SessionEnd keeps the lease (Chrome is not stopped)', liveLeases(HS).includes('old-sess'));
