@@ -29,8 +29,22 @@ MCP_VERSION="${TANDEM_MCP_VERSION:-0.0.83}"
 # the cwd with snapshots; file writes are only allowed under it (or the MCP's
 # workspace root). --file-paths absolute: tool results link files by absolute path, readable
 # as-is. --no-webmcp: tools a page registers via WebMCP are untrusted input → not exposed.
+#
+# --output-max-size: the output dir keeps page snapshots/screenshots, which carry what the page showed
+# (a teammate's held 16 snapshots with tax IDs) and grew without bound (1,155 files): the MCP evicts the
+# oldest past 50 MB. --timeout-action 10000: the MCP uses ONE action timeout for clicks and screenshots;
+# 5 s made 17 % of real screenshots fail "waiting for fonts". Measured: a hidden (unactionable) element
+# now fails after 10.0 s; a selector that matches nothing still fails at once (resolved before waiting).
+# TANDEM_MCP_ARGS: extra flags for @playwright/mcp, word-split, appended LAST so they override these
+# defaults (e.g. "--timeout-action 20000 --image-responses omit"). Lives in the env, not in this file,
+# so an update of the plugin does not wipe it.
+extra=()
+if [ -n "${TANDEM_MCP_ARGS:-}" ]; then read -r -a extra <<< "$TANDEM_MCP_ARGS"; fi
 exec npx -y "@playwright/mcp@${MCP_VERSION}" \
   --cdp-endpoint "http://127.0.0.1:${PORT}" \
   --output-dir "$DATA/output" \
   --file-paths absolute \
-  --no-webmcp
+  --no-webmcp \
+  --output-max-size 52428800 \
+  --timeout-action 10000 \
+  ${extra[@]+"${extra[@]}"}

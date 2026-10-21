@@ -18,6 +18,7 @@ const { decide, isProfilePath, bashTouchesProfiles } = await import('../scripts/
 const { profileContext, MAX_PROFILE_CHARS, suspiciousLines } = await import('../scripts/map-inject-core.mjs');
 const { redactHeaders } = await import('../scripts/redact.mjs');
 const { domainMatches } = await import('../scripts/cookie-match.mjs');
+const { autostartEnabled, isWsl } = await import('../scripts/autostart.mjs');
 
 let pass = 0; let fail = 0;
 function ok(desc, cond) {
@@ -93,6 +94,13 @@ ok('leading-dot cookie domain matches', domainMatches('.example.com', 'example.c
 ok('label boundary: notexample.com ≠ example.com', !domainMatches('notexample.com', 'example.com'));
 ok('IP exact: 0.0.1 ≠ 127.0.0.1', !domainMatches('127.0.0.1', '0.0.1'));
 ok('IP exact match', domainMatches('127.0.0.1', '127.0.0.1'));
+
+// --- autostart policy -----------------------------------------------------------------
+process.stdout.write('[autostart]\n');
+ok('default: on, unless this host is WSL', autostartEnabled({}).on === !isWsl({}));
+ok('WSL: off by default (external Windows Chrome)', autostartEnabled({ WSL_DISTRO_NAME: 'Ubuntu' }).on === false);
+ok('TANDEM_AUTOSTART=1 forces on, even in WSL', autostartEnabled({ WSL_DISTRO_NAME: 'Ubuntu', TANDEM_AUTOSTART: '1' }).on === true);
+ok('TANDEM_AUTOSTART=0 forces off', autostartEnabled({ TANDEM_AUTOSTART: '0' }).on === false);
 
 rmSync(TMP, { recursive: true, force: true });
 process.stdout.write(`\nlifecycle: ${pass} ok, ${fail} failures\n`);

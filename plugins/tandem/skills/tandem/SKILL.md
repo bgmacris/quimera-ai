@@ -10,9 +10,12 @@ you operate it with the `browser_*` tools of the `tandem` MCP (Playwright over C
 the other sees: state, cookies, and session are the same.
 
 ## Startup
-- The browser does NOT start on its own. If the `browser_*` tools give `ECONNREFUSED 127.0.0.1:9222`,
-  Chrome isn't running: ask the human to run `/tandem:browser-start` (or run it yourself if you
-  have the command available). Check state with `/tandem:browser-status`.
+- The browser starts ON ITS OWN: a PreToolUse hook (`scripts/autostart.mjs`) checks CDP before every
+  `browser_*` call and, if nothing answers, starts tandem's Chrome and tells you so ("started it").
+  A fresh Chrome may have lost logins: say so to the human before acting on a walled page.
+- Where autostart is off (`TANDEM_AUTOSTART=0`, or WSL by default — the browser may be an external
+  Windows Chrome), the call is DENIED with "no browser answers": ask the human to start it
+  (`/tandem:browser-start` or their own browser). Check state with `/tandem:browser-status`.
 
 ## Division of labor
 - **The human does** what requires being human: solving captchas, getting past anti-bot checkpoints

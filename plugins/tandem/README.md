@@ -135,6 +135,9 @@ continues from the already-rendered page — that is the human-in-the-loop hando
 | Variable | Default | Purpose |
 |---|---|---|
 | `TANDEM_CHROME_BIN` | autodetect (macOS/Linux) | path to the Chrome/Chromium binary |
+| `TANDEM_AUTOSTART` | on (off under WSL) | `1`/`0`: start tandem's Chrome automatically on the first `browser_*` call. Off by default under WSL, where the browser is often an external Windows Chrome |
+| `TANDEM_MCP_ARGS` | — | extra `@playwright/mcp` flags, appended last so they override tandem's defaults (`--output-max-size 52428800 --timeout-action 10000`), e.g. `--image-responses omit` |
+| `TANDEM_CHROME_ARGS` | — | extra Chrome flags (e.g. `--headless=new` for unattended runs/CI) |
 | `TANDEM_CDP_PORT`   | `9222` | CDP port on loopback. Wins over the port saved by the last start (`cdp-port`); set it where Claude Code gets its env (shell or settings `env`) so the MCP, commands and hooks all see it |
 | `TANDEM_DATA_DIR`   | `~/.claude/tandem` | Chrome profile, logs, and site profiles |
 

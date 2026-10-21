@@ -14,6 +14,20 @@ mixed 9 different local apps.
   absolute command to fetch a section. Instruction-like lines are still searched in the whole profile.
   Real 26 KB profile → 2.4 KB of context that describes all of it (was a 2 KB arbitrary cut).
 - `map.sh show <key> --section "<title>"` and `map.sh sections <key>`.
+- **Chrome autostart** (`scripts/autostart.mjs`, PreToolUse on `browser_*`): if no CDP answers, start
+  tandem's Chrome before the call and tell the model; if autostart is off or fails, DENY the call with
+  a clear instruction instead of a raw ECONNREFUSED. Default on, **off under WSL** (the browser there is
+  often an external Windows Chrome — starting tandem's Linux one would hide the right browser);
+  `TANDEM_AUTOSTART=1|0` forces it. Verified in a real `claude -p` session: Chrome down → first
+  `browser_navigate` started it, the model got the notice, SessionEnd stopped it.
+- `TANDEM_MCP_ARGS`: extra @playwright/mcp flags, appended last so they override tandem's defaults
+  (verified: `--timeout-action 2000` → a hidden-element click fails at 2.0 s instead of 10.0 s).
+
+### Changed (MCP defaults)
+- `--output-max-size 52428800`: the output dir (page snapshots/screenshots — a teammate's held 16 with
+  tax IDs, another had 1,155 files) now evicts its oldest files past 50 MB (verified with a small threshold).
+- `--timeout-action 10000` (was 5,000): the MCP uses one timeout for clicks AND screenshots; 17 % of a
+  teammate's screenshots failed "waiting for fonts". A selector that matches nothing still fails at once.
 - `scripts/cdp-record.mjs`: records ALL tabs of tandem's Chrome to a HAR 1.2 file (browser-level
   `Target.setAutoAttach`, one connection, no collision with Playwright). Each redirect hop is its own
   entry; request headers from `requestWillBeSentExtraInfo` (sec-fetch-*, referer); Set-Cookie of
