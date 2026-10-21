@@ -42,7 +42,17 @@ jobs:
       - name: engine tests (node)
         working-directory: plugins/tandem
         shell: bash
-        run: for t in host selector page-signals recipe har profile review lifecycle; do node "tests/$t.test.mjs" || exit 1; done
+        # Job logs need auth to download; annotations are public: each failing suite ships its ✗ lines
+        # and output tail as one.
+        run: |
+          rc=0
+          for t in host selector page-signals recipe har profile review lifecycle; do
+            if ! out="$(node "tests/$t.test.mjs" 2>&1)"; then
+              rc=1; printf '%s\n' "$out"
+              echo "::error title=windows $t.test.mjs::$( { printf '%s\n' "$out" | grep '✗' ; printf '%s\n' "$out" | tail -n 25; } | tr -d '\r' | awk '{gsub(/%/,"%25"); printf "%s%%0A", $0}')"
+            fi
+          done
+          exit $rc
       - name: MCP handshake through the node launcher (initialize + tools/list)
         working-directory: plugins/tandem
         run: node tests/mcp-handshake.mjs

@@ -21,7 +21,7 @@ SCRIPTS="$ROOT/scripts"
 
 PASS=0; FAIL=0
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$1"; PASS=$((PASS+1)); }
-bad()  { printf '  \033[31m✗\033[0m %s\n' "$1"; FAIL=$((FAIL+1)); }
+bad()  { printf '  \033[31m✗\033[0m %s\n' "$1"; FAIL=$((FAIL+1)); [ -z "${GITHUB_ACTIONS:-}" ] || echo "::error title=smoke.sh::$1"; }
 # Run a node test suite, indent its output, return ITS exit status. (`node x | sed` returned sed's
 # status: a failing suite never failed smoke — nor CI on Linux/macOS.)
 run_suite() { local out rc; out="$(node "$@" 2>&1)"; rc=$?; printf '%s\n' "$out" | sed 's/^/  /'; return "$rc"; }

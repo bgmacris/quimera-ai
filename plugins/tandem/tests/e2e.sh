@@ -9,7 +9,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 PASS=0; FAIL=0
 ok()  { printf '  \033[32m✓\033[0m %s\n' "$1"; PASS=$((PASS+1)); }
-bad() { printf '  \033[31m✗\033[0m %s\n' "$1"; FAIL=$((FAIL+1)); }
+bad() { printf '  \033[31m✗\033[0m %s\n' "$1"; FAIL=$((FAIL+1)); [ -z "${GITHUB_ACTIONS:-}" ] || echo "::error title=e2e.sh::$1"; }
 check() { if eval "$2"; then ok "$1"; else bad "$1"; fi; }
 
 TMP="$(mktemp -d)"
@@ -103,5 +103,10 @@ check "stop without STOP_CMD leaves it running" "ext stop | grep -q 'not stoppin
 check "stop with STOP_CMD stops it" "TANDEM_BROWSER_STOP_CMD=\"\$STOP_CMD\" ext stop | grep -q 'stopped' && sleep 1 && ! cdp_up"
 pkill -f -- "--user-data-dir=$OTHER" 2>/dev/null
 echo ""
+# CI: job logs need auth to download, annotations are public — ship the Chrome log tail as one.
+if [ "$FAIL" -gt 0 ] && [ -n "${GITHUB_ACTIONS:-}" ]; then
+  LOG="$TANDEM_DATA_DIR/logs/chrome.log"
+  [ -f "$LOG" ] && echo "::error title=e2e chrome.log::$(tail -c 3000 "$LOG" | tr -d '\r' | awk '{gsub(/%/,"%25"); printf "%s%%0A", $0}')"
+fi
 echo "e2e: $PASS ok, $FAIL failures"
 [ "$FAIL" -eq 0 ]
