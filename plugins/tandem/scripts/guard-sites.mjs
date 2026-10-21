@@ -63,6 +63,21 @@ export function decide(input, sitesDir = join(dataDir(), 'sites')) {
   if (/^(Write|Edit|MultiEdit)$/.test(tool)) hit = isProfilePath(ti.file_path, sitesDir);
   else if (tool === 'Bash') hit = bashTouchesProfiles(ti.command, sitesDir);
   if (!hit) return null;
+  // An interactive session in bypassPermissions approves a hook's `ask` by itself, with no prompt
+  // (verified 2026-10-21: decision source "config"/"mode", 40 ms after the hook). There the human can't
+  // be asked, so DENY: the gate exists to put a human between web content and future sessions.
+  if (input?.permission_mode === 'bypassPermissions') {
+    return {
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason:
+          'tandem:map — writing a site profile needs the human\'s approval, and bypass-permissions mode approves '
+          + 'it without asking. Show the human the exact content and ask them to leave bypass mode (shift+tab) '
+          + 'to approve it, or to save it themselves.',
+      },
+    };
+  }
   return {
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',

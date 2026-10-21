@@ -56,6 +56,12 @@ const SITES = join(TMP, 'sites'); mkdirSync(SITES, { recursive: true });
 const ask = (o) => o?.hookSpecificOutput?.permissionDecision === 'ask';
 ok('Write sites/x.md → ask', ask(decide({ tool_name: 'Write', tool_input: { file_path: join(SITES, 'x.md') } }, SITES)));
 ok('Edit sites/x.md → ask', ask(decide({ tool_name: 'Edit', tool_input: { file_path: join(SITES, 'x.md') } }, SITES)));
+const decision = (o) => o?.hookSpecificOutput?.permissionDecision;
+ok('bypassPermissions: Edit sites/x.md → DENY (bypass approves an ask without asking)', decision(decide({ tool_name: 'Edit', permission_mode: 'bypassPermissions', tool_input: { file_path: join(SITES, 'x.md') } }, SITES)) === 'deny');
+ok('bypassPermissions: Bash write into the store → DENY', decision(decide({ tool_name: 'Bash', permission_mode: 'bypassPermissions', tool_input: { command: `echo x >> ${SITES}/x.md` } }, SITES)) === 'deny');
+ok('default / auto mode: still ask', decision(decide({ tool_name: 'Edit', permission_mode: 'default', tool_input: { file_path: join(SITES, 'x.md') } }, SITES)) === 'ask'
+  && decision(decide({ tool_name: 'Edit', permission_mode: 'auto', tool_input: { file_path: join(SITES, 'x.md') } }, SITES)) === 'ask');
+ok('bypassPermissions elsewhere → no opinion', decide({ tool_name: 'Write', permission_mode: 'bypassPermissions', tool_input: { file_path: join(TMP, 'notes.md') } }, SITES) === null);
 ok('Write elsewhere → no opinion', decide({ tool_name: 'Write', tool_input: { file_path: join(TMP, 'notes.md') } }, SITES) === null);
 ok('fingerprints.json is not a profile', !isProfilePath(join(SITES, 'x.fingerprints.json'), SITES));
 ok('traversal sites/../x.md is not a profile', !isProfilePath(join(SITES, '..', 'x.md'), SITES));
