@@ -64,17 +64,30 @@ export function decide(input, sitesDir = join(dataDir(), 'sites')) {
   else if (tool === 'Bash') hit = bashTouchesProfiles(ti.command, sitesDir);
   if (!hit) return null;
   // An interactive session in bypassPermissions approves a hook's `ask` by itself, with no prompt
-  // (verified 2026-10-21: decision source "config"/"mode", 40 ms after the hook). There the human can't
-  // be asked, so DENY: the gate exists to put a human between web content and future sessions.
+  // (verified 2026-10-21: decision source "config"/"mode", 40 ms after the hook). Bypass is the human's
+  // choice to skip approvals, and tandem:map must keep working there: the write goes through, with a
+  // visible notice to review it (injection still wraps profiles as data and flags instruction-like
+  // lines). TANDEM_PROFILE_GATE=strict denies instead.
+  const file = ti.file_path || 'a site profile (via Bash)';
+  if (input?.permission_mode === 'bypassPermissions' && process.env.TANDEM_PROFILE_GATE !== 'strict') {
+    return {
+      systemMessage: `tandem: ${file} was written WITHOUT approval (bypass mode). Review it — site profiles are injected into future sessions.`,
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'allow',
+        permissionDecisionReason: 'tandem:map — bypass mode: profile write allowed, the human is notified to review it.',
+      },
+    };
+  }
   if (input?.permission_mode === 'bypassPermissions') {
     return {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
         permissionDecision: 'deny',
         permissionDecisionReason:
-          'tandem:map — writing a site profile needs the human\'s approval, and bypass-permissions mode approves '
-          + 'it without asking. Show the human the exact content and ask them to leave bypass mode (shift+tab) '
-          + 'to approve it, or to save it themselves.',
+          'tandem:map — TANDEM_PROFILE_GATE=strict: writing a site profile needs the human\'s approval, and '
+          + 'bypass-permissions mode would approve it without asking. Show the human the exact content and ask '
+          + 'them to leave bypass mode (shift+tab) to approve it, or to save it themselves.',
       },
     };
   }

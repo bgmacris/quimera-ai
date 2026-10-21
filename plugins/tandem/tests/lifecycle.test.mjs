@@ -57,8 +57,16 @@ const ask = (o) => o?.hookSpecificOutput?.permissionDecision === 'ask';
 ok('Write sites/x.md → ask', ask(decide({ tool_name: 'Write', tool_input: { file_path: join(SITES, 'x.md') } }, SITES)));
 ok('Edit sites/x.md → ask', ask(decide({ tool_name: 'Edit', tool_input: { file_path: join(SITES, 'x.md') } }, SITES)));
 const decision = (o) => o?.hookSpecificOutput?.permissionDecision;
-ok('bypassPermissions: Edit sites/x.md → DENY (bypass approves an ask without asking)', decision(decide({ tool_name: 'Edit', permission_mode: 'bypassPermissions', tool_input: { file_path: join(SITES, 'x.md') } }, SITES)) === 'deny');
-ok('bypassPermissions: Bash write into the store → DENY', decision(decide({ tool_name: 'Bash', permission_mode: 'bypassPermissions', tool_input: { command: `echo x >> ${SITES}/x.md` } }, SITES)) === 'deny');
+const BY = (tool, ti) => decide({ tool_name: tool, permission_mode: 'bypassPermissions', tool_input: ti }, SITES);
+delete process.env.TANDEM_PROFILE_GATE;
+const byEdit = BY('Edit', { file_path: join(SITES, 'x.md') });
+ok('bypassPermissions: profile write ALLOWED (tandem:map works in bypass)', decision(byEdit) === 'allow');
+ok('bypassPermissions: the human gets a visible notice naming the file', /WITHOUT approval/.test(byEdit.systemMessage || '') && byEdit.systemMessage.includes('x.md'));
+ok('bypassPermissions: Bash write into the store → allowed with notice', decision(BY('Bash', { command: `echo x >> ${SITES}/x.md` })) === 'allow');
+process.env.TANDEM_PROFILE_GATE = 'strict';
+ok('TANDEM_PROFILE_GATE=strict + bypass → DENY', decision(BY('Edit', { file_path: join(SITES, 'x.md') })) === 'deny');
+ok('TANDEM_PROFILE_GATE=strict + default → still ask', decision(decide({ tool_name: 'Edit', permission_mode: 'default', tool_input: { file_path: join(SITES, 'x.md') } }, SITES)) === 'ask');
+delete process.env.TANDEM_PROFILE_GATE;
 ok('default / auto mode: still ask', decision(decide({ tool_name: 'Edit', permission_mode: 'default', tool_input: { file_path: join(SITES, 'x.md') } }, SITES)) === 'ask'
   && decision(decide({ tool_name: 'Edit', permission_mode: 'auto', tool_input: { file_path: join(SITES, 'x.md') } }, SITES)) === 'ask');
 ok('bypassPermissions elsewhere → no opinion', decide({ tool_name: 'Write', permission_mode: 'bypassPermissions', tool_input: { file_path: join(TMP, 'notes.md') } }, SITES) === null);

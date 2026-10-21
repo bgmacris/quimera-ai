@@ -70,9 +70,10 @@ mixed 9 different local apps.
   `ln`, `curl`, `wget`, `rsync`, `tar`, `unzip`, `patch` added (still a heuristic).
 - **Write gate in interactive bypass-permissions mode: approved on its own, no prompt** (verified live
   2026-10-21: the hook said `ask`, Claude Code accepted it 40 ms later with source `config`/`mode`).
-  The 0.8.0 note "bypass does not auto-approve" held only for `-p`. In bypass the gate now DENIES with
-  instructions; default and auto mode still ask (a live test in auto mode reached the human:
-  source `user_temporary`). Verified live in a bypass session: the write was refused, file unchanged.
+  The 0.8.0 note "bypass does not auto-approve" held only for `-p`. Now explicit: in bypass the write
+  is allowed **with a visible notice** to review it (`systemMessage`, logged as `hook_system_message`);
+  `TANDEM_PROFILE_GATE=strict` denies instead. Default and auto mode still ask (a live test in auto
+  mode reached the human: source `user_temporary`). Both bypass paths verified live.
 - `stop_chrome` waits up to ~10 s (was 5) before SIGKILL — a loaded machine flushes cookies slowly.
 - intercept: a stale pidfile naming a recycled PID is ignored (command line checked) instead of
   SIGTERMing someone else's process.
@@ -171,7 +172,7 @@ memory hardened against poisoning (writes gated outside the model, reads marked 
   in every later session, and memory-poisoning research (PMPA, arXiv 2609.13889, tested on Claude Code)
   shows prompt-level defenses barely help once memory is poisoned. ~~Verified that `bypassPermissions`
   does not auto-approve a hook's `ask`~~ — true only for `-p`; an interactive bypass session DOES
-  (corrected in Unreleased: the gate denies there). Bash coverage is heuristic (defense in depth).
+  (corrected in 0.9.0: allowed with a notice, or denied with `TANDEM_PROFILE_GATE=strict`). Bash coverage is heuristic (defense in depth).
 - **Session leases** (`scripts/session-hook.mjs`): each session that uses a `browser_*` tool holds a
   lease; SessionEnd stops Chrome only when no other live lease remains (12 h TTL for crashed sessions).
   Also in the Cursor adapter.

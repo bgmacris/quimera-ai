@@ -141,6 +141,9 @@ continues from the already-rendered page — that is the human-in-the-loop hando
 | `TANDEM_CHROME_ARGS` | — | extra Chrome flags (e.g. `--headless=new` for unattended runs/CI) |
 | `TANDEM_CDP_PORT`   | `9222` | CDP port on loopback. Wins over the port saved by the last start (`cdp-port`); set it where Claude Code gets its env (shell or settings `env`) so the MCP, commands and hooks all see it |
 | `TANDEM_DATA_DIR`   | `~/.claude/tandem` | Chrome profile, logs, and site profiles |
+| `TANDEM_CDP_WAIT`   | `15` | seconds `start` waits for Chrome's CDP (raise it on a slow or loaded machine) |
+| `TANDEM_PROFILE_GATE` | — | `strict`: in bypass-permissions mode, DENY site-profile writes instead of allowing them with a notice (default/auto mode always ask) |
+| `TANDEM_BROWSER`    | — | `external`: tandem only talks to the CDP port (e.g. Windows Chrome from WSL); start/stop via `TANDEM_BROWSER_START_CMD` / `_STOP_CMD` |
 
 ## Security
 
