@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # map.sh — site navigation profile store (tandem:map).
-# Usage: map.sh {list | show <host> | path <host> | index}
+# Usage: map.sh {list | show <host> [--section <title>] | sections <host> | path <host> | index}
+#  <host> = URL, host, or key (`host_port` for a non-default port, e.g. localhost_5184).
 #
 # Philosophy (see tandem/docs/01-navigation-memory.md):
 #  - The SOURCE OF TRUTH is the sites/<host>.md files. The index is DERIVED from their
@@ -46,13 +47,24 @@ cmd_path() {
   profile_path "$1"
 }
 
+# show/sections READ the profile that applies (profile.mjs: `host_port`, falling back to the legacy
+# port-less profile). `path` is where to WRITE: always the exact key, so new profiles are per port.
 cmd_show() {
-  [ -n "${1:-}" ] || { echo "usage: map.sh show <host>" >&2; return 2; }
-  local f; f="$(profile_path "$1")" || return 1
-  if [ -f "$f" ]; then cat "$f"; else
-    echo "map: no profile for '$(norm_host "$1")' (expected at $f)." >&2
-    return 1
+  [ -n "${1:-}" ] || { echo "usage: map.sh show <host> [--section <title>]" >&2; return 2; }
+  if [ "${2:-}" = "--section" ]; then
+    [ -n "${3:-}" ] || { echo "usage: map.sh show <host> --section <title>" >&2; return 2; }
+    node "$HERE/profile.mjs" section "$1" "$3"; return
   fi
+  local f; f="$(node "$HERE/profile.mjs" resolve "$1" 2>/dev/null)" || {
+    echo "map: no profile for '$(norm_host "$1")' (expected at $(profile_path "$1"))." >&2
+    return 1
+  }
+  cat "$f"
+}
+
+cmd_sections() {
+  [ -n "${1:-}" ] || { echo "usage: map.sh sections <host>" >&2; return 2; }
+  node "$HERE/profile.mjs" sections "$1"
 }
 
 cmd_list() {
@@ -98,8 +110,9 @@ cmd_index() {
 
 case "${1:-list}" in
   list)  cmd_list ;;
-  show)  shift; cmd_show "${1:-}" ;;
+  show)  shift; cmd_show "$@" ;;
+  sections) shift; cmd_sections "${1:-}" ;;
   path)  shift; cmd_path "${1:-}" ;;
   index) cmd_index ;;
-  *) echo "usage: $(basename "$0") {list | show <host> | path <host> | index}" >&2; exit 2 ;;
+  *) echo "usage: $(basename "$0") {list | show <host> [--section <title>] | sections <host> | path <host> | index}" >&2; exit 2 ;;
 esac

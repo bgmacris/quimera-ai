@@ -20,7 +20,7 @@
 
 import { join } from 'node:path';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
-import { normalizeHost } from './host.mjs';
+import { hostOf, normalizeHost } from './host.mjs';
 import { dataDir as resolveDataDir } from './paths.mjs';
 
 const dataDir = resolveDataDir();
@@ -58,9 +58,13 @@ function readStdinJson() {
 }
 
 const fpPath = join(sitesDir, `${host}.fingerprints.json`);
-function loadStore() {
-  if (!existsSync(fpPath)) return {};
-  try { return JSON.parse(readFileSync(fpPath, 'utf8')); } catch { return {}; }
+// check falls back to the legacy port-less store (fingerprints captured before ports were in the key);
+// capture always writes the exact key.
+const legacyPath = join(sitesDir, `${hostOf(host)}.fingerprints.json`);
+function loadStore({ fallback = false } = {}) {
+  const p = existsSync(fpPath) ? fpPath : (fallback && legacyPath !== fpPath && existsSync(legacyPath) ? legacyPath : null);
+  if (!p) return {};
+  try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return {}; }
 }
 function saveStore(obj) {
   mkdirSync(sitesDir, { recursive: true });
@@ -81,7 +85,7 @@ if (mode === 'capture') {
 }
 
 // mode === 'check'
-const store = loadStore();
+const store = loadStore({ fallback: true });
 const prev = store[routeKey];
 if (!prev) {
   process.stdout.write(JSON.stringify({ status: 'new', routeKey, hint: 'no fingerprint saved; use capture' }) + '\n');

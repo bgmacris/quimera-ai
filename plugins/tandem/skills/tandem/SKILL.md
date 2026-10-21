@@ -69,7 +69,8 @@ The section below is CROSS-site technique (applies to any website). The knowledg
 OF-a-specific-site (its routes, its search, its locators) lives in a **per-host profile**
 managed by the `tandem:map` skill (`~/.claude/tandem/sites/<host>.md`).
 - When you start operating a site: check whether there's a profile (`scripts/map.sh show <host>`). If it exists,
-  read it BEFORE firing snapshots — you navigate knowingly, not re-deriving. If it doesn't exist and the
+  read it BEFORE firing snapshots — you navigate knowingly, not re-deriving. Large profiles arrive as an
+  INDEX: fetch the section you need (`map.sh show <key> --section "<title>"`). If it doesn't exist and the
   work isn't trivial, offer the human to do a recon and save it (assisted recon).
 - Snapshot `eNN` refs are ephemeral: in profiles, locators are anchored by role+name,
   never by ref or position. Detail: the `tandem:map` skill and `tandem/docs/01-navigation-memory.md`.

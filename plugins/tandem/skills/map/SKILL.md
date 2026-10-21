@@ -13,23 +13,31 @@ scroll, cookie banners…); this is knowledge OF-a-site (the routes of THAT site
 Full design and rationale: `tandem/docs/01-navigation-memory.md`.
 
 ## Store (engine: `scripts/map.sh`)
-Profiles in `~/.claude/tandem/sites/<host>.md` (OUTSIDE git; override `TANDEM_DATA_DIR`).
+Profiles in `~/.claude/tandem/sites/<key>.md` (OUTSIDE git; override `TANDEM_DATA_DIR`).
+**Key** = hostname, plus `_<port>` when the port is not the default: `localhost:5184` → `localhost_5184`
+(different local apps no longer share one profile). Reading falls back to the legacy port-less
+profile (`localhost.md`) when the per-port one does not exist yet; WRITING always uses the exact key.
 The SOURCE OF TRUTH are the `.md` files; the index is DERIVED from their frontmatter, not kept separately.
 
-- `map.sh list` ............ table of profiles (host · updated · file)
-- `map.sh show <host>` ..... dumps the profile (accepts a full URL: normalizes to host)
-- `map.sh path <host>` ..... the file path (whether it exists or not) — for reading/writing
-- `map.sh index` ........... derived JSON index (to stdout + caches `sites/index.json`)
+- `map.sh list` ............................ table of profiles (host · updated · file)
+- `map.sh show <host>` ..................... dumps the profile that applies (URL, host or key)
+- `map.sh show <host> --section "<title>"` . ONE section (case-insensitive, prefix ok)
+- `map.sh sections <host>` ................. section titles with their sizes
+- `map.sh path <host>` ..................... where to WRITE the profile (exact key, exists or not)
+- `map.sh index` ........................... derived JSON index (to stdout + caches `sites/index.json`)
 
 Invoke it by its path within the plugin (`scripts/map.sh`); there's no bin on PATH for map.
 
 ## When to act (reflexes)
 
 1. **When you start operating a site**: if a profile already exists, it usually reaches you on its
-   own — a `PostToolUse` hook on `browser_navigate` injects the host's profile the first time you
-   navigate to it in the session (`scripts/hook-inject-profile.mjs`). If it didn't arrive (or you want
-   to re-read it): `map.sh show <host>`. If there's no profile and the work isn't trivial → offer the
-   human to do a recon and save it.
+   own — a `PostToolUse` hook on `browser_navigate` injects it the first time you navigate to that
+   key in the session (`scripts/hook-inject-profile.mjs`). A profile of ≤ 6,000 chars arrives WHOLE;
+   a bigger one arrives as its **INDEX** (sections with sizes, recipe signatures, routes, ≤ 2,000
+   chars): read the section you need with the command the index gives (`map.sh show <key> --section
+   "Locators"` before clicking, `"Gotchas"` before trusting a route). If nothing arrived:
+   `map.sh show <host>`. If there's no profile and the work isn't trivial → offer the human a recon.
+   Keep profiles structured in `## ` sections — the index is built from them.
 2. **Before trusting a route's locators** (cheap re-check): validate with
    `fingerprint.mjs check <host> <route>` (structural signal, small JSON), NOT with a
    targeted `browser_snapshot` (it weighs ~18× the whole profile). `match` → trust that route's `sel:`

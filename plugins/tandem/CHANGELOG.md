@@ -4,7 +4,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/); semantic versio
 
 ## [Unreleased]
 
+From real usage (two teammates on 0.6.0, 1.903 + 1.846 tool calls): the site profile never reached the
+model whole — a 26 KB profile became a 2 KB preview on every navigate — and one `localhost` profile
+mixed 9 different local apps.
+
 ### Added
+- **Profile index** (`scripts/profile.mjs`): a profile ≤ 6,000 chars is injected whole; a bigger one
+  as an INDEX ≤ 2,000 chars (frontmatter, sections with sizes, recipe signatures, routes) with the
+  absolute command to fetch a section. Instruction-like lines are still searched in the whole profile.
+  Real 26 KB profile → 2.4 KB of context that describes all of it (was a 2 KB arbitrary cut).
+- `map.sh show <key> --section "<title>"` and `map.sh sections <key>`.
 - `scripts/cdp-record.mjs`: records ALL tabs of tandem's Chrome to a HAR 1.2 file (browser-level
   `Target.setAutoAttach`, one connection, no collision with Playwright). Each redirect hop is its own
   entry; request headers from `requestWillBeSentExtraInfo` (sec-fetch-*, referer); Set-Cookie of
@@ -18,6 +27,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/); semantic versio
   pdf/png) + a headless CI job. `TANDEM_CHROME_ARGS` passes extra Chrome flags (e.g. `--headless=new`).
 
 ### Changed
+- **Profile key includes a non-default port**: `localhost:5184` → `localhost_5184` (`_`, not `:`, which
+  Windows forbids in filenames). Reads fall back to the legacy port-less profile/fingerprints, so
+  existing profiles keep working; new ones are written per port. `host.test.mjs` updated (the old
+  "port discarded" rule was a deliberate decision, now revised).
 - **intercept**: `start` runs the capture as a background daemon and returns at once (it used to
   block the slash command until Ctrl-C); new `stop`/`status`; captures **all tabs** with the shared
   engine `scripts/capture.mjs` (also used by `cdp-record`): redirect hops shown (`→ <url>`).

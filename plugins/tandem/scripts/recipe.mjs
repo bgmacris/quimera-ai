@@ -19,23 +19,23 @@
 //     - wait-url: /tickets/
 //     - return:   url
 
-import { join } from 'node:path';
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { parseProfile, validate } from './recipe-parser.mjs';
 import { compileFast, compileSteps } from './recipe-compiler.mjs';
 import { normalizeHost } from './host.mjs';
-import { dataDir } from './paths.mjs';
+import { resolveProfile } from './profile.mjs';
 
 export { ACTIONS, parseLocators, parseRecipes, parseProfile, validate } from './recipe-parser.mjs';
 export { fillTemplate, compileFast, compileSteps } from './recipe-compiler.mjs';
 export { assertCompiledSafe } from './recipe-safety.mjs';
 
 // --- CLI ---------------------------------------------------------------------------
+// Same resolution as the hook/map.sh: `host_port`, falling back to the legacy port-less profile.
 function loadProfile(host) {
-  const path = join(dataDir(), 'sites', `${normalizeHost(host)}.md`);
-  if (!existsSync(path)) { process.stderr.write(`recipe: no profile for '${host}' (${path})\n`); process.exit(1); }
-  return parseProfile(readFileSync(path, 'utf8'));
+  const r = resolveProfile(host);
+  if (!r) { process.stderr.write(`recipe: no profile for '${normalizeHost(host)}'\n`); process.exit(1); }
+  return parseProfile(readFileSync(r.path, 'utf8'));
 }
 
 const isCli = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
