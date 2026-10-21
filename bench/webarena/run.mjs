@@ -122,7 +122,14 @@ function runClaude(arm, env, dir, systemPrompt, intent, startUrl) {
 // cuts a task in half, and the rows done are balanced across arms. Resume later with --resume.
 const until = opt('until') ? (() => { const [h, m] = opt('until').split(':').map(Number); const d = new Date(); d.setHours(h, m, 0, 0); return d; })() : null;
 // --resume skips tasks already measured — but retries those that ended in a harness error.
-const done = (dir) => { try { return !JSON.parse(readFileSync(join(dir, 'metrics.json'), 'utf8')).harnessError; } catch { return false; } };
+// A task counts as done only if it ran to completion: no harness error, claude exited 0 and its result
+// record is not an error — a run cut by sleep or a closed lid is retried, not scored as a failure.
+const done = (dir) => {
+  try {
+    const m = JSON.parse(readFileSync(join(dir, 'metrics.json'), 'utf8'));
+    return !m.harnessError && m.isError === false && (m.log || []).includes('claude exit 0');
+  } catch { return false; }
+};
 
 for (const task of plan.slice(0, limit)) {
   if (until && new Date() >= until) { process.stdout.write(`--until ${opt('until')} reached: stopping before task ${task.task_id} (resume with --resume)\n`); break; }
