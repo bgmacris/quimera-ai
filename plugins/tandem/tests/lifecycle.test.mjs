@@ -156,6 +156,11 @@ ok('suspiciousLines sees through a JSON-escaped file (evaluate+filename)', suspi
 const MCPT = (t) => `mcp__plugin_tandem_tandem__browser_${t}`;
 ok('MCP evaluate with filename INTO the store → ask', decision(decide({ tool_name: MCPT('evaluate'), tool_input: { function: '() => 1', filename: join(SITES, 'evil.md') } }, SITES)) === 'ask');
 ok('MCP snapshot with a relative filename escaping output/ into sites/ → ask', decision(decide({ tool_name: MCPT('snapshot'), tool_input: { filename: '../sites/evil.md' } }, SITES)) === 'ask');
+// The MCP resolves a relative filename against ITS cwd (verified with 0.0.83), e.g. a session in $HOME:
+// (here the store is TMP/sites, so a session cwd of TMP + 'sites/rel.md' is the same shape as
+//  $HOME + '.claude/tandem/sites/rel.md' in the audit)
+ok('MCP relative filename from the session cwd into the store → ask', decision(decide({ tool_name: MCPT('evaluate'), cwd: TMP, tool_input: { function: '() => 1', filename: join('sites', 'rel.md') } }, SITES)) === 'ask');
+ok('MCP relative filename from the session cwd elsewhere → no opinion', decide({ tool_name: MCPT('evaluate'), cwd: TMP, tool_input: { function: '() => 1', filename: 'notes/rel.md' } }, SITES) === null);
 ok('MCP snapshot to output/ → no opinion', decide({ tool_name: MCPT('snapshot'), tool_input: { filename: 'page.yml' } }, SITES) === null);
 ok('MCP run_code_unsafe mentioning the store → ask', decision(decide({ tool_name: MCPT('run_code_unsafe'), tool_input: { code: `await fs.writeFile('${SITES}/a.md', x)` } }, SITES)) === 'ask');
 ok('MCP navigate → no opinion', decide({ tool_name: MCPT('navigate'), tool_input: { url: 'https://e.com' } }, SITES) === null);

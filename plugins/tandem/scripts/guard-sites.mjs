@@ -62,11 +62,18 @@ export function bashTouchesProfiles(command, sitesDir) {
 
 // The MCP's own tools write files too: `filename` on evaluate/snapshot/screenshot/… lands wherever the
 // MCP's roots allow — with Claude Code started from $HOME that includes the store (verified with the
-// real MCP 0.0.83: evaluate+filename wrote sites/<host>.md). A relative filename goes to output/.
+// real MCP 0.0.83: evaluate+filename wrote sites/<host>.md). A RELATIVE filename resolves against the
+// MCP's working directory, NOT output/ (verified: cwd/sub/rel-test.md; an external audit wrote
+// ~/.claude/tandem/sites/rel.md with `.claude/tandem/sites/rel.md` from $HOME). The MCP's cwd isn't
+// known here for sure, so every plausible base is checked: the session cwd, this process's, output/.
 // run_code_unsafe runs Node-side Playwright code: heuristic, like Bash.
-export function mcpTouchesProfiles(toolInput, sitesDir, outputDir = join(dirname(sitesDir), 'output')) {
+export function mcpTouchesProfiles(toolInput, sitesDir, { cwd, outputDir = join(dirname(sitesDir), 'output') } = {}) {
   const ti = toolInput || {};
-  if (typeof ti.filename === 'string' && ti.filename && isProfilePath(resolve(outputDir, ti.filename.replace(/^~(?=[\\/])/, homedir())), sitesDir)) return true;
+  if (typeof ti.filename === 'string' && ti.filename) {
+    const f = ti.filename.replace(/^~(?=[\\/])/, homedir());
+    const bases = [...new Set([cwd, process.cwd(), outputDir].filter(Boolean))];
+    if (bases.some((b) => isProfilePath(resolve(b, f), sitesDir))) return true;
+  }
   return typeof ti.code === 'string' && mentionsStore(ti.code, sitesDir);
 }
 
@@ -76,7 +83,7 @@ export function decide(input, sitesDir = join(dataDir(), 'sites')) {
   let hit = false;
   if (/^(Write|Edit|MultiEdit)$/.test(tool)) hit = isProfilePath(ti.file_path, sitesDir);
   else if (tool === 'Bash') hit = bashTouchesProfiles(ti.command, sitesDir);
-  else if (/__browser_/.test(tool)) hit = mcpTouchesProfiles(ti, sitesDir);
+  else if (/__browser_/.test(tool)) hit = mcpTouchesProfiles(ti, sitesDir, { cwd: input?.cwd });
   if (!hit) return null;
   // An interactive session in bypassPermissions approves a hook's `ask` by itself, with no prompt
   // (verified 2026-10-21: decision source "config"/"mode", 40 ms after the hook). Bypass is the human's

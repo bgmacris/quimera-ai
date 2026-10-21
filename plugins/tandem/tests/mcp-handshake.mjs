@@ -4,7 +4,7 @@
 // to CDP lazily. This is what Claude Code does at session start, so it proves the launcher works on
 // the platform it runs on — the point of the Windows CI job. Usage: node tests/mcp-handshake.mjs
 import { spawn } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,6 +29,15 @@ try {
   const names = (result?.tools || []).map((t) => t.name);
   ok = !!init.result && names.includes('browser_navigate') && names.includes('browser_find');
   process.stdout.write(`handshake: server=${init.result?.serverInfo?.name}@${init.result?.serverInfo?.version} tools=${names.length} ${ok ? 'OK' : 'MISSING TOOLS'}\n`);
+  // Cursor's lease hook lists every browser tool by name (one matcher each): a tool added by an MCP
+  // upgrade would not renew the lease. Fail when the two lists drift.
+  const cursor = JSON.parse(readFileSync(fileURLToPath(new URL('../adapters/cursor/hooks/hooks.json', import.meta.url)), 'utf8'));
+  const touched = new Set(cursor.hooks.postToolUse.filter((e) => /run-session-hook\.sh touch/.test(e.command)).map((e) => e.matcher.replace(/^MCP:/, '')));
+  const missing = names.filter((n) => !touched.has(n)); const stale = [...touched].filter((n) => !names.includes(n));
+  if (missing.length || stale.length) {
+    ok = false;
+    process.stdout.write(`cursor lease matchers drift — missing: ${missing.join(', ') || '-'} · stale: ${stale.join(', ') || '-'} (adapters/cursor/hooks/hooks.json)\n`);
+  } else process.stdout.write(`cursor lease matchers: ${touched.size}/${names.length} tools covered\n`);
 } catch (e) { process.stdout.write(`handshake FAILED: ${e.message}\n`); }
 mcp.kill();
 process.exit(ok ? 0 : 1);

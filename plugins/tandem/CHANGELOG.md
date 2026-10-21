@@ -4,6 +4,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/); semantic versio
 
 ## [Unreleased]
 
+## [0.9.2] — 2026-10-21
+
+### Fixed
+- **A relative `filename` on an MCP tool still slipped past the site-profile gate.** 0.9.1 resolved it
+  against `output/`; @playwright/mcp 0.0.83 resolves it against its own working directory (verified),
+  so from a session in `$HOME`, `filename: ".claude/tandem/sites/x.md"` wrote a profile unasked (found
+  by an external audit of 0.9.1). The gate now checks every plausible base — the session `cwd` from
+  the hook input, the hook's own cwd, and `output/` — and asks if any lands in `sites/`.
+- `tests/mcp-handshake.mjs` fails if Cursor's per-tool lease matchers drift from the MCP's `tools/list`
+  (a tool added by an MCP upgrade would not renew the lease).
+
 ## [0.9.1] — 2026-10-21
 
 From an external audit of 0.9.0; each point reproduced or checked before fixing.
