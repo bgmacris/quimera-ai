@@ -39,6 +39,18 @@ mixed 9 different local apps.
   Windows paths use `\`. Now `path.relative` (checked with win32 path semantics). Bash detection also
   matches forward-slash forms of the store path.
 
+### Fixed (WebArena mini-pilot, 2026-10-21 — 48 runs on a machine at load ~20)
+- `chrome-daemon.sh start` removes a stale profile lock (`SingletonLock`/`Socket`/`Cookie`) when no
+  process uses the profile. The lock is `<hostname>-<pid>` and the Mac's hostname follows the network:
+  after a change Chrome reports the profile "in use on another computer". Headless still started
+  (e2e covers it); the headful dialog case is not verified.
+- `TANDEM_CDP_WAIT` (seconds, default 15): how long `start` waits for CDP. Under heavy load Chrome took
+  8–42 s to reach its first log line and 3 bench runs failed at 15 s; the bench now uses 60.
+- Bench harness: an MCP that never connected (`init` status ≠ connected) is a harness error, not an
+  agent failure (one run answered without a browser and was scored 0); a rerun starts from an EMPTY
+  run dir (a leftover `agent_response.json` was scored as new — the agent could not overwrite it:
+  Write refuses an unread existing file); the report no longer prints an `#undefined` instance row.
+
 ### Changed (MCP defaults)
 - `--output-max-size 52428800`: the output dir (page snapshots/screenshots — a teammate's held 16 with
   tax IDs, another had 1,155 files) now evicts its oldest files past 50 MB (verified with a small threshold).

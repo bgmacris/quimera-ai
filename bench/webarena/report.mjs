@@ -37,7 +37,7 @@ const arms = [...new Set(rows.map((r) => r.arm))];
 const out = { overall: {}, byInstance: {} };
 for (const a of arms) {
   out.overall[a] = summarize(rows.filter((r) => r.arm === a));
-  const inst = [...new Set(rows.filter((r) => r.arm === a).map((r) => r.instance))].sort();
+  const inst = [...new Set(rows.filter((r) => r.arm === a).map((r) => r.instance).filter((i) => i != null))].sort();
   out.byInstance[a] = Object.fromEntries(inst.map((i) => [i, summarize(rows.filter((r) => r.arm === a && r.instance === i))]));
 }
 if (process.argv.includes('--json')) { process.stdout.write(JSON.stringify(out, null, 2) + '\n'); process.exit(0); }

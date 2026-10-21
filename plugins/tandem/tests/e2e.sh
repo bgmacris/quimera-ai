@@ -76,6 +76,14 @@ check "png: produced a PNG"  "case '$PNG' in png:*) node -e \"process.exit(requi
 echo "[4] stop"
 check "stop" "'$ROOT/scripts/chrome-daemon.sh' stop | grep -q stopped"
 check "no Chrome left on our profile" "! pgrep -f -- '--user-data-dir=$TANDEM_DATA_DIR/chrome-profile' >/dev/null"
+# Leftovers of a Chrome that ran under ANOTHER hostname (the Mac's hostname follows the network):
+# start must still come up. (Headless starts even without the cleanup; the guard is for headful.)
+P="$TANDEM_DATA_DIR/chrome-profile"   # the exact leftovers seen in the bench: Lock + Cookie + Socket
+ln -sfn otro-host.example.net-12345 "$P/SingletonLock"; ln -sfn 12887404067409121093 "$P/SingletonCookie"
+mkdir -p "$TMP/sock"; node -e "require('net').createServer().listen(process.argv[1],function(){process.exit(0)})" "$TMP/sock/SingletonSocket"
+ln -sfn "$TMP/sock/SingletonSocket" "$P/SingletonSocket"   # a REAL socket file nobody listens on
+check "start with a stale lock from another hostname" "'$ROOT/scripts/chrome-daemon.sh' start >/dev/null"
+"$ROOT/scripts/chrome-daemon.sh" stop >/dev/null
 
 
 echo "[5] external browser mode (TANDEM_BROWSER=external) — after tandem's own Chrome is gone"

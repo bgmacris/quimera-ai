@@ -18,7 +18,7 @@
 //          [--budget 3] [--timeout 900] [--limit N] [--until HH:MM] [--resume] [--no-reset] [--headful]
 
 import { spawn, execFileSync } from 'node:child_process';
-import { copyFileSync, createWriteStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, createWriteStream, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { loadavg } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -48,7 +48,7 @@ const limit = +opt('limit', String(plan.length));
 
 // Headless by default: the runner restarts Chrome on every task, and a window popping up every few
 // minutes steals the focus of whoever is working on the machine. --headful to watch it.
-const armEnv = (out) => ({ ...process.env, TANDEM_DATA_DIR: join(out, 'tandem-data'), TANDEM_CDP_PORT: port,
+const armEnv = (out) => ({ ...process.env, TANDEM_DATA_DIR: join(out, 'tandem-data'), TANDEM_CDP_PORT: port, TANDEM_CDP_WAIT: '60',
   TANDEM_CHROME_ARGS: has('headful') ? (process.env.TANDEM_CHROME_ARGS || '') : '--headless=new' });
 const daemon = (env, cmd) => execFileSync(join(TANDEM, 'scripts/chrome-daemon.sh'), [cmd], { env, encoding: 'utf8' });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -84,10 +84,11 @@ function startRecorder(env, harPath) {
 
 // Bytes/calls per tool from the stream-json transcript: what the observation strategy costs.
 function analyze(transcriptPath) {
-  const names = new Map(); const perTool = {}; let final = null;
+  const names = new Map(); const perTool = {}; let final = null; let mcpFailed = [];
   for (const line of readFileSync(transcriptPath, 'utf8').split('\n')) {
     let m; try { m = JSON.parse(line); } catch { continue; }
     if (m.type === 'result') final = m;
+    if (m.type === 'system' && m.subtype === 'init') mcpFailed = (m.mcp_servers || []).filter((s) => s.status !== 'connected').map((s) => `${s.name}:${s.status}`);
     for (const c of m.message?.content || []) {
       if (c.type === 'tool_use') { names.set(c.id, c.name); (perTool[c.name] ||= { calls: 0, resultBytes: 0 }).calls++; }
       if (c.type === 'tool_result') {
@@ -100,6 +101,7 @@ function analyze(transcriptPath) {
   return {
     costUsd: final?.total_cost_usd ?? null, turns: final?.num_turns ?? null, durationMs: final?.duration_ms ?? null,
     isError: final?.is_error ?? true, usage: final?.usage ?? null, perTool,
+    mcpFailed,
     permissionDenials: (final?.permission_denials || []).map((d) => `${d.tool_name} ${d.tool_input?.file_path || ''}`.trim()),
     observationBytes: Object.entries(perTool).filter(([k]) => k.startsWith('mcp__tandem__')).reduce((s, [, v]) => s + v.resultBytes, 0),
   };
@@ -147,6 +149,9 @@ for (const task of plan.slice(0, limit)) {
     const profilePath = join(OUT, 'profile.md');
     const dir = join(OUT, String(task.task_id));
     if (has('resume') && done(dir)) continue;
+    // A rerun (--resume) starts from an EMPTY run dir: a leftover agent_response.json is scored as if new,
+    // and the agent cannot replace it (Write refuses an unread existing file; arm A has no Read).
+    rmSync(dir, { recursive: true, force: true });
     mkdirSync(dir, { recursive: true });
     const started = Date.now(); const log = []; const loadBefore = loadavg();
     try {
@@ -172,11 +177,13 @@ for (const task of plan.slice(0, limit)) {
         wallMs: Date.now() - started, loadBefore, loadAfter: loadavg(), log, ...analyze(join(dir, 'transcript.jsonl')) };
       // A denied tool call is the harness's fault, not the agent's: flag it so it is not scored, and --resume reruns it.
       if (m.permissionDenials.length) m.harnessError = `permission denied: ${m.permissionDenials.join('; ')}`;
+      // Same for an MCP that never connected (seen under load: CONNECT_TIMEOUT → the agent answers without a browser).
+      if (m.mcpFailed.length) m.harnessError = `MCP not connected: ${m.mcpFailed.join(', ')}`;
       writeFileSync(join(dir, 'metrics.json'), JSON.stringify(m, null, 2) + '\n');
       process.stdout.write(`[${armKey}] task ${task.task_id} (tpl ${task.template} #${task.instance}) $${m.costUsd ?? '?'} obs=${m.observationBytes}B turns=${m.turns} load=${loadBefore[0].toFixed(1)}\n`);
     } catch (e) {
       try { daemon(env, 'stop'); } catch { /* already down */ }
-      writeFileSync(join(dir, 'metrics.json'), JSON.stringify({ task_id: task.task_id, arm: armKey, harnessError: e.message, loadBefore, log }, null, 2) + '\n');
+      writeFileSync(join(dir, 'metrics.json'), JSON.stringify({ task_id: task.task_id, template: task.template, instance: task.instance, arm: armKey, harnessError: e.message, loadBefore, log }, null, 2) + '\n');
       process.stdout.write(`[${armKey}] task ${task.task_id} HARNESS ERROR: ${e.message}\n`);
     }
   }

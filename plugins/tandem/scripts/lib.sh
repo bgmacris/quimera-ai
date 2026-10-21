@@ -184,6 +184,13 @@ start_chrome() {
 
   # Stale PID file (dead process): clean up before relaunching.
   if [ -f "$PIDFILE" ] && ! saved_pid_alive; then rm -f "$PIDFILE"; fi
+  # Stale profile lock: SingletonLock is a symlink "<hostname>-<pid>". The Mac's hostname follows the
+  # network (DHCP/reverse DNS); after a change Chrome reports the profile "in use on another computer"
+  # (seen in the bench, 2026-10-21; headless still started, headful shows a blocking dialog — not
+  # verified here). No process uses this profile → the lock is stale by definition: drop it.
+  if ! pgrep -f -- "--user-data-dir=$PROFILE" >/dev/null 2>&1; then
+    rm -f "$PROFILE/SingletonLock" "$PROFILE/SingletonSocket" "$PROFILE/SingletonCookie"
+  fi
 
   echo "${port}" > "$PORTFILE"
   # Append log (don't truncate): each start used to truncate the log and erase evidence of
@@ -207,13 +214,14 @@ start_chrome() {
   echo "$!" > "$PIDFILE"
   disown 2>/dev/null || true
 
-  # Wait for CDP to come up (up to ~15s). Counter unused: only limits retries.
-  local _
-  for _ in $(seq 1 30); do
+  # Wait for CDP to come up (TANDEM_CDP_WAIT seconds, default 15). Counter unused: only limits retries.
+  # Under heavy load (load1 ~20 in the bench) Chrome took 8–42 s just to reach its first log line.
+  local _ wait="${TANDEM_CDP_WAIT:-15}"
+  for _ in $(seq 1 $((wait * 2))); do
     cdp_healthy && { echo "tandem: Chrome ready (CDP 127.0.0.1:${port})."; return 0; }
     sleep 0.5
   done
-  echo "tandem: ERROR — Chrome did not expose CDP in 15s. Check $LOGDIR/chrome.log" >&2
+  echo "tandem: ERROR — Chrome did not expose CDP in ${wait}s. Check $LOGDIR/chrome.log (slow machine? TANDEM_CDP_WAIT)" >&2
   return 1
 }
 
