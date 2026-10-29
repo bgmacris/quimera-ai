@@ -76,6 +76,25 @@ PNG="$("$ROOT/bin/tandem-pdf" --png)"
 # Magic bytes via node: grep does not reliably match inside a binary header (\x89PNG\r\n…).
 check "png: produced a PNG"  "case '$PNG' in png:*) node -e \"process.exit(require('fs').readFileSync('${PNG#png:}').subarray(1,4).toString()==='PNG'?0:1)\";; *) false;; esac"
 
+echo "[3b] sandbox guard (calls that would hang on a page that cannot run scripts)"
+guard() {  # $1 = tool, $2 = tool_input JSON → prints the autostart hook's output
+  printf '{"tool_name":"mcp__plugin_tandem_tandem__%s","session_id":"e2e","permission_mode":"default","tool_input":%s}' "$1" "$2" \
+    | TANDEM_AUTOSTART=1 node "$ROOT/scripts/autostart.mjs"
+}
+remember() { node --input-type=module -e "import { rememberPageUrl } from '$ROOT/scripts/sandbox-guard.mjs'; rememberPageUrl(process.env.TANDEM_DATA_DIR, 'e2e', '$1');"; }
+navigate "$SITE/sandboxed"; remember "$SITE/sandboxed"
+check "sandboxed page: evaluate denied"            "guard browser_evaluate '{\"function\":\"() => 1\"}' | grep -q 'cannot run scripts'"
+check "sandboxed page: click denied"               "guard browser_click '{\"target\":\"e1\"}' | grep -q '\"deny\"'"
+check "sandboxed page: snapshot allowed"           "! guard browser_snapshot '{}' | grep -q '\"deny\"'"
+check "sandboxed page: type without submit allowed" "! guard browser_type '{\"target\":\"e1\",\"text\":\"x\"}' | grep -q '\"deny\"'"
+check "sandboxed page: type with submit denied"    "guard browser_type '{\"target\":\"e1\",\"text\":\"x\",\"submit\":true}' | grep -q '\"deny\"'"
+check "TANDEM_SANDBOX_GUARD=0 turns it off"        "! TANDEM_SANDBOX_GUARD=0 guard browser_evaluate '{\"function\":\"() => 1\"}' | grep -q '\"deny\"'"
+navigate "$SITE/"; remember "$SITE/"
+check "normal page: evaluate allowed"              "! guard browser_evaluate '{\"function\":\"() => 1\"}' | grep -q '\"deny\"'"
+# a stale URL (the tab moved on, no PostToolUse seen) that no tab is on, with several tabs: can't tell → allow
+remember "$SITE/sandboxed"
+check "stale URL, no tab on it: allowed"           "! guard browser_evaluate '{\"function\":\"() => 1\"}' | grep -q '\"deny\"'"
+
 echo "[4] stop"
 check "stop" "'$ROOT/scripts/chrome-daemon.sh' stop | grep -q stopped"
 check "no Chrome left on our profile" "! pgrep -f -- '--user-data-dir=$TANDEM_DATA_DIR/chrome-profile' >/dev/null"

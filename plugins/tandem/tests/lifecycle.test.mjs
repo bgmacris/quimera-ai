@@ -189,6 +189,25 @@ ok('MCP run_code_unsafe mentioning the store → ask', decision(decide({ tool_na
 ok('MCP navigate → no opinion', decide({ tool_name: MCPT('navigate'), tool_input: { url: 'https://e.com' } }, SITES) === null);
 ok('isMain: another script → false', !isMain(pathToFileURL(realFile).href, join(TMP, 'other.mjs')));
 
+// --- sandbox guard: which calls, which tab ----------------------------------------------
+process.stdout.write('[sandbox-guard]\n');
+const { guarded, candidatePages, rememberPageUrl, lastPageUrl } = await import('../scripts/sandbox-guard.mjs');
+ok('evaluate is guarded', guarded(MCPT('evaluate')));
+ok('click is guarded (a click that does not navigate hangs)', guarded(MCPT('click')));
+ok('run_code_unsafe is guarded', guarded(MCPT('run_code_unsafe')));
+ok('the legacy mcp__tandem__ prefix is guarded too', guarded('mcp__tandem__browser_evaluate'));
+ok('snapshot is not guarded (no settle wait)', !guarded(MCPT('snapshot')));
+ok('navigate is not guarded', !guarded(MCPT('navigate')));
+ok('type: guarded only with submit or slowly', !guarded(MCPT('type'), { text: 'x' }) && guarded(MCPT('type'), { submit: true }) && guarded(MCPT('type'), { slowly: true }));
+ok('another MCP\'s evaluate is not ours', !guarded('mcp__other__browser_evaluate'));
+const A = { id: 'a', url: 'https://raw.githubusercontent.com/o/r/main/README.md' }, B = { id: 'b', url: 'https://e.com/' };
+ok('tab on the last URL is the candidate', candidatePages([A, B], A.url).map((p) => p.id).join() === 'a');
+ok('no URL, one tab → that tab', candidatePages([B], null).map((p) => p.id).join() === 'b');
+ok('no URL, several tabs → none (allow)', candidatePages([A, B], null).length === 0);
+ok('stale URL, several tabs → none (allow)', candidatePages([A, B], 'https://gone/').length === 0);
+rememberPageUrl(TMP, 'sess/1', A.url);
+ok('page URL round-trips per session', lastPageUrl(TMP, 'sess/1') === A.url && lastPageUrl(TMP, 'other') === null);
+
 rmSync(TMP, { recursive: true, force: true });
 process.stdout.write(`\nlifecycle: ${pass} ok, ${fail} failures\n`);
 process.exit(fail ? 1 : 0);

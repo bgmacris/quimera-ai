@@ -168,6 +168,12 @@ continues from the already-rendered page — that is the human-in-the-loop hando
   only writes files under the output dir (`~/.claude/tandem/output/`)
   or the MCP's workspace root. Use an absolute path inside the output dir, or omit `filename`.
 - **`ECONNREFUSED 127.0.0.1:9222`** means no Chrome is running → `/tandem:browser-start`.
+- **`tandem: the current page (…) cannot run scripts`** on `browser_evaluate`, `browser_click` & co.: the
+  page is served with CSP `sandbox` (every `raw.githubusercontent.com` file is), and on it @playwright/mcp
+  0.0.83 never returns from those calls — its post-action wait is a timer inside the page
+  ([microsoft/playwright#43746](https://github.com/microsoft/playwright/pull/43746)). tandem denies them
+  instead of hanging. Read such a page with `browser_snapshot`, or `fetch()` it from `browser_evaluate` on a
+  normal page. `TANDEM_SANDBOX_GUARD=0` turns the guard off.
 
 ## Development
 

@@ -112,6 +112,11 @@ page can try to plant instructions in one). The adapters do not have that gate y
 whether each IDE's hook API can block an edit before it happens. There, review what the agent writes to
 `~/.claude/tandem/sites/` yourself; injection still wraps profiles as data and flags instruction-like lines.
 
+**No sandbox guard in Cursor or OpenCode.** In Claude Code the autostart hook denies `browser_evaluate`,
+`browser_click` & co. on pages that cannot run scripts (CSP `sandbox`, e.g. `raw.githubusercontent.com`),
+where @playwright/mcp 0.0.83 would never return. The adapters don't run that check: there, read such
+pages with `browser_snapshot`.
+
 **Shared Chrome lifetime.** All three IDEs drive the same Chrome; each session that uses a browser tool
 holds a lease, and Chrome is stopped only when the last one goes. Cursor renews its lease on every
 browser tool and drops it at `sessionEnd`; OpenCode renews it on every browser tool and drops it on

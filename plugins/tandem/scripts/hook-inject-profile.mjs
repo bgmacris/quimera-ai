@@ -24,6 +24,7 @@ import { readFileSync } from 'node:fs';
 import { normalizeHost } from './host.mjs';
 import { touchLease } from './session-hook.mjs';
 import { dataDir as resolveDataDir, ensureDataDir } from './paths.mjs';
+import { rememberPageUrl } from './sandbox-guard.mjs';
 import {
   tryInjectProfile, cleanupSessionMarkers,
   extractNavigateUrl, extractSessionId,
@@ -59,6 +60,8 @@ if (!input) silent();
 try { ensureDataDir(dataDir); touchLease(dataDir, sessionId); } catch { /* never break the session */ }
 
 const url = extractNavigateUrl(input);
+// The sandbox guard (PreToolUse) needs to know which tab the MCP is on.
+if (url) rememberPageUrl(dataDir, sessionId, url);
 const result = tryInjectProfile({
   url, sessionId, dataDir, normalizeHost,
 });

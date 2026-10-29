@@ -4,6 +4,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/); semantic versio
 
 ## [Unreleased]
 
+## [0.9.4] — 2026-10-29
+
+### Fixed
+- **`browser_evaluate`, `browser_click` & co. hung forever on pages that cannot run scripts** — documents
+  served with CSP `sandbox`, as every `raw.githubusercontent.com` file is (2 of 5 research runs of the
+  tandem-vs-Firecrawl bench hung reading READMEs). The cause is in @playwright/mcp 0.0.83: the wait after
+  each action is a `setTimeout` inside the page, which such a page never runs (fix proposed upstream:
+  microsoft/playwright#43746). Until it ships, the autostart hook probes the current tab before the calls
+  that go through that wait (a microtask: hidden tabs delay timers, never microtasks) and denies them with
+  what to do instead (`browser_snapshot`, or `fetch()` from a normal page). ~20 ms per guarded call;
+  `TANDEM_SANDBOX_GUARD=0` turns it off. Not in the Cursor/OpenCode adapters.
+
 ## [0.9.3] — 2026-10-21
 
 From an external audit of 0.9.2; each point reproduced before fixing, each with a regression test.

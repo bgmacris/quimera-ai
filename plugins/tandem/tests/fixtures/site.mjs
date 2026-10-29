@@ -12,6 +12,12 @@ createServer((req, res) => {
     return;
   }
   if (u.pathname === '/api') { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{"ok":true,"n":3}'); return; }
+  // as raw.githubusercontent.com serves every file: the page can run no script (sandbox-guard.mjs)
+  if (u.pathname === '/sandboxed') {
+    res.writeHead(200, { 'Content-Type': 'text/plain', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox" });
+    res.end('# README\nplain text');
+    return;
+  }
   res.writeHead(200, { 'Content-Type': 'text/html' });
   if (u.pathname === '/') {
     res.end(`<h1>Home</h1><form method="post" action="/submit"><input name="name" placeholder="Name"><button>Save</button></form>

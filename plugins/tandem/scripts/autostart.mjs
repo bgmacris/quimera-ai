@@ -28,6 +28,7 @@ import { fileURLToPath } from 'node:url';
 import { cdpPort, dataDir } from './paths.mjs';
 import { decide } from './guard-sites.mjs';
 import { isMain } from './is-main.mjs';
+import { sandboxGuard } from './sandbox-guard.mjs';
 
 export function isWsl(env = process.env) {
   if (env.WSL_DISTRO_NAME) return true;
@@ -86,7 +87,9 @@ if (isCli) {
         out({ permissionDecision: 'deny', permissionDecisionReason: `tandem: port ${port} answers CDP but it is NOT tandem's Chrome (another browser — maybe a personal Chrome with remote debugging, with the human's real sessions). Not driving it. Ask the human to close it or set TANDEM_CDP_PORT; to drive it on purpose, TANDEM_BROWSER=external.` });
       }
     }
-    out(null);
+    // Calls that would hang on a page that cannot run scripts (sandbox-guard.mjs). Only with a browser
+    // already up: one just started has only blank tabs.
+    out(input ? await sandboxGuard({ input, port, dataDir: dataDir() }) : null);
   }
 
   const mode = autostartEnabled();
