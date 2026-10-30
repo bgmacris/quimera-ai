@@ -67,6 +67,12 @@ export function compileFast(recipe, locators, args = {}) {
         const { sel } = locSel(step.operand, locators);
         lines.push(`await page.locator(${J(sel)}).fill(${J(String(argValue(step.arg, args) ?? ''))});`); break;
       }
+      // Key by key, as browser_type slowly:true does — for widgets that listen to key events (Renfe's
+      // station autocomplete). Like the MCP, it does not clear the field first.
+      case 'type-slowly': {
+        const { sel } = locSel(step.operand, locators);
+        lines.push(`await page.locator(${J(sel)}).pressSequentially(${J(String(argValue(step.arg, args) ?? ''))});`); break;
+      }
       case 'click': {
         const loc = locSel(step.operand, locators);
         let sel = loc.sel;
@@ -135,6 +141,7 @@ export function compileSteps(recipe, locators, args = {}) {
         return { action: 'navigate', value: url };
       }
       case 'type': return { action: 'type', target: locSel(step.operand, locators).sel, value: String(argValue(step.arg, args) ?? '') };
+      case 'type-slowly': return { action: 'type', target: locSel(step.operand, locators).sel, value: String(argValue(step.arg, args) ?? ''), slowly: true };
       case 'click': {
         const loc = locSel(step.operand, locators);
         let sel = loc.sel;

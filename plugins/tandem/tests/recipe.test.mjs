@@ -143,6 +143,26 @@ try { assertCompiledSafe('async (page) => { await page.evaluate(`${x}`); }'); } 
 ok('assertCompiledSafe rejects template string + page.evaluate', threw2);
 
 // fuzz: various hostile values → always inert and safe.
+// --- Spanish sections and type-slowly (T295, benchmark 2026-10-30) -----------------
+process.stdout.write('[sections / type-slowly]\n');
+const ES = `## Localizadores (multi-ancla)
+- origen:   sel: role=combobox[name="De"]
+- opcion:   sel: role=option[name="{estacion}"]
+## Recetas (unidades nombradas)
+buscar(q, estacion):
+  - type-slowly: origen  <- {q}
+  - click:       opcion  <- {estacion}
+## Trampas
+- x
+`;
+const pe = parseProfile(ES);
+ok('"## Recetas" / "## Localizadores" are read (were 0 recipes, 0 locators)', pe.recipes.size === 1 && pe.locators.size === 2);
+ok('a section only starting with the word is not it ("## Recipesque")', parseRecipes('## Recipesque\nr():\n  - return: url\n').size === 0);
+ok('type-slowly validates like type', validate(pe.recipes.get('buscar'), pe.locators).ok);
+const fastSlow = compileFast(pe.recipes.get('buscar'), pe.locators, { q: 'Atocha', estacion: 'MADRID' });
+ok('--fast: type-slowly → pressSequentially, passes the safety net', fastSlow.includes('await page.locator("role=combobox[name=\\"De\\"]").pressSequentially("Atocha");') && assertCompiledSafe(fastSlow));
+t('--step: type-slowly → browser_type with slowly', compileSteps(pe.recipes.get('buscar'), pe.locators, { q: 'Atocha', estacion: 'MADRID' })[0], { action: 'type', target: 'role=combobox[name="De"]', value: 'Atocha', slowly: true });
+
 process.stdout.write('[fuzz]\n');
 let allSafe = true;
 for (const v of ['a"b', "a'b", 'a\\b', '${x}', '`x`', 'require("x")', 'A.(B)+', 'TCK-1']) {

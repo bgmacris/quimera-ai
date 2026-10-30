@@ -20,7 +20,7 @@
 //     - return:   url
 
 import { readFileSync } from 'node:fs';
-import { parseProfile, unparsedLocatorLines, validate } from './recipe-parser.mjs';
+import { hasSection, parseProfile, unparsedLocatorLines, validate } from './recipe-parser.mjs';
 import { compileFast, compileSteps } from './recipe-compiler.mjs';
 import { normalizeHost } from './host.mjs';
 import { resolveProfile } from './profile.mjs';
@@ -36,7 +36,7 @@ function loadProfile(host) {
   const r = resolveProfile(host);
   if (!r) { process.stderr.write(`recipe: no profile for '${normalizeHost(host)}'\n`); process.exit(1); }
   const md = readFileSync(r.path, 'utf8');
-  return { ...parseProfile(md), unparsed: unparsedLocatorLines(md) };
+  return { ...parseProfile(md), unparsed: unparsedLocatorLines(md), hasRecipes: hasSection(md, 'Recipes') };
 }
 
 const isCli = isMain(import.meta.url);
@@ -47,8 +47,15 @@ if (isCli) {
   const pos = argv.slice(1).filter((a) => !a.startsWith('--'));
   try {
     if (cmd === 'validate') {
-      const { locators, recipes, unparsed } = loadProfile(pos[0]);
+      const { locators, recipes, unparsed, hasRecipes } = loadProfile(pos[0]);
       let bad = 0;
+      // Not an error (a profile may have no recipes), but never silent: an exit 0 with no output read as
+      // "all recipes valid" when the section had not even been found.
+      if (!recipes.size) {
+        process.stdout.write(hasRecipes
+          ? '⚠ Recipes: section found but no recipe in it (a header is `name(params):` at the start of the line)\n'
+          : '⚠ no recipes: no "## Recipes" section (also read: "## Recetas")\n');
+      }
       for (const l of unparsed) process.stdout.write(`⚠ Locators: line not understood (use "- name:   sel: …" or "- name:" + indented "sel:"): ${l.trim().slice(0, 100)}\n`);
       for (const [name, r] of recipes) {
         const v = validate(r, locators);

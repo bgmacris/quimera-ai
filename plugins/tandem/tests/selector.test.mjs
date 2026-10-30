@@ -69,6 +69,13 @@ for (const n of fuzz) {
 }
 ok('invariant: every generated selector is well-formed', allWF);
 
+// --- templates (T295: --regex escaped the hole, `\{dia\}`, and templates were written by hand) ---------
+process.stdout.write('[templates]\n');
+t('regex keeps a {hole} for the compiler', buildSelector({ role: 'option', name: '{dia}', regex: true }), 'role=option[name=/{dia}/]');
+t('regex escapes around a hole, not the hole', buildSelector({ role: 'option', name: 'a.b {x}', regex: true }), 'role=option[name=/a\\.b {x}/]');
+t('anchored trailing hole → (?!\\w), not \\b (the value may end in ":")', buildSelector({ role: 'row', name: 'TCK-{id}', regex: true, anchor: true }), 'role=row[name=/^TCK-{id}(?!\\w)/]');
+t('string mode leaves the hole as is', buildSelector({ role: 'option', name: '{estacion}' }), 'role=option[name="{estacion}"]');
+
 // --- summary ----------------------------------------------------------------------
 process.stdout.write(`\nselector: ${pass} ok, ${fail} failures\n`);
 process.exit(fail === 0 ? 0 : 1);

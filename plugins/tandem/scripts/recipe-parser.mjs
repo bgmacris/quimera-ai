@@ -4,12 +4,24 @@
 // structures, and validates a recipe against its locators. Hand-parsed flat-YAML (no deps).
 // Does NOT compile or execute: only "understands" the text. Compilation lives in recipe-compiler.mjs.
 
-export const ACTIONS = new Set(['navigate', 'type', 'click', 'wait-url', 'return', 'extract', 'extract-all']);
+export const ACTIONS = new Set(['navigate', 'type', 'type-slowly', 'click', 'wait-url', 'return', 'extract', 'extract-all']);
 
 // --- profile parsing ---------------------------------------------------------------
+// Profiles get written in the human's language: `## Recetas` used to parse as no recipes at all, and
+// validate said nothing (books.toscrape.com and www.google.com, benchmark 2026-10-30).
+export const SECTION_NAMES = { Locators: ['Locators', 'Localizadores'], Recipes: ['Recipes', 'Recetas'] };
+
+function sectionStart(lines, title) {
+  return lines.findIndex((l) => SECTION_NAMES[title].some((t) => new RegExp(`^## ${t}\\b`).test(l.trim())));
+}
+
+export function hasSection(md, title) {
+  return sectionStart(md.replace(/\r\n?/g, '\n').split('\n'), title) >= 0;
+}
+
 function section(md, title) {
   const lines = md.replace(/\r\n?/g, '\n').split('\n');   // CRLF (Windows checkout/editor) broke every line-anchored regex
-  const start = lines.findIndex((l) => l.trim().startsWith(`## ${title}`));
+  const start = sectionStart(lines, title);
   if (start < 0) return [];
   const rest = lines.slice(start + 1);
   const end = rest.findIndex((l) => /^##\s/.test(l));
@@ -126,7 +138,7 @@ export function validate(recipe, locators) {
     }
     // return url is special
     if (step.action === 'return' && step.operand === 'url') continue;
-    // type, click, return <locator>: must exist and have sel
+    // type, type-slowly, click, return <locator>: must exist and have sel
     const loc = locators.get(step.operand);
     if (!loc) { errors.push(`locator not found: '${step.operand}' (step ${step.action})`); continue; }
     if (!loc.sel) { errors.push(`locator '${step.operand}' has no sel: — not actionable`); continue; }

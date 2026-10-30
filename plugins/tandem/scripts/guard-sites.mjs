@@ -44,7 +44,10 @@ export function isProfilePath(filePath, sitesDir) {
 }
 
 // Read-only engine invocations that mention the store are fine (list/show/path, recipe compile…).
-const READ_ONLY = /^\s*(\S*\/)?(map\.sh\s+(list|show|path|index)|recipe\.mjs\s+(validate|compile)|cat|less|head|tail|grep|rg|wc|ls)\b/;
+// fingerprint.mjs writes only *.fingerprints.json, which this gate leaves out (header): a reader here.
+// Judged per pipeline segment: `node fingerprint.mjs check …; md5 -q sites/*.fingerprints.json` asked for
+// approval (benchmark 2026-10-30) because the whole command had "node" in it.
+const READER = /^\s*((node|bash|sh)\s+)?(\S*\/)?(map\.sh\s+(list|show|path|index)|recipe\.mjs\s+(validate|compile)|fingerprint\.mjs\s+(check|capture)|cat|less|head|tail|grep|rg|wc|ls|md5|md5sum|shasum|sha256sum|stat|file|diff|jq|cd|echo|printf)(\s|$)/;
 const WRITES = /(>|>>|\btee\b|\bsponge\b|\btruncate\b|\bcp\b|\bmv\b|\bsed\s+-i|\bperl\s+-i|\bdd\b|\bpython3?\b|\bnode\b|\bruby\b|\binstall\b|\brm\b|\bln\b|\bcurl\b|\bwget\b|\brsync\b|\btar\b|\bunzip\b|\bpatch\b)/;
 
 // The sites dir spelled out, OR the data dir plus the word "sites" anywhere: that is how an agent
@@ -64,8 +67,8 @@ export function bashTouchesProfiles(command, sitesDir) {
   // Redirections to /dev/null or stderr→stdout are not writes to the store.
   command = command.replace(/\d?>{1,2}\s*\/dev\/null|\d?>&\d/g, '');
   if (!mentionsStore(command, sitesDir)) return false;
-  if (READ_ONLY.test(command) && !/[>|]/.test(command)) return false;
-  return WRITES.test(command);
+  // A redirection makes any segment a write (`echo x > sites/b.md`); `&>` splits into a `> file` segment.
+  return command.split(/\|\||&&|[;|&\n]/).some((seg) => !(READER.test(seg) && !seg.includes('>')) && WRITES.test(seg));
 }
 
 // The MCP's own tools write files too: `filename` on evaluate/snapshot/screenshot/… lands wherever the
@@ -98,10 +101,11 @@ export function decide(input, sitesDir = join(dataDir(), 'sites')) {
   // choice to skip approvals, and tandem:map must keep working there: the write goes through, with a
   // visible notice to review it (injection still wraps profiles as data and flags instruction-like
   // lines). TANDEM_PROFILE_GATE=strict denies instead.
-  const file = ti.file_path || 'a site profile (via Bash)';
+  // PreToolUse: nothing is written yet — and for Bash it is a guess from the command's text.
+  const what = ti.file_path ? `writing ${ti.file_path}` : 'running a command that looks like it writes a site profile';
   if (input?.permission_mode === 'bypassPermissions' && process.env.TANDEM_PROFILE_GATE !== 'strict') {
     return {
-      systemMessage: `tandem: ${file} was written WITHOUT approval (bypass mode). Review it — site profiles are injected into future sessions.`,
+      systemMessage: `tandem: ${what}, WITHOUT approval (bypass mode). Review the result — site profiles are injected into future sessions.`,
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
         permissionDecision: 'allow',

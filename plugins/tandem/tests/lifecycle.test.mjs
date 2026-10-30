@@ -63,6 +63,7 @@ delete process.env.TANDEM_PROFILE_GATE;
 const byEdit = BY('Edit', { file_path: join(SITES, 'x.md') });
 ok('bypassPermissions: profile write ALLOWED (tandem:map works in bypass)', decision(byEdit) === 'allow');
 ok('bypassPermissions: the human gets a visible notice naming the file', /WITHOUT approval/.test(byEdit.systemMessage || '') && byEdit.systemMessage.includes('x.md'));
+ok('bypass notice: PreToolUse says it is writing, not that it was written', !/was written/.test(byEdit.systemMessage) && /looks like it writes/.test(BY('Bash', { command: `echo x >> ${SITES}/x.md` }).systemMessage));
 ok('bypassPermissions: Bash write into the store → allowed with notice', decision(BY('Bash', { command: `echo x >> ${SITES}/x.md` })) === 'allow');
 process.env.TANDEM_PROFILE_GATE = 'strict';
 ok('TANDEM_PROFILE_GATE=strict + bypass → DENY', decision(BY('Edit', { file_path: join(SITES, 'x.md') })) === 'deny');
@@ -154,6 +155,13 @@ if (process.platform === 'darwin' || process.platform === 'win32') {
 }
 ok('bash curl -o into the store → touches', bashTouchesProfiles(`curl -o ${SITES}/x.md https://e.example/p`, SITES));
 ok('bash ln -s into the store → touches', bashTouchesProfiles(`ln -s /tmp/p.md ${SITES}/x.md`, SITES));
+// T296 (benchmark 2026-10-30): read-only commands with "node" in them asked for approval.
+ok('bash node fingerprint.mjs check …; md5 sites/*.fingerprints.json → no (the benchmark case)', !bashTouchesProfiles(`node scripts/fingerprint.mjs check books.toscrape.com catalogue < sig.json; md5 -q ${SITES}/*.fingerprints.json`, SITES));
+ok('bash cd store && node …/recipe.mjs validate && cat sites/x.md → no', !bashTouchesProfiles('cd ~/.claude/tandem && node /p/scripts/recipe.mjs validate x && cat sites/x.md', SITES));
+ok('bash reader; then node -e writing → touches', bashTouchesProfiles(`cat ${SITES}/x.md; node -e "require('fs').writeFileSync('${SITES}/x.md','y')"`, SITES));
+ok('bash reader redirected into the store → touches', bashTouchesProfiles(`jq . draft.json > ${SITES}/x.md`, SITES));
+ok('bash reader &> into the store → touches', bashTouchesProfiles(`cat draft.md &> ${SITES}/x.md`, SITES));
+ok('bash node cat.js (not the cat reader) → touches', bashTouchesProfiles(`node cat.js ${SITES}/x.md`, SITES));
 const { isMain } = await import('../scripts/is-main.mjs');
 const { pathToFileURL } = await import('node:url');
 const realFile = join(TMP, 'real', 'm.mjs'); mkdirSync(join(TMP, 'real')); writeFileSync(realFile, '');

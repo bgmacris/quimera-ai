@@ -88,7 +88,7 @@ export async function sandboxGuard({ input, port, dataDir, env = process.env }) 
     const name = tool.replace(/^.*__/, '');
     return {
       permissionDecision: 'deny',
-      permissionDecisionReason: `tandem: the current page (${url}) cannot run scripts — it is served with CSP \`sandbox\`, as every raw.githubusercontent.com file is — and ${name} would hang forever on it (a @playwright/mcp bug: its post-action wait is a timer inside the page; fix proposed in microsoft/playwright#43746). Instead: read the page with browser_snapshot; or browser_navigate to a normal page and fetch('${url}') from browser_evaluate there (raw.githubusercontent.com allows CORS); to follow a link, browser_navigate to its href rather than clicking it.`,
+      permissionDecisionReason: `tandem: the current page (${url}) cannot run scripts — it is served with CSP \`sandbox\`, as every raw.githubusercontent.com file is — and ${name} would hang forever on it (a @playwright/mcp bug: its post-action wait is a timer inside the page; fix proposed in microsoft/playwright#43746). Instead, to read it whole: browser_navigate to a normal page and fetch('${url}') from browser_evaluate there (raw.githubusercontent.com allows CORS); browser_snapshot works for a glance, but it flattens the text and cuts it short. To follow a link, browser_navigate to its href rather than clicking it.`,
     };
   } catch { return null; } finally { client?.close(); }
 }

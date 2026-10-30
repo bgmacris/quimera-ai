@@ -11,6 +11,9 @@
 //  - ONCE per (session, host): marks in .hook-state/<session_id>/<host> to avoid
 //    re-injecting the same profile on every click within the site (context bloat).
 //
+// It also records where the agent's tab is and warns when it moved without the agent asking
+// (scripts/tab-drift.mjs).
+//
 // The shared logic lives in scripts/map-inject-core.mjs (also consumed by the Cursor
 // and OpenCode adapters). This file is the thin Claude Code entry point: it resolves the
 // data dir (scripts/paths.mjs), reads the hook JSON on stdin, and formats the
@@ -24,7 +27,7 @@ import { readFileSync } from 'node:fs';
 import { normalizeHost } from './host.mjs';
 import { touchLease } from './session-hook.mjs';
 import { dataDir as resolveDataDir, ensureDataDir } from './paths.mjs';
-import { rememberPageUrl } from './sandbox-guard.mjs';
+import { tabDrift } from './tab-drift.mjs';
 import {
   tryInjectProfile, cleanupSessionMarkers,
   extractNavigateUrl, extractSessionId,
@@ -59,18 +62,19 @@ if (!input) silent();
 // (session-hook.mjs), so one node process per call does both.
 try { ensureDataDir(dataDir); touchLease(dataDir, sessionId); } catch { /* never break the session */ }
 
-const url = extractNavigateUrl(input);
-// The sandbox guard (PreToolUse) needs to know which tab the MCP is on.
-if (url) rememberPageUrl(dataDir, sessionId, url);
+// Where the tab is now (the sandbox guard needs it) — and a warning when it moved without the agent.
+let drift = null;
+try { drift = tabDrift({ input, dataDir }); } catch { /* never break the session */ }
 const result = tryInjectProfile({
-  url, sessionId, dataDir, normalizeHost,
+  url: extractNavigateUrl(input), sessionId, dataDir, normalizeHost,
 });
-if (!result.ok) silent();
+const context = [drift, result.ok ? result.context : null].filter(Boolean).join('\n\n');
+if (!context) silent();
 
 process.stdout.write(JSON.stringify({
   hookSpecificOutput: {
     hookEventName: 'PostToolUse',
-    additionalContext: result.context,
+    additionalContext: context,
   },
 }));
 process.exit(0);

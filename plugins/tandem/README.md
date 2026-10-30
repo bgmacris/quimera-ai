@@ -152,6 +152,7 @@ continues from the already-rendered page — that is the human-in-the-loop hando
 | `TANDEM_CDP_WAIT`   | `15` | seconds `start` waits for Chrome's CDP (raise it on a slow or loaded machine) |
 | `TANDEM_PROFILE_GATE` | — | `strict`: in bypass-permissions mode, DENY site-profile writes instead of allowing them with a notice (default/auto mode always ask) |
 | `TANDEM_FOCUS_EMULATION` | on | `0`: don't keep the agent's tab painting while its tools run (see Troubleshooting) |
+| `TANDEM_TAB_DRIFT` | on | `0`: don't warn the agent when its tab moved without it asking (see Troubleshooting) |
 | `TANDEM_FOCUS_LINGER_MS` | `15000` | how long the agent's tab keeps painting after its last tool call |
 | `TANDEM_BROWSER`    | — | `external`: tandem only talks to the CDP port (e.g. Windows Chrome from WSL); start/stop via `TANDEM_BROWSER_START_CMD` / `_STOP_CMD` |
 
@@ -176,8 +177,8 @@ continues from the already-rendered page — that is the human-in-the-loop hando
   page is served with CSP `sandbox` (every `raw.githubusercontent.com` file is), and on it @playwright/mcp
   0.0.83 never returns from those calls — its post-action wait is a timer inside the page
   ([microsoft/playwright#43746](https://github.com/microsoft/playwright/pull/43746)). tandem denies them
-  instead of hanging. Read such a page with `browser_snapshot`, or `fetch()` it from `browser_evaluate` on a
-  normal page. `TANDEM_SANDBOX_GUARD=0` turns the guard off.
+  instead of hanging. Read such a page by `fetch()`ing it from `browser_evaluate` on a normal page
+  (`browser_snapshot` flattens the text and cuts it short). `TANDEM_SANDBOX_GUARD=0` turns the guard off.
 
 - **A click on a tab you switched away from, a covered or a minimized window timed out** (before 0.9.5):
   @playwright/mcp connects without focus emulation, so Chrome stops painting a page it thinks nobody sees,
@@ -185,6 +186,12 @@ continues from the already-rendered page — that is the human-in-the-loop hando
   focus emulation on for the agent's current tab while its tools run, off 15 s after the last one (an
   animated page keeps costing CPU only that long). The page sees `visibilitychange` around those
   windows. `TANDEM_FOCUS_EMULATION=0` turns it off.
+
+- **You clicked in the window while the agent was reading a page**: nobody owns a tab, so your click
+  moves the page the agent works on. Since 0.9.6 the agent is told: when a browser call that only reads
+  finds the tab on another URL than at its previous call, a hook warns it that what it read before
+  belongs to the old page. Changes within 15 s of the agent's own click or navigation are taken as its
+  effects (a redirect) and not reported. `TANDEM_TAB_DRIFT=0` turns the warning off.
 
 ## Development
 

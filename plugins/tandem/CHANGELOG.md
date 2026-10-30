@@ -4,6 +4,41 @@ Format based on [Keep a Changelog](https://keepachangelog.com/); semantic versio
 
 ## [Unreleased]
 
+## [0.9.6] — 2026-10-30
+
+Findings of the two real-use benchmarks of 2026-10-30.
+
+### Added
+- **The agent is told when its tab moved without it asking** (`scripts/tab-drift.mjs`). Nobody owns a
+  tab: in the Reddit task two clicks by the human took the agent's tab to another page mid-measure, and
+  the agent noticed only because one of them opened a new tab. @playwright/mcp does print the new
+  `### Page` URL in the next result, but unmarked in the middle of the output. The PostToolUse hook now
+  remembers where the tab is after each browser call; when a call that only reads (snapshot, evaluate
+  without navigation code, wait_for…) finds it on another URL (hash ignored), it adds a warning to the
+  model's context. Changes within 15 s of the agent's own move are taken as its late effects (a redirect
+  after a click) — a human click inside that window goes unreported. `TANDEM_TAB_DRIFT=0` turns it off.
+  The remembered URL is the one the sandbox guard uses, now the tab's real URL (after redirects) and
+  updated by read tools too. Claude Code only; the Cursor/OpenCode adapters don't run it. Tests:
+  `tests/drift.test.mjs`, and `tests/drift-e2e.mjs` (e2e [3d]: another CDP client moves the tab, the real
+  MCP's next `browser_evaluate` carries the new URL, the warning names both).
+- **`type-slowly` recipe step**: key by key (`pressSequentially` in `--fast`, `browser_type slowly:true`
+  in `--step`), for autocompletes that need real key events (Renfe's station field).
+
+### Fixed
+- **Profiles with Spanish section names had no recipes or locators, silently**: `## Recetas` and
+  `## Localizadores` are now read like `## Recipes` / `## Locators`; and `recipe.mjs validate` no longer
+  exits 0 with no output when it found no recipe — it says whether the section is missing or empty.
+- **`selector.mjs --regex` escaped a template slot** (`{dia}` → `\{dia\}`, no longer a slot), so regex
+  templates had to be written by hand. Slots are kept; an anchored trailing slot gets `(?!\w)` (not
+  `\b`, which never matches after a value ending in `:`). Checked in Chrome.
+- **Read-only Bash commands asked to approve a profile write**: `node fingerprint.mjs check …; md5 -q
+  sites/*.fingerprints.json` matched the heuristic (it mentions the store and runs `node`). The command is
+  now judged per pipeline segment, with known readers (`fingerprint.mjs`, `md5`, `shasum`, `jq`, `cd`…)
+  skipped unless redirected. The bypass-mode notice no longer says the profile "was written" from a
+  PreToolUse hook — nothing is written yet.
+- **The sandbox guard's deny offered `browser_snapshot` first**: on a long text file it flattens the text
+  and cuts it at ~1.5 KB; `fetch()` from a normal page reads it whole. Now `fetch()` comes first.
+
 ## [0.9.5] — 2026-10-30
 
 ### Fixed

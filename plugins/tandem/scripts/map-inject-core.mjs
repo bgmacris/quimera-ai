@@ -154,13 +154,39 @@ export function extractNavigateUrl(input) {
   // JSON-encoded on one line) — verified with a hostile console.log on click.
   const tool = String(input.tool_name || input.toolName || '');
   if (/browser_(evaluate|console_messages|run_code\w*|network_requests?|find)$/.test(tool)) return null;
+  const lines = responseLines(input);
+  if (!lines) return null;
+  const url = pageSectionUrl(lines);
+  if (url === undefined) return /browser_tabs$/.test(tool) ? currentTabUrl(lines) : null;
+  return url;
+}
+
+/**
+ * The URL of the MCP's own `### Page` section in ANY tool's result, read tools included — for telling
+ * where the tab IS (tab-drift.mjs), not whether the agent moved it. `browser_evaluate` is safe here: its
+ * result is JSON-encoded, so no line of it can read `### Page`. Not the tools whose result carries raw
+ * page-controlled text BEFORE that section (console messages, request bodies, run_code output, find
+ * snippets): a page could print its own `### Page` there.
+ */
+export function extractPageUrl(input) {
+  if (!input || typeof input !== 'object') return null;
+  const tool = String(input.tool_name || input.toolName || '');
+  if (/browser_(console_messages|run_code\w*|network_requests?|find)$/.test(tool)) return null;
+  const lines = responseLines(input);
+  return (lines && pageSectionUrl(lines)) || null;
+}
+
+function responseLines(input) {
   const resp = input.tool_response ?? input.toolResponse ?? input.tool_output;
   if (resp == null) return null;
   const blocks = Array.isArray(resp) ? resp : Array.isArray(resp?.content) ? resp.content : [resp];
-  const text = blocks.map((b) => (typeof b === 'string' ? b : b?.text || '')).join('\n');
-  const lines = text.split(/\r?\n/);
+  return blocks.map((b) => (typeof b === 'string' ? b : b?.text || '')).join('\n').split(/\r?\n/);
+}
+
+// undefined = no `### Page` section; null = a section without a usable URL.
+function pageSectionUrl(lines) {
   const at = lines.indexOf('### Page');
-  if (at < 0) return /browser_tabs$/.test(tool) ? currentTabUrl(lines) : null;
+  if (at < 0) return undefined;
   for (const l of lines.slice(at + 1)) {
     if (l.startsWith('### ')) break;
     const m = l.match(/^- Page URL: (https?:\/\/\S+)$/);

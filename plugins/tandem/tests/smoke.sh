@@ -236,6 +236,13 @@ else
   bad "focus.test.mjs"
 fi
 
+echo "[15] tab drift (node tests/drift.test.mjs)"
+if run_suite "$HERE/drift.test.mjs"; then
+  ok "drift.test.mjs green"
+else
+  bad "drift.test.mjs"
+fi
+
 # hooks.json must parse and point only at scripts that exist and are executable.
 check "hooks.json is valid JSON" "node -e 'JSON.parse(require(\"fs\").readFileSync(\"$ROOT/hooks/hooks.json\",\"utf8\"))'"
 # Every "${CLAUDE_PLUGIN_ROOT}"/… in a command (also inside a `sh -c` prefilter) must be executable.

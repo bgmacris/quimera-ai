@@ -81,7 +81,8 @@ Invoke it by its path within the plugin (`scripts/map.sh`); there's no bin on PA
     For long/fragile names use `--regex` (substring) instead of the exact literal.
   - **template** (several: rows, list items): `sel:` with a slot the recipe fills in
     use, e.g. `role=row[name=/^{id}/]`. A common prefix (`^TCK-`) matches N rows → the action
-    is strict and throws; that's why it's parameterized to the concrete id.
+    is strict and throws; that's why it's parameterized to the concrete id. `selector.mjs` keeps a
+    `{slot}` in the name as a slot, also with `--regex`: `selector.mjs row "{id}" --regex --anchor`.
   - If an element has no unique role/name, do NOT give it a `sel:` (forcing positional CSS lies).
   - The `sel:` is ONLY the selector, no inline comments (`recipe.mjs`/`selector.mjs` would
     include them in the value). Notes go in `primary:`/`corroborates:`.
@@ -159,8 +160,10 @@ open-ticket-by-id(id):
 ```
 - Header `name(params):`. Each step = `action: locator [<- {param}|"literal"]`. The `{param}`
   fills the `sel:` TEMPLATE (the slot must be named the same as the param). v1 actions:
-  `navigate` (http/https only), `type`, `click`, `wait-url`, `return`/`extract` (ONE element — strict:
-  several matches is an error) and `extract-all` (a list → array of texts). Locators may be written on
+  `navigate` (http/https only), `type`, `type-slowly` (key by key, `browser_type slowly:true`: for
+  autocompletes that listen to key events; it does not clear the field), `click`, `wait-url`,
+  `return`/`extract` (ONE element — strict: several matches is an error) and `extract-all` (a list →
+  array of texts). Section names: `## Recipes` / `## Locators`, or `## Recetas` / `## Localizadores`. Locators may be written on
   one line (`- name:   sel: <selector>   | verified …`) or with `sel:` on the next line. Do NOT type the Playwright syntax by
   hand: `recipe.mjs` compiles it. When saving a recipe in recon: `recipe.mjs validate <host>`.
 

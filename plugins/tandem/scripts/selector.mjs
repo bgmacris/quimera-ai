@@ -39,13 +39,19 @@ export function escapeRegexName(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
 }
 
-// Builds the selector. name is always taken literally (the helper escapes as needed).
+// Builds the selector. name is taken literally (the helper escapes as needed) except its `{holes}`: a
+// locator TEMPLATE (`role=option[name=/^{dia}/]`) keeps them for recipe-compiler.mjs to fill — escaped,
+// `\{dia\}` no longer read as a hole and the template had to be written by hand.
 // No name → bare role (valid but risky: only for roles the agent knows are unique on the page).
 export function buildSelector({ role, name, regex = false, anchor = false } = {}) {
   if (!role || typeof role !== 'string') throw new Error('role is required');
   if (name == null || name === '') return `role=${role}`;
   if (regex) {
-    const pat = (anchor ? '^' : '') + escapeRegexName(name) + (anchor && /\w$/.test(name) ? '\\b' : '');
+    const body = String(name).split(/(\{[^}]+\})/).map((part, i) => (i % 2 ? part : escapeRegexName(part))).join('');
+    // A trailing hole gets the same guard as a trailing word char, so ^TCK-{id} cannot run into a longer
+    // id — as (?!\w), not \b: the value is unknown here, and \b after one ending in ':' never matches.
+    const tail = !anchor ? '' : /\}$/.test(name) ? '(?!\\w)' : /\w$/.test(name) ? '\\b' : '';
+    const pat = (anchor ? '^' : '') + body + tail;
     return `role=${role}[name=/${pat}/]`;
   }
   return `role=${role}[name="${escapeStringName(name)}"]`;
