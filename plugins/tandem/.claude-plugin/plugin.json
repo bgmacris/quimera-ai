@@ -1,6 +1,6 @@
 {
   "name": "tandem",
-  "version": "0.9.4",
+  "version": "0.9.5",
   "license": "MIT",
   "description": "A shared Chrome browser (human + Claude, CDP + Playwright MCP) that learns how each site is navigated: the human drives with the mouse and clears captchas/logins, Claude operates over CDP, and tandem:map persists co-curated per-site memory (routes, locators, recipes; auto-injected on arrival).",
   "author": { "name": "bgmacris" },

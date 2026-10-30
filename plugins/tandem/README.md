@@ -87,8 +87,10 @@ Chrome (headed, dedicated profile, --remote-debugging-port on 127.0.0.1)
 
 - **`scripts/chrome-daemon.sh`** `{start|stop|restart|status}` — Chrome lifecycle, idempotent,
   based on the CDP healthcheck (the source of truth for state is CDP, not the PID).
-- **`scripts/mcp-launch.sh`** — the `.mcp.json` command; only launches the Playwright MCP (lazy, it
-  doesn't start Chrome, so `initialize` never blocks).
+- **`scripts/mcp-launch.mjs`** — the `.mcp.json` command (`mcp-launch.sh` is a wrapper kept for the
+  adapters); launches the Playwright MCP lazily (it doesn't start Chrome, so `initialize` never blocks)
+  behind a transparent stdio proxy that keeps the agent's tab painting while its tools run
+  (`scripts/focus-emulation.mjs`).
 - **`scripts/map.sh`**, **`scripts/fingerprint.mjs`**, **`scripts/page-signals.mjs`**,
   **`scripts/selector.mjs`**, **`scripts/recipe.mjs`**, **`scripts/hook-inject-profile.mjs`** —
   the `tandem:map` engine (profile store, page fingerprint, drift, executable selectors,
@@ -149,6 +151,8 @@ continues from the already-rendered page — that is the human-in-the-loop hando
 | `TANDEM_DATA_DIR`   | `~/.claude/tandem` | Chrome profile, logs, and site profiles |
 | `TANDEM_CDP_WAIT`   | `15` | seconds `start` waits for Chrome's CDP (raise it on a slow or loaded machine) |
 | `TANDEM_PROFILE_GATE` | — | `strict`: in bypass-permissions mode, DENY site-profile writes instead of allowing them with a notice (default/auto mode always ask) |
+| `TANDEM_FOCUS_EMULATION` | on | `0`: don't keep the agent's tab painting while its tools run (see Troubleshooting) |
+| `TANDEM_FOCUS_LINGER_MS` | `15000` | how long the agent's tab keeps painting after its last tool call |
 | `TANDEM_BROWSER`    | — | `external`: tandem only talks to the CDP port (e.g. Windows Chrome from WSL); start/stop via `TANDEM_BROWSER_START_CMD` / `_STOP_CMD` |
 
 ## Security
@@ -174,6 +178,13 @@ continues from the already-rendered page — that is the human-in-the-loop hando
   ([microsoft/playwright#43746](https://github.com/microsoft/playwright/pull/43746)). tandem denies them
   instead of hanging. Read such a page with `browser_snapshot`, or `fetch()` it from `browser_evaluate` on a
   normal page. `TANDEM_SANDBOX_GUARD=0` turns the guard off.
+
+- **A click on a tab you switched away from, a covered or a minimized window timed out** (before 0.9.5):
+  @playwright/mcp connects without focus emulation, so Chrome stops painting a page it thinks nobody sees,
+  and the click's "stable" check waits for frames that never come. tandem's MCP launcher now switches
+  focus emulation on for the agent's current tab while its tools run, off 15 s after the last one (an
+  animated page keeps costing CPU only that long). The page sees `visibilitychange` around those
+  windows. `TANDEM_FOCUS_EMULATION=0` turns it off.
 
 ## Development
 

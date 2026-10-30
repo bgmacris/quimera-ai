@@ -4,6 +4,27 @@ Format based on [Keep a Changelog](https://keepachangelog.com/); semantic versio
 
 ## [Unreleased]
 
+## [0.9.5] — 2026-10-30
+
+### Fixed
+- **A click on a background tab, a covered or a minimized window hung until `--timeout-action` (10 s)**,
+  with one session too: @playwright/mcp connects with `noDefaults`, which skips Playwright's
+  `Emulation.setFocusEmulationEnabled`; Chrome then stops painting the page and the click's "stable" check
+  waits for animation frames forever. Same if the human switches tabs while the agent works. The MCP
+  launcher is now a transparent stdio proxy that switches focus emulation on for the agent's current tab
+  (the last URL a result showed, as the sandbox guard guesses it) before each tool call reaches the MCP, and
+  off 15 s after the last one ends — always on would make an animated hidden page cost what a visible one
+  does (~26–30 % of a core measured). 15 s = the knee of 948 real pauses between browser calls. The
+  emulation is session-scoped (verified: detaching drops it), so it dies with the launcher.
+  `TANDEM_FOCUS_EMULATION=0` restores the plain launcher; `TANDEM_FOCUS_LINGER_MS`. The Cursor/OpenCode
+  adapters start the MCP through the same launcher (`mcp-wrap.sh` → `mcp-launch.sh` → `mcp-launch.mjs`), so
+  they get it too — not tried inside those IDEs. Tests: `tests/focus.test.mjs` (the proxy, no Chrome) and
+  `tests/focus-e2e.mjs` (the real MCP clicks a background tab: 10 s timeout without, ~0.6 s with; e2e step
+  [3c]). Checked headful on macOS — background tab, minimized, covered window (10 s timeout without, ~0.6 s
+  with) and ⌘H (4.5 s without) — and in two real-use sessions (159 browser calls, none over 10 s). With a
+  tiling window manager (AeroSpace) a window on another workspace still counts as visible to Chrome: there the
+  emulation only matters for a background tab, ⌘H or ⌘M.
+
 ## [0.9.4] — 2026-10-29
 
 ### Fixed

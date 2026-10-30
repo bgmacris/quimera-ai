@@ -95,6 +95,9 @@ check "normal page: evaluate allowed"              "! guard browser_evaluate '{\
 remember "$SITE/sandboxed"
 check "stale URL, no tab on it: allowed"           "! guard browser_evaluate '{\"function\":\"() => 1\"}' | grep -q '\"deny\"'"
 
+echo "[3c] focus emulation (the real MCP clicks on a background tab)"
+check "focus-e2e.mjs green" "node '$HERE/focus-e2e.mjs' '$SITE'"
+
 echo "[4] stop"
 check "stop" "'$ROOT/scripts/chrome-daemon.sh' stop | grep -q stopped"
 check "no Chrome left on our profile" "! pgrep -f -- '--user-data-dir=$TANDEM_DATA_DIR/chrome-profile' >/dev/null"

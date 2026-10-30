@@ -229,6 +229,13 @@ else
   bad "review.test.mjs"
 fi
 
+echo "[14] focus-emulation proxy (node tests/focus.test.mjs)"
+if run_suite "$HERE/focus.test.mjs"; then
+  ok "focus.test.mjs green"
+else
+  bad "focus.test.mjs"
+fi
+
 # hooks.json must parse and point only at scripts that exist and are executable.
 check "hooks.json is valid JSON" "node -e 'JSON.parse(require(\"fs\").readFileSync(\"$ROOT/hooks/hooks.json\",\"utf8\"))'"
 # Every "${CLAUDE_PLUGIN_ROOT}"/… in a command (also inside a `sh -c` prefilter) must be executable.

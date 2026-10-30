@@ -15,11 +15,16 @@
 //   --timeout-action 10000 (ONE timeout for clicks and screenshots; 5 s failed 17 % of screenshots)
 //   TANDEM_MCP_ARGS    extra flags, appended LAST so they override these (whitespace-split)
 // TANDEM_MCP_DRYRUN=1 prints the command instead of running it (tests/CI).
+//
+// The MCP's stdio goes through a transparent proxy (focus-emulation.mjs) that keeps the agent's tab
+// painting while its tools run — without it a click on a background/covered/minimized tab hangs.
+// TANDEM_FOCUS_EMULATION=0 → plain stdio inherit, as before 0.9.5.
 
 import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { cdpPort, dataDir, ensureDataDir } from './paths.mjs';
+import { DEFAULT_LINGER_MS, focusEmulator, proxyStdio } from './focus-emulation.mjs';
 import { isMain } from './is-main.mjs';
 
 export const MCP_VERSION_PIN = '0.0.83';
@@ -44,11 +49,19 @@ if (isCli) {
   const win = process.platform === 'win32';
   if (process.env.TANDEM_MCP_DRYRUN === '1') { process.stdout.write(JSON.stringify({ cmd: win ? 'npx.cmd' : 'npx', args }) + '\n'); process.exit(0); }
   try { mkdirSync(join(ensureDataDir(), 'output'), { recursive: true }); } catch { /* the MCP reports it */ }
+  const focus = process.env.TANDEM_FOCUS_EMULATION !== '0';
+  const stdio = focus ? ['pipe', 'pipe', 'inherit'] : 'inherit';
   // Windows: npx is a .cmd shim; Node refuses to spawn .cmd/.bat without a shell (CVE-2024-27980),
   // so go through cmd.exe with explicit quoting. Elsewhere: plain spawn, no shell.
   const child = win
-    ? spawn(['npx.cmd', ...args].map(winQuote).join(' '), { stdio: 'inherit', shell: true, windowsHide: true })
-    : spawn('npx', args, { stdio: 'inherit' });
+    ? spawn(['npx.cmd', ...args].map(winQuote).join(' '), { stdio, shell: true, windowsHide: true })
+    : spawn('npx', args, { stdio });
+  if (focus) {
+    const linger = Number(process.env.TANDEM_FOCUS_LINGER_MS);
+    const emulator = focusEmulator({ port: cdpPort(), lingerMs: Number.isFinite(linger) && linger >= 0 ? linger : DEFAULT_LINGER_MS });
+    proxyStdio({ clientIn: process.stdin, clientOut: process.stdout, serverIn: child.stdin, serverOut: child.stdout, emulator });
+    child.stdin.on('error', () => {});   // the MCP died mid-write: its exit below ends us
+  }
   child.on('error', (e) => {
     process.stderr.write(`tandem: ERROR — cannot run npx (${e.message}). Node/npx must be in PATH.\n`);
     process.exit(127);

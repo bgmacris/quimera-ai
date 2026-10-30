@@ -19,6 +19,8 @@ createServer((req, res) => {
     return;
   }
   res.writeHead(200, { 'Content-Type': 'text/html' });
+  // a button to click from a background tab (focus-e2e.mjs)
+  if (u.pathname === '/focus') { res.end(`<button onclick="document.title='clicked'">Go</button>`); return; }
   if (u.pathname === '/') {
     res.end(`<h1>Home</h1><form method="post" action="/submit"><input name="name" placeholder="Name"><button>Save</button></form>
       <a href="/newtab" target="_blank">Open new tab</a><script>fetch('/api')</script>`);
