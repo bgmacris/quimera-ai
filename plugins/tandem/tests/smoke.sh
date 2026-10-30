@@ -250,6 +250,13 @@ else
   bad "ws-server.test.mjs"
 fi
 
+echo "[17] cross-session tab owners (node tests/tab-owners.test.mjs)"
+if run_suite "$HERE/tab-owners.test.mjs"; then
+  ok "tab-owners.test.mjs green"
+else
+  bad "tab-owners.test.mjs"
+fi
+
 # hooks.json must parse and point only at scripts that exist and are executable.
 check "hooks.json is valid JSON" "node -e 'JSON.parse(require(\"fs\").readFileSync(\"$ROOT/hooks/hooks.json\",\"utf8\"))'"
 # Every "${CLAUDE_PLUGIN_ROOT}"/… in a command (also inside a `sh -c` prefilter) must be executable.

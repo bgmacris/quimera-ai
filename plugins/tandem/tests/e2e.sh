@@ -125,6 +125,9 @@ check "drift-e2e.mjs green" "node '$HERE/drift-e2e.mjs' '$SITE'"
 echo "[3e] PDF capture (the real MCP: POST, GET and download PDFs reaching the agent's tab)"
 check "pdf-capture-e2e.mjs green" "node '$HERE/pdf-capture-e2e.mjs' '$SITE'"
 
+echo "[3f] CDP relay (real MCP children, one per agent: each sees only its own tabs)"
+check "relay-e2e.mjs green" "node '$HERE/relay-e2e.mjs'"
+
 echo "[4] stop"
 check "stop" "'$ROOT/scripts/chrome-daemon.sh' stop | grep -q stopped"
 check "no Chrome left on our profile" "! pgrep -f -- '--user-data-dir=$TANDEM_DATA_DIR/chrome-profile' >/dev/null"
