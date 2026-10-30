@@ -243,6 +243,13 @@ else
   bad "drift.test.mjs"
 fi
 
+echo "[16] relay WebSocket server (node tests/ws-server.test.mjs)"
+if run_suite "$HERE/ws-server.test.mjs"; then
+  ok "ws-server.test.mjs green"
+else
+  bad "ws-server.test.mjs"
+fi
+
 # hooks.json must parse and point only at scripts that exist and are executable.
 check "hooks.json is valid JSON" "node -e 'JSON.parse(require(\"fs\").readFileSync(\"$ROOT/hooks/hooks.json\",\"utf8\"))'"
 # Every "${CLAUDE_PLUGIN_ROOT}"/… in a command (also inside a `sh -c` prefilter) must be executable.
