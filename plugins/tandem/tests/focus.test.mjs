@@ -6,7 +6,7 @@
 
 import { PassThrough } from 'node:stream';
 
-const { proxyStdio, focusEmulator } = await import('../scripts/focus-emulation.mjs');
+const { proxyStdio, focusEmulator, combine } = await import('../scripts/focus-emulation.mjs');
 
 let pass = 0; let fail = 0;
 function ok(desc, cond) {
@@ -92,6 +92,79 @@ console.log('focusEmulator without a browser');
   e.end('browser_navigate', { url: 'https://example.com/' }, null);
   ok('nothing held', e.held === 0);
   e.close();
+}
+
+console.log('proxy notes (pdf-capture.mjs adds "PDF captured" to a result)');
+{
+  const s = { clientIn: new PassThrough(), clientOut: new PassThrough(), serverIn: new PassThrough(), serverOut: new PassThrough() };
+  const toClient = [];
+  s.clientOut.on('data', (d) => { for (const l of String(d).split('\n').filter(Boolean)) toClient.push(l); });
+  s.serverIn.resume();
+  let notes = ['### tandem: PDF captured'];
+  const emulator = combine(
+    { async begin() {}, end() {} },
+    { async begin() {}, end() {}, notes: () => notes.splice(0) },
+  );
+  proxyStdio({ ...s, emulator });
+  s.clientIn.write(msg({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'browser_click', arguments: {} } }));
+  s.clientIn.write(msg({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'browser_snapshot', arguments: {} } }));
+  await sleep(20);
+  s.serverOut.write(msg({ jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text: 'ok' }] } }));
+  const plain = JSON.stringify({ jsonrpc: '2.0', id: 2, result: { content: [{ type: 'text', text: 'ok2' }] } });
+  s.serverOut.write(plain + '\n');
+  await sleep(20);
+  const r1 = JSON.parse(toClient[0]).result.content;
+  ok('a result with notes gets them appended as text blocks', r1.length === 2 && r1[1].type === 'text' && r1[1].text.startsWith('### tandem: PDF captured'));
+  ok('a result without notes still passes byte for byte', toClient[1] === plain);
+}
+
+console.log('proxy probe (asks the MCP which tab is the agent\'s; the answer never reaches the client)');
+{
+  const s = { clientIn: new PassThrough(), clientOut: new PassThrough(), serverIn: new PassThrough(), serverOut: new PassThrough() };
+  const toClient = []; const toServer = [];
+  s.clientOut.on('data', (d) => { for (const l of String(d).split('\n').filter(Boolean)) toClient.push(l); });
+  s.serverIn.on('data', (d) => { for (const l of String(d).split('\n').filter(Boolean)) toServer.push(JSON.parse(l)); });
+  let locate; let located;
+  const emulator = { useLocator(fn) { locate = fn; }, async begin() { located = await locate('http://a.example/old'); }, end() {} };
+  proxyStdio({ ...s, emulator });
+  s.clientIn.write(msg({ jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'browser_evaluate', arguments: {} } }));
+  await sleep(20);
+  const probe = toServer[0];
+  ok('the probe goes to the MCP first: browser_tabs list, its own id', probe?.id === 'tandem-probe-1' && probe.params?.name === 'browser_tabs' && probe.params?.arguments?.action === 'list');
+  s.serverOut.write(msg({ jsonrpc: '2.0', id: probe.id, result: { content: [{ type: 'text', text: '### Result\n- 0: [](http://a.example/x)\n- 1: (current) [t](blob:http://a.example/1234)' }] } }));
+  await sleep(20);
+  ok('…then the agent\'s call; the probe answer is not forwarded', toServer[1]?.id === 5 && toClient.length === 0);
+  ok('the locator returns the (current) tab, blob: included', located === 'blob:http://a.example/1234');
+  s.serverOut.write(msg({ jsonrpc: '2.0', id: 5, result: { content: [{ type: 'text', text: '### Result\n1' }] } }));
+  await sleep(20);
+  const r = JSON.parse(toClient[0]).result.content;
+  ok('the tab moved: the agent\'s result gets the ### Page the probe swallowed', r.at(-1)?.text === '### Page\n- Page URL: blob:http://a.example/1234');
+}
+
+console.log('pdf-capture.mjs');
+{
+  const { isPdfResponse, pdfFileName, pdfCapturer } = await import('../scripts/pdf-capture.mjs');
+  const H = (o) => Object.entries(o).map(([name, value]) => ({ name, value }));
+  ok('200 application/pdf → captured', isPdfResponse({ responseStatusCode: 200, responseHeaders: H({ 'Content-Type': 'application/pdf' }) }));
+  ok('attachment named .pdf, octet-stream → captured', isPdfResponse({ responseStatusCode: 200, responseHeaders: H({ 'content-type': 'application/octet-stream', 'content-disposition': 'attachment; filename="factura.pdf"' }) }));
+  ok('html, a .csv attachment, a 404 PDF, a redirect → not', ![
+    { responseStatusCode: 200, responseHeaders: H({ 'content-type': 'text/html' }) },
+    { responseStatusCode: 200, responseHeaders: H({ 'content-disposition': 'attachment; filename="x.csv"' }) },
+    { responseStatusCode: 404, responseHeaders: H({ 'content-type': 'application/pdf' }) },
+    { responseStatusCode: 302, responseHeaders: H({ location: '/x.pdf' }) },
+  ].some(isPdfResponse));
+  const at = new Date('2026-10-30T12:00:00Z');
+  ok('file name from Content-Disposition', pdfFileName('https://sede.example/gen', H({ 'content-disposition': 'attachment; filename="Modelo 303.pdf"' }), at) === '2026-10-30T12-00-00-sede.example-Modelo_303.pdf');
+  const trav = pdfFileName('https://www.boe.es/pdfs/..%2F..%2Fetc%2Fpasswd', [], at);
+  ok('file name from the URL, never a path (one component, fixed prefix)', !/[\\/]/.test(trav) && trav.startsWith('2026-10-30T12-00-00-www.boe.es-') && trav.endsWith('.pdf'));
+  ok('file name from the URL path', pdfFileName('https://www.boe.es/pdfs/BOE-A-2022-10757.pdf', [], at) === '2026-10-30T12-00-00-www.boe.es-BOE-A-2022-10757.pdf');
+  ok('no name at all → document', pdfFileName('https://x.example/', [], at) === '2026-10-30T12-00-00-x.example-document.pdf');
+  const cap = pdfCapturer({ port: 9, budgetMs: 100, outDir: '/nonexistent' });
+  const res = (url) => ({ content: [{ type: 'text', text: `### Page\n- Page URL: ${url}` }] });
+  const n1 = cap.notes('browser_snapshot', {}, res('https://x.example/a.pdf'));
+  ok('a .pdf tab not captured → how to get it (tandem-pdf --url), once', n1.length === 1 && n1[0].includes("tandem-pdf --url 'https://x.example/a.pdf'") && cap.notes('browser_snapshot', {}, res('https://x.example/a.pdf')).length === 0);
+  ok('an html tab → no note', cap.notes('browser_snapshot', {}, res('https://x.example/a')).length === 0);
+  cap.close();
 }
 
 console.log(`\n${pass} ok, ${fail} failures`);

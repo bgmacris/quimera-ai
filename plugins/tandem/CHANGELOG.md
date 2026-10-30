@@ -4,6 +4,58 @@ Format based on [Keep a Changelog](https://keepachangelog.com/); semantic versio
 
 ## [Unreleased]
 
+## [0.9.7] — 2026-10-30
+
+### Added
+- **PDFs that reach the agent's tab are saved as they arrive — form POSTs and downloads included** (T297,
+  research R07). Chrome's PDF viewer is opaque to the MCP (snapshot 0 bytes, find nothing, evaluate an empty
+  `<body>`), and afterwards a PDF can't always be had back: the HTTP cache keeps no POST response, a GET to
+  the same URL returns another document, and the Network domain — so HAR and `tandem-intercept` — sees the
+  viewer's HTML stub, not the PDF (Chrome swaps the body; measured). The Fetch domain at the Response stage
+  does see the real bytes. The launcher (which already follows the agent's tab for focus emulation) now
+  intercepts documents in that tab while its tools run (+ the 15 s linger); a 2xx `application/pdf`, or an
+  `attachment` named `*.pdf`, is written to `output/pdf/` and the proxy appends `### tandem: PDF captured`
+  with the path to that tool call's result (or the next one). The response goes on unchanged: the human sees
+  the PDF in the viewer as before. Measured: +3 ms per navigation; if the launcher dies with a response
+  paused, Chrome lets it through. The agent reads the file with the Read tool (pages as images) or
+  pdftotext — no new dependency. The agent's tab only, as decided; `TANDEM_PDF_CAPTURE=0` turns it off.
+  Also covered: iframes (same- and cross-origin), `<embed>`/`<object>`, a PDF framed inside a cross-origin
+  iframe (child iframes are auto-attached and armed before they run; a paused child resumes if the
+  launcher dies — measured), and **`blob:` PDFs** a page makes — `URL.createObjectURL` is wrapped (a Proxy
+  over the native: `toString` still reads `[native code]`) in the agent's tab, and a blob typed as PDF, or an
+  untyped one whose first 5 bytes (a synchronous Range read, ~12 ms on 20 MB) are `%PDF-`, is read at once —
+  it dies with its page; an asynchronous sniff lost that race on an 8 MB blob (measured) — and handed over
+  through a CDP binding; what comes that way is page-controlled, so only a blob: URL of the exact form with
+  `%PDF-` bytes, under the size and count caps, is written. Cost measured on a 4 MB blob: ~200 ms.
+  The tab-following cycle is now shared (`scripts/agent-tab.mjs`) by focus emulation and the capture.
+  When the last URL a result showed matches no tab (the session's first call with several tabs, or the
+  tab moved on its own: a script navigation, a blob:, a redirect, the human), the proxy asks the MCP
+  itself (`browser_tabs list`, an id of its own, the answer never reaches the client) which tab is the
+  agent's. That answer marks the tab's change as reported inside the MCP, so when the tab moved the proxy
+  gives the agent's next result the `### Page` URL it would otherwise have lost (tab drift keeps warning).
+  The tab is now followed on any URL scheme (`extractTabUrl`), not only http(s). `TANDEM_DEBUG=1` logs
+  what the launcher does to its stderr.
+- **`tandem-pdf` on a tab that shows a PDF saves the original** (`pdf-source:<path>`) — for PDF tabs opened
+  before the capture or by the human: from Chrome's HTTP cache (`Page.getResourceContent`), else a same-URL
+  `fetch()` checked to be a PDF. `--url <url>` picks the agent's tab; `--text` adds a `pdftotext -layout`
+  copy. When a result shows a `.pdf` tab that was not captured, the proxy says how to get it.
+  Tests: `tests/pdf-capture-e2e.mjs` (e2e [3e], the real MCP: the session's first call with several tabs,
+  POST, GET, download, blob: in a new tab and in the same tab, a PDF inside a cross-origin iframe, forged
+  binding calls writing nothing, ordinary pages untouched), PDF steps in `tests/e2e.sh` [3], unit tests in
+  `tests/focus.test.mjs` (proxy notes and probe, detection, file names).
+
+### Fixed
+- **`tandem-pdf` on a PDF tab printed Chrome's viewer frame** ("doc.pdf 1/1"), not the document, and said
+  nothing. Now it saves the original, or fails with the reason.
+
+### Known limits
+- Not captured: what arrives outside the agent's tools' run + 15 s (the scope chosen); a blob URL made inside a
+  worker (a worker's blob turned into a URL by the page is captured); a blob made before the capture armed
+  (the page loaded while the agent wasn't working). A POST-generated PDF missed that way can't be had
+  afterwards. While the tab is held, an exact comparison can tell the wrapper from the native
+  (`function () { [native code] }` vs `function createObjectURL() { [native code] }`). Chrome's viewer holds
+  the bytes but hands its stream out once (`mimeHandlerPrivate.getStreamInfo`) — not a route.
+
 ## [0.9.6] — 2026-10-30
 
 Findings of the two real-use benchmarks of 2026-10-30.

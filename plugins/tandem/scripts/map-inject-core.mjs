@@ -183,13 +183,16 @@ function responseLines(input) {
   return blocks.map((b) => (typeof b === 'string' ? b : b?.text || '')).join('\n').split(/\r?\n/);
 }
 
+const HTTP_URL = /https?:\/\/\S+/;
+const ANY_URL = /[a-z][a-z0-9+.-]*:\S+/;
+
 // undefined = no `### Page` section; null = a section without a usable URL.
-function pageSectionUrl(lines) {
+function pageSectionUrl(lines, url = HTTP_URL) {
   const at = lines.indexOf('### Page');
   if (at < 0) return undefined;
   for (const l of lines.slice(at + 1)) {
     if (l.startsWith('### ')) break;
-    const m = l.match(/^- Page URL: (https?:\/\/\S+)$/);
+    const m = l.match(new RegExp(`^- Page URL: (${url.source})$`));
     if (m) return m[1];
   }
   return null;
@@ -200,11 +203,26 @@ function pageSectionUrl(lines) {
 // the TITLE is page-controlled (and the path, via pushState): a title like `x](https://other-site/`
 // would forge the URL. document.title collapses newlines, so a forged LINE can't appear, but take the
 // URL only when it is unambiguous — exactly one current line with exactly one `](` — else inject nothing.
-function currentTabUrl(lines) {
+function currentTabUrl(lines, url = HTTP_URL) {
   const cur = lines.filter((l) => /^- \d+: \(current\) \[/.test(l));
   if (cur.length !== 1 || cur[0].split('](').length !== 2) return null;
-  const m = cur[0].match(/\]\((https?:\/\/\S+)\)( \[crashed\])?$/);
+  const m = cur[0].match(new RegExp(`\\]\\((${url.source})\\)( \\[crashed\\])?$`));
   return m ? m[1] : null;
+}
+
+/**
+ * Where the tab IS, any scheme — for following the agent's tab (agent-tab.mjs), whose URL can be a
+ * blob:, data: or about: one that matches no profile. Same trust rules as extractPageUrl / the tabs list.
+ */
+export function extractTabUrl(input) {
+  if (!input || typeof input !== 'object') return null;
+  const tool = String(input.tool_name || input.toolName || '');
+  if (/browser_(console_messages|run_code\w*|network_requests?|find)$/.test(tool)) return null;
+  const lines = responseLines(input);
+  if (!lines) return null;
+  const url = pageSectionUrl(lines, ANY_URL);
+  if (url !== undefined) return url;
+  return /browser_tabs$/.test(tool) ? currentTabUrl(lines, ANY_URL) : null;
 }
 
 /** Extract the session id from a hook's stdin JSON (Claude / Cursor / OpenCode shapes). */

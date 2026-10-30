@@ -145,6 +145,19 @@ website breaks something. Mark each rule as [verified] (lived) or [hypothesis] (
   denied … outside allowed roots". A RELATIVE name lands in the MCP's cwd (clutters it). Rule: pass an
   ABSOLUTE path INSIDE `~/.claude/tandem/output/`, or omit filename (auto-named into the output dir).
 
+### PDF in a tab
+- [verified 2026-10-30, 0.0.83] Chrome's PDF viewer is OPAQUE to the browser tools: `browser_snapshot` is
+  empty, `browser_find` finds nothing, `browser_evaluate` sees an empty `<body>`. Don't probe it.
+- A PDF that reaches YOUR tab while your tools run — a navigation, a form POST, a download link, an
+  iframe/embed, a `blob:` PDF the page builds — is saved as it arrives, and the result of that call (or the next) carries `### tandem: PDF captured` with the path.
+  Read that file: the Read tool shows pages as images (tables, figures, scans; `pages: "1-5"`, max 20 per
+  call); `pdftotext -layout` gives exact, searchable text. Long PDF: text to a file, grep, then Read only the
+  pages that matter.
+- A PDF tab that was NOT captured (it arrived while you weren't running tools, or the human opened it): the result says
+  so; `tandem-pdf --url '<the Page URL>'` saves it from Chrome's cache (`pdf-source:<path>`; `--text` adds a
+  pdftotext copy). A POST-generated PDF opened that way can't be had afterwards — ask the human to save it
+  from the viewer; re-sending the POST only if sending it twice is harmless (a report, not a filing), asking first.
+
 ### SPA / JS-rendered content
 - [verified] `browser_navigate` waits for the initial render (Playwright waits for 'load'): on
   quotes.toscrape.com/js the 10 JS-painted quotes were ready with no extra wait. You only

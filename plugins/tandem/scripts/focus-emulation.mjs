@@ -17,78 +17,70 @@
 // tab back to `hidden`; another session switching it off does NOT), so a hook can't hold it — the launcher
 // can: it lives as long as the MCP. A crash releases it by itself. Several sessions don't interfere.
 //
-// Which tab: the MCP's current one isn't exposed, so the same guess as sandbox-guard.mjs — the pages on
-// the last URL a result showed (map-inject-core.mjs parser: `### Page` / `(current)`), else the only page.
-// Unknown → nothing (what tandem did before). Only those pages: the human's other tabs are not touched.
-// TANDEM_FOCUS_EMULATION=0 turns it off (the launcher then pipes nothing); TANDEM_FOCUS_LINGER_MS.
+// Which tab, and the on-while-working/linger cycle: agent-tab.mjs (shared with pdf-capture.mjs).
+// TANDEM_FOCUS_EMULATION=0 turns it off; TANDEM_FOCUS_LINGER_MS.
 
-import { browserWsUrl, connect, listPages } from './cdp.mjs';
-import { extractNavigateUrl } from './map-inject-core.mjs';
-import { candidatePages } from './sandbox-guard.mjs';
+import { DEFAULT_LINGER_MS, agentTabHold } from './agent-tab.mjs';
+import { extractTabUrl } from './map-inject-core.mjs';
 
-export const DEFAULT_LINGER_MS = 15_000;
+export { DEFAULT_LINGER_MS };
 
 export function focusEmulator({ port, lingerMs = DEFAULT_LINGER_MS, budgetMs = 500, log = () => {} }) {
-  let client = null;
-  let lastUrl = null;
-  let busy = 0;
-  let timer = null;
-  const held = new Map();   // targetId → sessionId with emulation on
+  return agentTabHold({
+    port, lingerMs, budgetMs, log, label: 'focus',
+    onAttach: (c, sessionId) => c.call('Emulation.setFocusEmulationEnabled', { enabled: true }, sessionId),
+  });
+}
 
-  async function ensureClient() {
-    if (client) return client;
-    const c = await connect(await browserWsUrl(port, budgetMs), { timeoutMs: budgetMs });
-    c.onClose(() => { if (client === c) { client = null; held.clear(); } });   // Chrome gone: nothing held
-    return (client = c);
-  }
-  // Detaching is what switches it off (session-scoped).
-  const release = (id) => { const s = held.get(id); held.delete(id); client?.call('Target.detachFromTarget', { sessionId: s }).catch(() => {}); };
-  const releaseAll = () => { for (const id of [...held.keys()]) release(id); };
-
-  async function enable() {
-    const want = new Set(candidatePages(await listPages(port, budgetMs), lastUrl).map((p) => p.id));
-    for (const id of held.keys()) if (!want.has(id)) release(id);   // no longer the current tab
-    if (!want.size) return;
-    const c = await ensureClient();
-    for (const id of want) {
-      if (held.has(id)) continue;
-      const { sessionId } = await c.call('Target.attachToTarget', { targetId: id, flatten: true });
-      held.set(id, sessionId);
-      await c.call('Emulation.setFocusEmulationEnabled', { enabled: true }, sessionId);
-      // Past budgetMs the call went ahead; if it already ended AND the linger fired, nobody will release this.
-      if (busy === 0 && !timer) release(id);
-    }
-  }
-
+// Several watchers behind one proxy: begin() in parallel (each bounded by its own budget), end() to all,
+// and the notes each wants added to the response.
+export function combine(...watchers) {
+  const ws = watchers.filter(Boolean);
   return {
-    // Before a tool call is forwarded. Never throws, never waits past budgetMs: a slow or absent Chrome
-    // must not delay the call more than that (autostart.mjs reports a missing browser).
-    async begin() {
-      busy++; clearTimeout(timer); timer = null;
-      const done = enable().catch((e) => log(`focus: ${e.message}`));
-      await Promise.race([done, new Promise((r) => setTimeout(r, budgetMs).unref())]);
-    },
-    // After its response. `name`/`args`/`result` update the current-tab guess.
-    end(name, args, result) {
-      const url = extractNavigateUrl({ tool_name: name, tool_input: args || {}, tool_response: result });
-      if (url) lastUrl = url;
-      if (--busy > 0) return;
-      busy = 0;
-      timer = setTimeout(() => { timer = null; releaseAll(); }, lingerMs); timer.unref();
-    },
-    close() { clearTimeout(timer); client?.close(); },
-    get held() { return held.size; },
+    async begin() { await Promise.all(ws.map((w) => w.begin())); },
+    end(name, args, result) { for (const w of ws) w.end(name, args, result); },
+    notes(name, args, result) { return ws.flatMap((w) => (w.notes ? w.notes(name, args, result) : [])); },
+    useLocator(fn) { for (const w of ws) w.useLocator?.(fn); },
+    close() { for (const w of ws) w.close?.(); },
   };
 }
 
 // Transparent stdio proxy between the MCP client and the MCP server. MCP's stdio transport is one
 // JSON-RPC message per line, no embedded newlines; every non-empty line is forwarded byte for byte, in order —
-// parsing is only to watch tools/call. A request is held back only while begin() runs.
+// parsing is only to watch tools/call. A request is held back only while begin() runs. The one exception
+// to byte for byte: a tools/call result the emulator has notes for (emulator.notes) gets them appended
+// as text blocks — e.g. "a PDF was captured" (pdf-capture.mjs). And the proxy may ask the MCP itself
+// (ids `tandem-probe-N`, answers never reach the client): `browser_tabs list`, to name the agent's tab
+// before any result has (agent-tab.mjs). Every MCP response marks a tab's header as reported, so the probe
+// swallows a change the agent never saw (and tab-drift.mjs warns on) — and `browser_tabs` doesn't print
+// `### Page` itself (verified, 0.0.83). When the probe finds the tab on another URL than the last one known,
+// the agent's next result gets `### Page` / `- Page URL:` with that URL (the MCP's own answer), unless it
+// has its own section.
 export function proxyStdio({ clientIn, clientOut, serverIn, serverOut, emulator }) {
   const calls = new Map();   // request id → { name, args }
+  const probes = new Map();  // our own request id → resolve
+  let probeId = 0;
+  const ask = (method, params, ms = 5000) => new Promise((resolve) => {
+    const id = `tandem-probe-${++probeId}`;
+    const t = setTimeout(() => { probes.delete(id); resolve(null); }, ms); t.unref?.();
+    probes.set(id, (m) => { clearTimeout(t); resolve(m); });
+    serverIn.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
+  });
+  // One question in flight at a time: every hold asks on the same begin().
+  let asking = null;
+  let owed = null;   // the `### Page` section the probe took from the agent
+  emulator.useLocator?.((prev) => (asking ??= ask('tools/call', { name: 'browser_tabs', arguments: { action: 'list' } })
+    .then((m) => {
+      const url = extractTabUrl({ tool_name: 'browser_tabs', tool_response: m?.result ?? null });
+      if (prev && url && url !== prev) owed = `### Page\n- Page URL: ${url}`;
+      return url;
+    })
+    .finally(() => { asking = null; })));
+  // → the notes to add to this response (none for a cancelled call: its response never comes).
   const finish = (id, result) => {
-    const c = calls.get(id); if (!c) return;
+    const c = calls.get(id); if (!c) return [];
     calls.delete(id); emulator.end(c.name, c.args, result);
+    return result ? (emulator.notes?.(c.name, c.args, result) || []) : [];
   };
   let queue = Promise.resolve();
   lines(clientIn, (line) => {
@@ -102,13 +94,28 @@ export function proxyStdio({ clientIn, clientOut, serverIn, serverOut, emulator 
     });
   }, () => queue.then(() => serverIn.end()));
   lines(serverOut, (line) => {
+    let out = line;
     try {
       const m = JSON.parse(line);
-      if (!m.method && m.id !== undefined) finish(m.id, m.result ?? null);   // a response, not a server request
+      if (!m.method && probes.has(m.id)) { const r = probes.get(m.id); probes.delete(m.id); r(m); return; }   // ours: not for the client
+      if (!m.method && m.id !== undefined) {   // a response, not a server request
+        const isCall = calls.has(m.id);
+        const notes = finish(m.id, m.result ?? null);
+        if (isCall && owed && Array.isArray(m.result?.content)) {
+          if (!hasPageSection(m.result)) notes.unshift(owed);
+          owed = null;
+        }
+        if (notes.length && Array.isArray(m.result?.content)) {
+          m.result.content.push(...notes.map((text) => ({ type: 'text', text })));
+          out = JSON.stringify(m);
+        }
+      }
     } catch { /* forward anyway */ }
-    clientOut.write(line + '\n');
+    clientOut.write(out + '\n');
   });
 }
+
+const hasPageSection = (result) => (result?.content || []).some((c) => /(^|\n)### Page(\r?\n|$)/.test(c?.text || ''));
 
 function lines(stream, onLine, onEnd = () => {}) {
   let buf = '';

@@ -75,6 +75,27 @@ check "pdf: produced a PDF"  "case '$PDF' in pdf:*) head -c4 '${PDF#pdf:}' | gre
 PNG="$("$ROOT/bin/tandem-pdf" --png)"
 # Magic bytes via node: grep does not reliably match inside a binary header (\x89PNG\r\n…).
 check "png: produced a PNG"  "case '$PNG' in png:*) node -e \"process.exit(require('fs').readFileSync('${PNG#png:}').subarray(1,4).toString()==='PNG'?0:1)\";; *) false;; esac"
+# A tab that SHOWS a PDF: the original document, not a print of Chrome's viewer frame.
+navigate "$SITE/doc.pdf"
+curl -s "$SITE/doc.pdf" -o "$TMP/served.pdf"
+SRC="$("$ROOT/bin/tandem-pdf" --url "$SITE/doc.pdf")"
+check "pdf tab: saved as the original (pdf-source:)" "case '$SRC' in pdf-source:*) true;; *) false;; esac"
+check "pdf tab: byte for byte what the server sent" "cmp -s '${SRC#pdf-source:}' '$TMP/served.pdf'"
+if command -v pdftotext >/dev/null; then
+  check "pdf tab --text: its text" "\"$ROOT/bin/tandem-pdf\" --url '$SITE/doc.pdf' --text | sed -n 's/^text://p' | xargs grep -q 'Hello tandem'"
+fi
+navigate "$SITE/nostore.pdf"
+NS="$("$ROOT/bin/tandem-pdf" --url "$SITE/nostore.pdf")"
+check "pdf tab not in the cache (no-store): fetched again, same bytes" "cmp -s '${NS#pdf-source:}' '$TMP/served.pdf'"
+navigate "$SITE/pdf-form"
+cdp "await c.call('Runtime.evaluate', { expression: \"document.body.innerHTML='<form method=post action=/gen-pdf><button>go</button></form>'; document.forms[0].submit()\" }); await new Promise((r) => setTimeout(r, 1500));"
+N0="$(find "$TANDEM_DATA_DIR/output" -type f | wc -l)"
+# shellcheck disable=SC2034  # POST_OUT is read inside check's eval string
+POST_OUT="$("$ROOT/bin/tandem-pdf" --url "$SITE/gen-pdf" 2>&1)"; POST_RC=$?
+check "PDF from a POST: refused (rc≠0), says why" "[ $POST_RC -ne 0 ] && printf '%s' \"\$POST_OUT\" | grep -q 'came from a form POST'"
+check "PDF from a POST: nothing saved" "[ \"\$(find '$TANDEM_DATA_DIR/output' -type f | wc -l)\" = '$N0' ]"
+check "--url with no such tab: clear error" "\"$ROOT/bin/tandem-pdf\" --url '$SITE/nope' 2>&1 | grep -q 'no tab on'"
+navigate "$SITE/"   # leave the PDF viewer: [3b] needs the tab on its page right after its own navigate
 
 echo "[3b] sandbox guard (calls that would hang on a page that cannot run scripts)"
 guard() {  # $1 = tool, $2 = tool_input JSON → prints the autostart hook's output
@@ -100,6 +121,9 @@ check "focus-e2e.mjs green" "node '$HERE/focus-e2e.mjs' '$SITE'"
 
 echo "[3d] tab drift (someone else moves the agent's tab, the real MCP reports it)"
 check "drift-e2e.mjs green" "node '$HERE/drift-e2e.mjs' '$SITE'"
+
+echo "[3e] PDF capture (the real MCP: POST, GET and download PDFs reaching the agent's tab)"
+check "pdf-capture-e2e.mjs green" "node '$HERE/pdf-capture-e2e.mjs' '$SITE'"
 
 echo "[4] stop"
 check "stop" "'$ROOT/scripts/chrome-daemon.sh' stop | grep -q stopped"

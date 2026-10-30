@@ -16,15 +16,17 @@
 //   TANDEM_MCP_ARGS    extra flags, appended LAST so they override these (whitespace-split)
 // TANDEM_MCP_DRYRUN=1 prints the command instead of running it (tests/CI).
 //
-// The MCP's stdio goes through a transparent proxy (focus-emulation.mjs) that keeps the agent's tab
-// painting while its tools run — without it a click on a background/covered/minimized tab hangs.
-// TANDEM_FOCUS_EMULATION=0 → plain stdio inherit, as before 0.9.5.
+// The MCP's stdio goes through a transparent proxy (focus-emulation.mjs) that, on the agent's tab while
+// its tools run, keeps it painting — without it a click on a background/covered/minimized tab hangs —
+// and saves the PDFs it receives (pdf-capture.mjs). TANDEM_FOCUS_EMULATION=0 / TANDEM_PDF_CAPTURE=0 turn
+// each off; both off → plain stdio inherit, as before 0.9.5.
 
 import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { cdpPort, dataDir, ensureDataDir } from './paths.mjs';
-import { DEFAULT_LINGER_MS, focusEmulator, proxyStdio } from './focus-emulation.mjs';
+import { DEFAULT_LINGER_MS, combine, focusEmulator, proxyStdio } from './focus-emulation.mjs';
+import { pdfCapturer } from './pdf-capture.mjs';
 import { isMain } from './is-main.mjs';
 
 export const MCP_VERSION_PIN = '0.0.83';
@@ -50,15 +52,23 @@ if (isCli) {
   if (process.env.TANDEM_MCP_DRYRUN === '1') { process.stdout.write(JSON.stringify({ cmd: win ? 'npx.cmd' : 'npx', args }) + '\n'); process.exit(0); }
   try { mkdirSync(join(ensureDataDir(), 'output'), { recursive: true }); } catch { /* the MCP reports it */ }
   const focus = process.env.TANDEM_FOCUS_EMULATION !== '0';
-  const stdio = focus ? ['pipe', 'pipe', 'inherit'] : 'inherit';
+  const capture = process.env.TANDEM_PDF_CAPTURE !== '0';
+  const proxied = focus || capture;
+  const stdio = proxied ? ['pipe', 'pipe', 'inherit'] : 'inherit';
   // Windows: npx is a .cmd shim; Node refuses to spawn .cmd/.bat without a shell (CVE-2024-27980),
   // so go through cmd.exe with explicit quoting. Elsewhere: plain spawn, no shell.
   const child = win
     ? spawn(['npx.cmd', ...args].map(winQuote).join(' '), { stdio, shell: true, windowsHide: true })
     : spawn('npx', args, { stdio });
-  if (focus) {
+  if (proxied) {
     const linger = Number(process.env.TANDEM_FOCUS_LINGER_MS);
-    const emulator = focusEmulator({ port: cdpPort(), lingerMs: Number.isFinite(linger) && linger >= 0 ? linger : DEFAULT_LINGER_MS });
+    const lingerMs = Number.isFinite(linger) && linger >= 0 ? linger : DEFAULT_LINGER_MS;
+    // TANDEM_DEBUG=1: what the holds do, on stderr (Claude Code keeps an MCP's stderr in its logs).
+    const log = process.env.TANDEM_DEBUG === '1' ? (m) => process.stderr.write(`tandem: ${m}\n`) : undefined;
+    const emulator = combine(
+      focus && focusEmulator({ port: cdpPort(), lingerMs, log }),
+      capture && pdfCapturer({ port: cdpPort(), lingerMs, outDir: join(dataDir(), 'output', 'pdf'), log }),
+    );
     proxyStdio({ clientIn: process.stdin, clientOut: process.stdout, serverIn: child.stdin, serverOut: child.stdout, emulator });
     child.stdin.on('error', () => {});   // the MCP died mid-write: its exit below ends us
   }
