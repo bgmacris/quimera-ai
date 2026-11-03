@@ -16,30 +16,61 @@
 //   TANDEM_MCP_ARGS    extra flags, appended LAST so they override these (whitespace-split)
 // TANDEM_MCP_DRYRUN=1 prints the command instead of running it (tests/CI).
 //
-// The MCP's stdio goes through a transparent proxy (focus-emulation.mjs) that, on the agent's tab while
-// its tools run, keeps it painting — without it a click on a background/covered/minimized tab hangs —
-// and saves the PDFs it receives (pdf-capture.mjs). TANDEM_FOCUS_EMULATION=0 / TANDEM_PDF_CAPTURE=0 turn
-// each off; both off → plain stdio inherit, as before 0.9.5.
+// MULTI-SESSION (default; TANDEM_MULTISESSION=0 turns it off — the 0.9.x launcher below): one MCP child PER
+// AGENT (main + each subagent), each connected to Chrome through tandem's CDP relay (cdp-relay.mjs), so it
+// sees only its own tabs; the router (agent-router.mjs) sends each call to its agent's child by the `agent`
+// that autostart.mjs writes into it. "main" starts with the launcher via npx (it installs the pin on its
+// first run, and the handshake must not wait); the others on their first call, via `node <cli.js>` of the
+// same pin when it resolves (npx keeps a ~100 MB npm process alive per child — R05 §M2), npx otherwise.
+// If the relay can't start, it falls back to single mode, straight to Chrome.
+//
+// Per agent, the proxy keeps the agent's tab painting while its tools run (focus-emulation.mjs) — without
+// it a click on a background/covered/minimized tab hangs — and saves the PDFs it receives
+// (pdf-capture.mjs). TANDEM_FOCUS_EMULATION=0 / TANDEM_PDF_CAPTURE=0 turn each off; in single mode, both
+// off → plain stdio inherit, as before 0.9.5.
 
-import { spawn } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { execFile, spawn } from 'node:child_process';
+import { mkdirSync, readFileSync, realpathSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 import { cdpPort, dataDir, ensureDataDir } from './paths.mjs';
+import { routeStdio } from './agent-router.mjs';
+import { startRelay } from './cdp-relay.mjs';
 import { DEFAULT_LINGER_MS, combine, focusEmulator, proxyStdio } from './focus-emulation.mjs';
 import { pdfCapturer } from './pdf-capture.mjs';
 import { isMain } from './is-main.mjs';
 
 export const MCP_VERSION_PIN = '0.0.83';
 
-export function mcpArgs(env = process.env) {
+export const mcpVersion = (env = process.env) => env.TANDEM_MCP_VERSION || MCP_VERSION_PIN;
+
+// npx form: ['-y', '@playwright/mcp@<pin>', ...flags]. cdpEndpoint: the relay's, per agent (multi-session).
+export function mcpArgs(env = process.env, { cdpEndpoint } = {}) {
   const dir = env.TANDEM_DATA_DIR || dataDir();
   const extra = (env.TANDEM_MCP_ARGS || '').trim().split(/\s+/).filter(Boolean);
-  return ['-y', `@playwright/mcp@${env.TANDEM_MCP_VERSION || MCP_VERSION_PIN}`,
-    '--cdp-endpoint', `http://127.0.0.1:${cdpPort(dir)}`,
+  return ['-y', `@playwright/mcp@${mcpVersion(env)}`,
+    '--cdp-endpoint', cdpEndpoint || `http://127.0.0.1:${cdpPort(dir)}`,
     '--output-dir', join(dir, 'output'),
     '--file-paths', 'absolute', '--no-webmcp',
     '--output-max-size', '52428800', '--timeout-action', '10000',
     ...extra];
+}
+
+export const multiSession = (env = process.env) => env.TANDEM_MULTISESSION !== '0';
+
+// The pinned MCP's cli.js, as npx installed it, to start more children with plain `node` (R05 §15.2:
+// 0.25–0.42 s with the cache warm). → path, or null (Windows: .bin is a .cmd shim; any doubt → null, npx).
+export function resolveMcpCli(version, { timeoutMs = 60_000 } = {}) {
+  if (process.platform === 'win32') return Promise.resolve(null);
+  return new Promise((resolve) => {
+    execFile('npx', ['-y', '-p', `@playwright/mcp@${version}`, '-c', 'command -v playwright-mcp'], { timeout: timeoutMs }, (err, out) => {
+      if (err) return resolve(null);
+      try {
+        const cli = realpathSync(String(out).trim().split('\n').pop());
+        const pkg = JSON.parse(readFileSync(join(dirname(cli), 'package.json'), 'utf8'));
+        resolve(basename(cli) === 'cli.js' && pkg.name === '@playwright/mcp' && pkg.version === version ? cli : null);
+      } catch { resolve(null); }
+    });
+  });
 }
 
 // cmd.exe quoting for the Windows `npx.cmd` shim (data dirs live under "C:\Users\First Last\…").
@@ -49,33 +80,66 @@ const isCli = isMain(import.meta.url);
 if (isCli) {
   const args = mcpArgs();
   const win = process.platform === 'win32';
-  if (process.env.TANDEM_MCP_DRYRUN === '1') { process.stdout.write(JSON.stringify({ cmd: win ? 'npx.cmd' : 'npx', args }) + '\n'); process.exit(0); }
+  if (process.env.TANDEM_MCP_DRYRUN === '1') { process.stdout.write(JSON.stringify({ cmd: win ? 'npx.cmd' : 'npx', args, multiSession: multiSession() }) + '\n'); process.exit(0); }
   try { mkdirSync(join(ensureDataDir(), 'output'), { recursive: true }); } catch { /* the MCP reports it */ }
   const focus = process.env.TANDEM_FOCUS_EMULATION !== '0';
   const capture = process.env.TANDEM_PDF_CAPTURE !== '0';
-  const proxied = focus || capture;
-  const stdio = proxied ? ['pipe', 'pipe', 'inherit'] : 'inherit';
+  // TANDEM_DEBUG=1: what the holds and the router do, on stderr (Claude Code keeps an MCP's stderr in its logs).
+  const log = process.env.TANDEM_DEBUG === '1' ? (m) => process.stderr.write(`tandem: ${m}\n`) : () => {};
+  const linger = Number(process.env.TANDEM_FOCUS_LINGER_MS);
+  const lingerMs = Number.isFinite(linger) && linger >= 0 ? linger : DEFAULT_LINGER_MS;
+  const emulatorFor = (agent) => {
+    const tag = agent === 'main' ? log : (m) => log(`[${agent}] ${m}`);
+    return combine(
+      focus && focusEmulator({ port: cdpPort(), lingerMs, log: tag }),
+      capture && pdfCapturer({ port: cdpPort(), lingerMs, outDir: join(dataDir(), 'output', 'pdf'), log: tag }),
+    );
+  };
   // Windows: npx is a .cmd shim; Node refuses to spawn .cmd/.bat without a shell (CVE-2024-27980),
   // so go through cmd.exe with explicit quoting. Elsewhere: plain spawn, no shell.
-  const child = win
-    ? spawn(['npx.cmd', ...args].map(winQuote).join(' '), { stdio, shell: true, windowsHide: true })
-    : spawn('npx', args, { stdio });
-  if (proxied) {
-    const linger = Number(process.env.TANDEM_FOCUS_LINGER_MS);
-    const lingerMs = Number.isFinite(linger) && linger >= 0 ? linger : DEFAULT_LINGER_MS;
-    // TANDEM_DEBUG=1: what the holds do, on stderr (Claude Code keeps an MCP's stderr in its logs).
-    const log = process.env.TANDEM_DEBUG === '1' ? (m) => process.stderr.write(`tandem: ${m}\n`) : undefined;
-    const emulator = combine(
-      focus && focusEmulator({ port: cdpPort(), lingerMs, log }),
-      capture && pdfCapturer({ port: cdpPort(), lingerMs, outDir: join(dataDir(), 'output', 'pdf'), log }),
-    );
-    proxyStdio({ clientIn: process.stdin, clientOut: process.stdout, serverIn: child.stdin, serverOut: child.stdout, emulator });
-    child.stdin.on('error', () => {});   // the MCP died mid-write: its exit below ends us
-  }
-  child.on('error', (e) => {
+  const spawnNpx = (a, stdio) => (win
+    ? spawn(['npx.cmd', ...a].map(winQuote).join(' '), { stdio, shell: true, windowsHide: true })
+    : spawn('npx', a, { stdio }));
+  const onSpawnError = (e) => {
     process.stderr.write(`tandem: ERROR — cannot run npx (${e.message}). Node/npx must be in PATH.\n`);
     process.exit(127);
-  });
-  for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { try { child.kill(sig); } catch {} });
-  child.on('exit', (code, signal) => process.exit(signal ? 1 : (code ?? 0)));
+  };
+
+  let relay = null;
+  if (multiSession()) {
+    try { relay = await startRelay({ port: cdpPort(), dataDir: dataDir(), log: (m) => log(`relay: ${m}`) }); }
+    catch (e) { process.stderr.write(`tandem: multi-session relay could not start (${e.message}); one MCP for the whole session, as before.\n`); }
+  }
+
+  if (relay) {
+    let cli = null;
+    const children = new Set();
+    const spawnChild = (agent) => {
+      const a = mcpArgs(process.env, { cdpEndpoint: relay.endpoint(agent) });
+      const c = agent !== 'main' && cli ? spawn(process.execPath, [cli, ...a.slice(2)], { stdio: ['pipe', 'pipe', 'inherit'] }) : spawnNpx(a, ['pipe', 'pipe', 'inherit']);
+      children.add(c);
+      c.on('exit', () => children.delete(c));
+      if (agent === 'main') {
+        c.on('error', onSpawnError);
+        c.on('exit', (code, signal) => { for (const o of children) { try { o.kill(); } catch {} } process.exit(signal ? 1 : (code ?? 0)); });
+      } else c.on('error', (e) => log(`router: agent ${agent}: cannot start its MCP (${e.message})`));
+      log(`router: started the MCP of agent ${agent} (${agent !== 'main' && cli ? 'node cli.js' : 'npx'})`);
+      return c;
+    };
+    routeStdio({ clientIn: process.stdin, clientOut: process.stdout, spawnChild, emulatorFor, multi: true, log });
+    // After main is up: later children skip npx if this resolves (it never delays the handshake).
+    resolveMcpCli(mcpVersion()).then((p) => { cli = p; log(`router: MCP cli ${p ? 'resolved' : 'not resolved (children via npx)'}`); });
+    for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { for (const c of children) { try { c.kill(sig); } catch {} } });
+  } else {
+    const proxied = focus || capture;
+    const stdio = proxied ? ['pipe', 'pipe', 'inherit'] : 'inherit';
+    const child = spawnNpx(args, stdio);
+    if (proxied) {
+      proxyStdio({ clientIn: process.stdin, clientOut: process.stdout, serverIn: child.stdin, serverOut: child.stdout, emulator: emulatorFor('main') });
+      child.stdin.on('error', () => {});   // the MCP died mid-write: its exit below ends us
+    }
+    child.on('error', onSpawnError);
+    for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { try { child.kill(sig); } catch {} });
+    child.on('exit', (code, signal) => process.exit(signal ? 1 : (code ?? 0)));
+  }
 }

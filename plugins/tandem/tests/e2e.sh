@@ -115,6 +115,10 @@ check "normal page: evaluate allowed"              "! guard browser_evaluate '{\
 # a stale URL (the tab moved on, no PostToolUse seen) that no tab is on, with several tabs: can't tell → allow
 remember "$SITE/sandboxed"
 check "stale URL, no tab on it: allowed"           "! guard browser_evaluate '{\"function\":\"() => 1\"}' | grep -q '\"deny\"'"
+# multi-session: every call leaves the hook tagged with its agent (the launcher's router routes on it)
+check "tag: main session → agent main"            "guard browser_snapshot '{}' | grep -q '\"updatedInput\":{\"agent\":\"main\"}'"
+check "tag: subagent → its agent_id"               "printf '%s' '{\"tool_name\":\"mcp__plugin_tandem_tandem__browser_snapshot\",\"agent_id\":\"a0e815c57e8d30939\",\"permission_mode\":\"default\",\"tool_input\":{}}' | TANDEM_AUTOSTART=1 node '$ROOT/scripts/autostart.mjs' | grep -q '\"agent\":\"a0e815c57e8d30939\"'"
+check "tag: TANDEM_MULTISESSION=0 → none"          "! TANDEM_MULTISESSION=0 guard browser_snapshot '{}' | grep -q updatedInput"
 
 echo "[3c] focus emulation (the real MCP clicks on a background tab)"
 check "focus-e2e.mjs green" "node '$HERE/focus-e2e.mjs' '$SITE'"
@@ -143,7 +147,7 @@ check "start with a stale lock from another hostname" "'$ROOT/scripts/chrome-dae
 # approved call (0.9.2 asked first and exited — the approved call then hit ECONNREFUSED).
 GATE_IN="{\"tool_name\":\"mcp__plugin_tandem_tandem__browser_evaluate\",\"permission_mode\":\"default\",\"tool_input\":{\"function\":\"() => 1\",\"filename\":\"$TANDEM_DATA_DIR/sites/x.md\"}}"
 check "autostart: gate asks AND Chrome was started first" \
-  "printf '%s' '$GATE_IN' | TANDEM_AUTOSTART=1 node '$ROOT/scripts/autostart.mjs' | grep -q '\"ask\"' && curl -s --max-time 2 http://127.0.0.1:$TANDEM_CDP_PORT/json/version >/dev/null"
+  "printf '%s' '$GATE_IN' | TANDEM_AUTOSTART=1 node '$ROOT/scripts/autostart.mjs' | grep '\"ask\"' | grep -q '\"agent\":\"main\"' && curl -s --max-time 2 http://127.0.0.1:$TANDEM_CDP_PORT/json/version >/dev/null"
 "$ROOT/scripts/chrome-daemon.sh" stop >/dev/null
 
 

@@ -257,6 +257,13 @@ else
   bad "tab-owners.test.mjs"
 fi
 
+echo "[18] multi-session router (node tests/router.test.mjs)"
+if run_suite "$HERE/router.test.mjs"; then
+  ok "router.test.mjs green"
+else
+  bad "router.test.mjs"
+fi
+
 # hooks.json must parse and point only at scripts that exist and are executable.
 check "hooks.json is valid JSON" "node -e 'JSON.parse(require(\"fs\").readFileSync(\"$ROOT/hooks/hooks.json\",\"utf8\"))'"
 # Every "${CLAUDE_PLUGIN_ROOT}"/… in a command (also inside a `sh -c` prefilter) must be executable.

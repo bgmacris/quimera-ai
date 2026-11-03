@@ -53,10 +53,16 @@ async function run(label, env) {
     const props = tools.find((t) => t.name === 'browser_click').inputSchema.properties;
     const url = `${SITE}/focus?run=${label}`;
     await m.call('browser_navigate', { url });
-    // Another tab in front: ours goes to the background, as when the human switches tabs.
+    // Another tab in front IN ITS WINDOW: ours goes to the background, as when the human switches tabs.
+    // Multi-session: each agent's tab is in a window of its own (cdp-relay.mjs, newWindow) — activating it
+    // first makes that the window a new tab opens in. Single mode: it already is.
+    const { targetInfos } = await cdp.call('Target.getTargets');
+    const mine = targetInfos.find((x) => x.type === 'page' && x.url === url);
+    if (mine) await cdp.call('Target.activateTarget', { targetId: mine.targetId });
     await cdp.call('Target.createTarget', { url: `${SITE}/front?run=${label}` });
-    await sleep(800);
-    const vis = await onTarget(url, 'document.visibilityState');
+    // Up to 3 s for Chrome to mark it hidden (a fixed 800 ms was short once, on a Chrome just started).
+    let vis;
+    for (const t0 = Date.now(); Date.now() - t0 < 3000; await sleep(100)) if ((vis = await onTarget(url, 'document.visibilityState')) === 'hidden') break;
     const ref = m.text(await m.call('browser_snapshot', {})).match(/button "Go" \[ref=(\w+)\]/)?.[1];
     const t0 = Date.now();
     const r = await m.call('browser_click', { element: 'Go', [props.target ? 'target' : 'ref']: ref }, 60000);

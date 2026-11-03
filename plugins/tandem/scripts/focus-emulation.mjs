@@ -21,7 +21,7 @@
 // TANDEM_FOCUS_EMULATION=0 turns it off; TANDEM_FOCUS_LINGER_MS.
 
 import { DEFAULT_LINGER_MS, agentTabHold } from './agent-tab.mjs';
-import { extractTabUrl } from './map-inject-core.mjs';
+import { routeStdio } from './agent-router.mjs';
 
 export { DEFAULT_LINGER_MS };
 
@@ -45,84 +45,16 @@ export function combine(...watchers) {
   };
 }
 
-// Transparent stdio proxy between the MCP client and the MCP server. MCP's stdio transport is one
-// JSON-RPC message per line, no embedded newlines; every non-empty line is forwarded byte for byte, in order —
-// parsing is only to watch tools/call. A request is held back only while begin() runs. The one exception
-// to byte for byte: a tools/call result the emulator has notes for (emulator.notes) gets them appended
-// as text blocks — e.g. "a PDF was captured" (pdf-capture.mjs). And the proxy may ask the MCP itself
-// (ids `tandem-probe-N`, answers never reach the client): `browser_tabs list`, to name the agent's tab
-// before any result has (agent-tab.mjs). Every MCP response marks a tab's header as reported, so the probe
-// swallows a change the agent never saw (and tab-drift.mjs warns on) — and `browser_tabs` doesn't print
-// `### Page` itself (verified, 0.0.83). When the probe finds the tab on another URL than the last one known,
-// the agent's next result gets `### Page` / `- Page URL:` with that URL (the MCP's own answer), unless it
-// has its own section.
+// Transparent stdio proxy between the MCP client and ONE MCP server: agent-router.mjs in single mode. Every
+// non-empty line is forwarded byte for byte, in order — parsing is only to watch tools/call. A request is held
+// back only while begin() runs. The one exception to byte for byte: a tools/call result the emulator has
+// notes for (emulator.notes) gets them appended as text blocks — e.g. "a PDF was captured" (pdf-capture.mjs).
+// And the proxy may ask the MCP itself (ids `tandem-probe-N`, answers never reach the client):
+// `browser_tabs list`, to name the agent's tab before any result has (agent-tab.mjs). Every MCP response marks
+// a tab's header as reported, so the probe swallows a change the agent never saw (and tab-drift.mjs warns
+// on) — and `browser_tabs` doesn't print `### Page` itself (verified, 0.0.83). When the probe finds the tab on
+// another URL than the last one known, the agent's next result gets `### Page` / `- Page URL:` with that URL
+// (the MCP's own answer), unless it has its own section.
 export function proxyStdio({ clientIn, clientOut, serverIn, serverOut, emulator }) {
-  const calls = new Map();   // request id → { name, args }
-  const probes = new Map();  // our own request id → resolve
-  let probeId = 0;
-  const ask = (method, params, ms = 5000) => new Promise((resolve) => {
-    const id = `tandem-probe-${++probeId}`;
-    const t = setTimeout(() => { probes.delete(id); resolve(null); }, ms); t.unref?.();
-    probes.set(id, (m) => { clearTimeout(t); resolve(m); });
-    serverIn.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
-  });
-  // One question in flight at a time: every hold asks on the same begin().
-  let asking = null;
-  let owed = null;   // the `### Page` section the probe took from the agent
-  emulator.useLocator?.((prev) => (asking ??= ask('tools/call', { name: 'browser_tabs', arguments: { action: 'list' } })
-    .then((m) => {
-      const url = extractTabUrl({ tool_name: 'browser_tabs', tool_response: m?.result ?? null });
-      if (prev && url && url !== prev) owed = `### Page\n- Page URL: ${url}`;
-      return url;
-    })
-    .finally(() => { asking = null; })));
-  // → the notes to add to this response (none for a cancelled call: its response never comes).
-  const finish = (id, result) => {
-    const c = calls.get(id); if (!c) return [];
-    calls.delete(id); emulator.end(c.name, c.args, result);
-    return result ? (emulator.notes?.(c.name, c.args, result) || []) : [];
-  };
-  let queue = Promise.resolve();
-  lines(clientIn, (line) => {
-    let m = null; try { m = JSON.parse(line); } catch { /* not ours to judge: forward */ }
-    queue = queue.then(async () => {
-      if (m?.method === 'tools/call' && m.id !== undefined) {
-        calls.set(m.id, { name: m.params?.name, args: m.params?.arguments });
-        await emulator.begin();
-      } else if (m?.method === 'notifications/cancelled') finish(m.params?.requestId, null);
-      serverIn.write(line + '\n');
-    });
-  }, () => queue.then(() => serverIn.end()));
-  lines(serverOut, (line) => {
-    let out = line;
-    try {
-      const m = JSON.parse(line);
-      if (!m.method && probes.has(m.id)) { const r = probes.get(m.id); probes.delete(m.id); r(m); return; }   // ours: not for the client
-      if (!m.method && m.id !== undefined) {   // a response, not a server request
-        const isCall = calls.has(m.id);
-        const notes = finish(m.id, m.result ?? null);
-        if (isCall && owed && Array.isArray(m.result?.content)) {
-          if (!hasPageSection(m.result)) notes.unshift(owed);
-          owed = null;
-        }
-        if (notes.length && Array.isArray(m.result?.content)) {
-          m.result.content.push(...notes.map((text) => ({ type: 'text', text })));
-          out = JSON.stringify(m);
-        }
-      }
-    } catch { /* forward anyway */ }
-    clientOut.write(out + '\n');
-  });
-}
-
-const hasPageSection = (result) => (result?.content || []).some((c) => /(^|\n)### Page(\r?\n|$)/.test(c?.text || ''));
-
-function lines(stream, onLine, onEnd = () => {}) {
-  let buf = '';
-  stream.setEncoding('utf8');
-  stream.on('data', (d) => {
-    buf += d; let i;
-    while ((i = buf.indexOf('\n')) >= 0) { const l = buf.slice(0, i); buf = buf.slice(i + 1); if (l) onLine(l); }
-  });
-  stream.on('end', () => { if (buf) onLine(buf); onEnd(); });
+  return routeStdio({ clientIn, clientOut, multi: false, spawnChild: () => ({ stdin: serverIn, stdout: serverOut }), emulatorFor: () => emulator });
 }

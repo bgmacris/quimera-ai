@@ -1,0 +1,194 @@
+#!/usr/bin/env node
+// router.test.mjs — agent-router.mjs in multi mode, with fake children (no Chrome, no MCP): routing by
+// `agent`, stripping it, lazy children with the client's own handshake, a child's roots/list round trip,
+// cancellations, a dead child, per-agent queues. Single mode is tests/focus.test.mjs (proxyStdio).
+// No dependencies: mini-runner. Usage: node tests/router.test.mjs
+
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
+import { routeStdio, takeAgent } from '../scripts/agent-router.mjs';
+
+let pass = 0; let fail = 0;
+function ok(desc, cond, extra = '') {
+  if (cond) { pass++; process.stdout.write(`  ✓ ${desc}\n`); }
+  else { fail++; process.stdout.write(`  ✗ ${desc}${extra ? ` — ${extra}` : ''}\n`); }
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const msg = (o) => JSON.stringify(o) + '\n';
+const call = (id, name, args) => msg({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args } });
+
+// A fake child: records what it receives; `autoInit` answers initialize like an MCP would.
+function fakeChild(agent, { autoInit = true, initOk = true } = {}) {
+  const c = new EventEmitter();
+  c.agent = agent; c.stdin = new PassThrough(); c.stdout = new PassThrough(); c.got = []; c.killed = false;
+  c.stdin.on('data', (d) => {
+    for (const l of String(d).split('\n').filter(Boolean)) {
+      const m = JSON.parse(l); c.got.push(m);
+      if (m.method === 'initialize' && autoInit) {
+        c.reply(initOk ? { jsonrpc: '2.0', id: m.id, result: { protocolVersion: m.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'fake' } } }
+          : { jsonrpc: '2.0', id: m.id, error: { code: -1, message: 'no' } });
+      }
+    }
+  });
+  c.reply = (o) => c.stdout.write(msg(o));
+  c.kill = () => { c.killed = true; c.emit('exit', null, 'SIGTERM'); };
+  c.calls = () => c.got.filter((m) => m.method === 'tools/call' && !String(m.id).startsWith('tandem-probe'));
+  return c;
+}
+
+function harness({ opts = {}, emulator } = {}) {
+  const clientIn = new PassThrough(); const clientOut = new PassThrough();
+  const toClient = []; const children = new Map(); const spawned = [];
+  clientOut.on('data', (d) => { for (const l of String(d).split('\n').filter(Boolean)) toClient.push(JSON.parse(l)); });
+  const events = [];
+  const emulatorFor = (agent) => emulator?.(agent, events) ?? {
+    async begin() { events.push(`begin:${agent}`); },
+    end(name) { events.push(`end:${agent}:${name}`); },
+  };
+  const r = routeStdio({
+    clientIn, clientOut, emulatorFor, multi: true, initTimeoutMs: 300,
+    spawnChild: (agent) => { const c = fakeChild(agent, opts[agent] || opts['*'] || {}); spawned.push(agent); children.set(agent, c); return c; },
+  });
+  return { clientIn, toClient, children, spawned, events, r, send: (s) => clientIn.write(s) };
+}
+
+console.log('takeAgent');
+{
+  const a = takeAgent({ params: { name: 'x', arguments: { url: 'u', agent: 'a01' } } });
+  ok('agent taken out of the arguments', a.agent === 'a01' && a.stripped && !('agent' in a.m.params.arguments) && a.m.params.arguments.url === 'u');
+  ok('no agent → main, untouched', takeAgent({ params: { arguments: { url: 'u' } } }).agent === 'main' && !takeAgent({ params: { arguments: {} } }).stripped);
+  const bad = takeAgent({ params: { arguments: { agent: '../x', url: 'u' } } });
+  ok('an agent that is not an id → main, and still taken out', bad.agent === 'main' && bad.stripped && !('agent' in bad.m.params.arguments));
+  ok('a non-string agent → main, taken out', takeAgent({ params: { arguments: { agent: 7 } } }).agent === 'main');
+}
+
+console.log('routing');
+{
+  const h = harness();
+  ok('main is started at once, nothing else', h.spawned.join() === 'main');
+  const init = { protocolVersion: '2025-11-25', capabilities: { roots: { listChanged: true } }, clientInfo: { name: 'claude-code' } };
+  h.send(msg({ jsonrpc: '2.0', id: 0, method: 'initialize', params: init }));
+  h.send(msg({ jsonrpc: '2.0', method: 'notifications/initialized' }));
+  h.send(msg({ jsonrpc: '2.0', id: 1, method: 'tools/list' }));
+  h.send(call(2, 'browser_navigate', { url: 'http://a/', agent: 'main' }));
+  h.send(call(3, 'browser_snapshot', {}));
+  await sleep(30);
+  const main = h.children.get('main');
+  ok('initialize, initialized and tools/list go to main', ['initialize', 'notifications/initialized', 'tools/list'].every((x) => main.got.some((m) => m.method === x)));
+  const mc = main.calls();
+  ok('agent "main" and no agent both go to main, agent taken out', mc.length === 2 && mc.every((m) => !('agent' in m.params.arguments)) && mc[0].params.arguments.url === 'http://a/');
+
+  h.send(call(4, 'browser_navigate', { url: 'http://b/', agent: 'a0e815c57e8d30939' }));
+  await sleep(50);
+  const sub = h.children.get('a0e815c57e8d30939');
+  ok('a new agent gets its own child, started on its first call', h.spawned.join() === 'main,a0e815c57e8d30939' && !!sub);
+  const si = sub.got[0];
+  ok('…whose handshake uses the CLIENT\'s initialize params (roots declared)', si?.method === 'initialize' && JSON.stringify(si.params) === JSON.stringify(init));
+  ok('…then initialized, then the call (agent taken out)', sub.got[1]?.method === 'notifications/initialized' && sub.calls()[0]?.params.arguments.url === 'http://b/' && !('agent' in sub.calls()[0].params.arguments));
+  ok('the sub\'s handshake answer never reaches the client', !h.toClient.some((m) => String(m.id).startsWith('tandem-')));
+  ok('main did not get the sub\'s call', main.calls().length === 2);
+
+  sub.reply({ jsonrpc: '2.0', id: 4, result: { content: [{ type: 'text', text: 'b' }] } });
+  main.reply({ jsonrpc: '2.0', id: 2, result: { content: [{ type: 'text', text: 'a' }] } });
+  await sleep(20);
+  ok('each response reaches the client with its own id', h.toClient.find((m) => m.id === 4)?.result.content[0].text === 'b' && h.toClient.find((m) => m.id === 2)?.result.content[0].text === 'a');
+  ok('emulator per agent: begin/end on the agent that made the call', h.events.includes('begin:a0e815c57e8d30939') && h.events.includes('end:a0e815c57e8d30939:browser_navigate') && h.events.includes('end:main:browser_navigate'));
+}
+
+console.log('a child\'s requests to the client (roots/list)');
+{
+  const h = harness();
+  h.send(msg({ jsonrpc: '2.0', id: 0, method: 'initialize', params: { protocolVersion: '2025-11-25', capabilities: { roots: {} }, clientInfo: { name: 'cc' } } }));
+  h.send(call(1, 'browser_tabs', { action: 'list', agent: 'sub1' }));
+  await sleep(40);
+  const sub = h.children.get('sub1'); const main = h.children.get('main');
+  sub.reply({ jsonrpc: '2.0', id: 0, method: 'roots/list' });
+  main.reply({ jsonrpc: '2.0', id: 0, method: 'roots/list' });
+  await sleep(20);
+  const reqs = h.toClient.filter((m) => m.method === 'roots/list');
+  ok('both reach the client; the sub\'s with an id of ours (no clash with main\'s)', reqs.length === 2 && reqs.some((m) => m.id === 0) && reqs.some((m) => typeof m.id === 'string' && m.id.startsWith('tandem-sub1-')));
+  const ours = reqs.find((m) => m.id !== 0).id;
+  h.send(msg({ jsonrpc: '2.0', id: ours, result: { roots: [{ uri: 'file:///w' }] } }));
+  h.send(msg({ jsonrpc: '2.0', id: 0, result: { roots: [{ uri: 'file:///w' }] } }));
+  await sleep(20);
+  const back = sub.got.find((m) => !m.method && m.result?.roots);
+  ok('the answer goes back to the sub with ITS id', back?.id === 0);
+  ok('main\'s answer goes to main untouched', main.got.some((m) => !m.method && m.id === 0 && m.result?.roots));
+  ok('…and not to the sub', sub.got.filter((m) => !m.method && m.result?.roots).length === 1);
+  sub.reply({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' });
+  sub.reply({ jsonrpc: '2.0', method: 'notifications/progress', params: { progressToken: 1, progress: 1 } });
+  await sleep(20);
+  ok('a sub\'s list_changed is dropped, its progress is forwarded', !h.toClient.some((m) => m.method === 'notifications/tools/list_changed') && h.toClient.some((m) => m.method === 'notifications/progress'));
+  h.send(msg({ jsonrpc: '2.0', method: 'notifications/roots/list_changed' }));
+  await sleep(20);
+  ok('roots/list_changed from the client reaches every child', [main, sub].every((c) => c.got.some((m) => m.method === 'notifications/roots/list_changed')));
+}
+
+console.log('cancellation, a dead child, a child that cannot start');
+{
+  const h = harness();
+  h.send(call(1, 'browser_click', { agent: 'subA' }));
+  h.send(msg({ jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 1 } }));
+  await sleep(40);
+  const sub = h.children.get('subA');
+  ok('a cancel goes to the child that has the call (even sent while it waited for its handshake)', sub.got.some((m) => m.method === 'notifications/cancelled') && !h.children.get('main').got.some((m) => m.method === 'notifications/cancelled'));
+  ok('…and ends the call once', h.events.filter((e) => e === 'end:subA:browser_click').length === 1);
+
+  h.send(call(2, 'browser_snapshot', { agent: 'subA' }));
+  await sleep(20);
+  sub.kill();
+  await sleep(20);
+  const err = h.toClient.find((m) => m.id === 2);
+  ok('its child dies: the pending call gets an error, not silence', !!err?.error && /subA/.test(err.error.message));
+  h.send(call(3, 'browser_snapshot', { agent: 'subA' }));
+  await sleep(40);
+  ok('the next call of that agent starts a new child', h.spawned.filter((a) => a === 'subA').length === 2 && h.children.get('subA').calls()[0]?.id === 3);
+}
+{
+  const h = harness({ opts: { bad: { initOk: false } } });
+  h.send(call(1, 'browser_click', { agent: 'bad' }));
+  h.send(call(2, 'browser_snapshot', { agent: 'bad' }));
+  await sleep(60);
+  const e1 = h.toClient.find((m) => m.id === 1); const e2 = h.toClient.find((m) => m.id === 2);
+  ok('a handshake that fails: the waiting calls get ONE error each', !!e1?.error && !!e2?.error && h.toClient.filter((m) => m.id === 1 || m.id === 2).length === 2);
+  ok('…and that child is killed', h.children.get('bad').killed);
+}
+{
+  const h = harness({ opts: { slow: { autoInit: false } } });
+  h.send(call(1, 'browser_click', { agent: 'slow' }));
+  await sleep(400);   // initTimeoutMs = 300
+  ok('a handshake that never answers times out into an error', !!h.toClient.find((m) => m.id === 1)?.error);
+}
+
+console.log('per-agent queues');
+{
+  // A slow begin() (focus hold) on one agent must not delay another agent's call.
+  const h = harness({ emulator: (agent, events) => ({
+    async begin() { events.push(`begin:${agent}`); if (agent === 'slowA') await sleep(200); },
+    end() {},
+  }) });
+  h.send(call(1, 'browser_click', { agent: 'slowA' }));
+  await sleep(20);
+  const t0 = Date.now();
+  h.send(call(2, 'browser_click', { agent: 'fastB' }));
+  while (!h.children.get('fastB')?.calls().length && Date.now() - t0 < 1000) await sleep(5);
+  const waited = Date.now() - t0;
+  ok(`another agent's call is not held behind it (${waited} ms)`, waited < 120 && !h.children.get('slowA').calls().length);
+  await sleep(250);
+  ok('the slow agent\'s call goes out after its begin()', h.children.get('slowA').calls().length === 1);
+}
+
+console.log('client EOF');
+{
+  const h = harness();
+  h.send(call(1, 'browser_click', { agent: 'x1' }));
+  await sleep(30);
+  const ends = [];
+  for (const [a, c] of h.children) { c.stdin.on('end', () => ends.push(a)); c.stdin.resume(); }
+  h.clientIn.end();
+  await sleep(30);
+  ok('closes every child\'s stdin', ends.sort().join() === 'main,x1');
+}
+
+console.log(`\n${pass} ok, ${fail} failures`);
+process.exit(fail ? 1 : 0);

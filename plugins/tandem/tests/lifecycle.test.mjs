@@ -19,7 +19,7 @@ const { decide, isProfilePath, bashTouchesProfiles } = await import('../scripts/
 const { profileContext, MAX_PROFILE_CHARS, suspiciousLines } = await import('../scripts/map-inject-core.mjs');
 const { redactHeaders } = await import('../scripts/redact.mjs');
 const { domainMatches } = await import('../scripts/cookie-match.mjs');
-const { autostartEnabled, isWsl } = await import('../scripts/autostart.mjs');
+const { autostartEnabled, isWsl, agentTag, withAgent } = await import('../scripts/autostart.mjs');
 
 let pass = 0; let fail = 0;
 function ok(desc, cond) {
@@ -144,6 +144,27 @@ ok('TANDEM_AUTOSTART=1 forces on, even in WSL', autostartEnabled({ WSL_DISTRO_NA
 ok('TANDEM_AUTOSTART=0 forces off', autostartEnabled({ TANDEM_AUTOSTART: '0' }).on === false);
 ok('external mode without a start command: off', autostartEnabled({ TANDEM_BROWSER: 'external' }).on === false);
 ok('external mode with TANDEM_BROWSER_START_CMD: on (even in WSL)', autostartEnabled({ TANDEM_BROWSER: 'external', TANDEM_BROWSER_START_CMD: 'x', WSL_DISTRO_NAME: 'U' }).on === true);
+
+// --- multi-session: the agent tag (R05 §15) ---------------------------------------------
+process.stdout.write('[agent tag]\n');
+{
+  const ti = { url: 'https://a.example/' };
+  ok('main session: agent "main" added, the input kept', JSON.stringify(agentTag({ tool_input: ti })) === '{"url":"https://a.example/","agent":"main"}');
+  ok('subagent: its agent_id', agentTag({ agent_id: 'a0e815c57e8d30939', tool_input: ti }).agent === 'a0e815c57e8d30939');
+  ok('the model cannot pick another agent (overwritten)', agentTag({ tool_input: { ...ti, agent: 'other' } }).agent === 'main');
+  ok('TANDEM_MULTISESSION=0: no tag', agentTag({ tool_input: ti }, { TANDEM_MULTISESSION: '0' }) === null);
+  ok('no tool_input: no tag', agentTag({}) === null && agentTag({ tool_input: [1] }) === null);
+  const tag = agentTag({ tool_input: ti });
+  const silent = withAgent(null, tag);
+  ok('nothing else to say → only updatedInput', silent.hookSpecificOutput.hookEventName === 'PreToolUse' && silent.hookSpecificOutput.updatedInput === tag && !('permissionDecision' in silent.hookSpecificOutput));
+  const ask = withAgent({ systemMessage: 'm', hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: 'r' } }, tag);
+  ok('ask (profile gate) keeps its decision, reason and message, plus the tag', ask.hookSpecificOutput.permissionDecision === 'ask' && ask.hookSpecificOutput.permissionDecisionReason === 'r' && ask.systemMessage === 'm' && ask.hookSpecificOutput.updatedInput === tag);
+  const ctx = withAgent({ hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: 'started' } }, tag);
+  ok('additionalContext (Chrome started) kept, plus the tag', ctx.hookSpecificOutput.additionalContext === 'started' && ctx.hookSpecificOutput.updatedInput === tag);
+  const deny = { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny' } };
+  ok('deny: untouched (nothing runs)', withAgent(deny, tag) === deny);
+  ok('no tag: the output untouched', withAgent(null, null) === null && withAgent(deny, null) === deny);
+}
 
 // --- review of the branch (2026-10-21) --------------------------------------------------
 process.stdout.write('[branch review]\n');

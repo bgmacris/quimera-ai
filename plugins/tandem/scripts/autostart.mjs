@@ -47,6 +47,27 @@ export function autostartEnabled(env = process.env) {
   return { on: true };
 }
 
+// MULTI-SESSION (R05 §15): which agent makes this call — agent_id in a subagent's hook input, "main" for
+// the session's own — written into the call as `arguments.agent` (updatedInput), always overwriting what the
+// model may have put there. The launcher's router (agent-router.mjs) sends the call to that agent's MCP and
+// takes `agent` out. Measured on Claude Code 2.1.317 (R05 §15.2): updatedInput reaches the MCP with this
+// same hook saying nothing, allow, or ask (approved; bypass too), in the main agent and in subagents, and it
+// is not checked against the tool's schema. TANDEM_MULTISESSION=0: no tag (the launcher has no router then).
+export function agentTag(input, env = process.env) {
+  if (env.TANDEM_MULTISESSION === '0') return null;
+  const ti = input?.tool_input;
+  if (!ti || typeof ti !== 'object' || Array.isArray(ti)) return null;
+  return { ...ti, agent: typeof input.agent_id === 'string' && input.agent_id ? input.agent_id : 'main' };
+}
+
+// The hook's output with the tag added, unless it denies (nothing to run). res: hook output or null.
+export function withAgent(res, tag) {
+  if (!tag || res?.hookSpecificOutput?.permissionDecision === 'deny') return res;
+  const out = res ? { ...res } : {};
+  out.hookSpecificOutput = { hookEventName: 'PreToolUse', ...(res?.hookSpecificOutput || {}), updatedInput: tag };
+  return out;
+}
+
 // Fast path (~10 ms instead of ~110 ms for bash+lib.sh+lsof): the Chrome tandem started (pidfile) is
 // alive AND its command line has our profile and THIS port → it owns the port (two can't listen).
 export function ownChromeOnPort(port, dir = dataDir()) {
@@ -70,10 +91,11 @@ if (isCli) {
   const gate = input && decide(input);
 
   const port = cdpPort();
-  // Every exit goes through here: the gate's answer replaces anything but a deny.
+  const tag = agentTag(input);
+  // Every exit goes through here: the gate's answer replaces anything but a deny; then the call is tagged.
   const out = (o) => {
-    if (gate && o?.permissionDecision !== 'deny') process.stdout.write(JSON.stringify(gate));
-    else if (o) process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', ...o } }));
+    const res = withAgent(gate && o?.permissionDecision !== 'deny' ? gate : (o ? { hookSpecificOutput: { hookEventName: 'PreToolUse', ...o } } : null), tag);
+    if (res) process.stdout.write(JSON.stringify(res));
     process.exit(0);
   };
   const daemon = join(dirname(fileURLToPath(import.meta.url)), 'chrome-daemon.sh');
