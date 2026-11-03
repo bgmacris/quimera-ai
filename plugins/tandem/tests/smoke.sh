@@ -257,7 +257,14 @@ else
   bad "tab-owners.test.mjs"
 fi
 
-echo "[18] multi-session router (node tests/router.test.mjs)"
+echo "[18] which of the human's tabs may be adopted (node tests/human-tabs.test.mjs)"
+if run_suite "$HERE/human-tabs.test.mjs"; then
+  ok "human-tabs.test.mjs green"
+else
+  bad "human-tabs.test.mjs"
+fi
+
+echo "[19] multi-session router (node tests/router.test.mjs)"
 if run_suite "$HERE/router.test.mjs"; then
   ok "router.test.mjs green"
 else

@@ -20,6 +20,11 @@
 // emulator (focus + PDF capture, agent-tab.mjs: its own last URL) and its own probe — `browser_tabs list`
 // asked to ITS child, which through the relay lists only its tabs.
 //
+// Local tools (multi mode): tools the router itself provides — `localTools[name] = { def, handle }` — added to
+// main's tools/list answer and run here, in the agent's lane (its queue, its emulator held), never sent to a
+// child. handle({ agent, args, ask }) → an MCP tool result; ask(name, args) calls a tool on THAT agent's child
+// without the client seeing it. browser_tab_adopt (mcp-launch.mjs, phase 4) is one.
+//
 // Single mode (multi: false — TANDEM_MULTISESSION=0, and focus-emulation.mjs's proxyStdio): one child,
 // no `agent` handling, every line forwarded byte for byte as before 0.10 — except notes added to a result.
 // MCP stdio transport: one JSON-RPC message per line, no embedded newlines.
@@ -45,7 +50,9 @@ export function takeAgent(m) {
 
 // spawnChild(agent) → { stdin, stdout, on?(event, fn) } (a ChildProcess fits). emulatorFor(agent) → emulator.
 // initTimeoutMs: a new child's handshake (npx may install on its first run).
-export function routeStdio({ clientIn, clientOut, spawnChild, emulatorFor, multi = true, initTimeoutMs = 120_000, log = () => {} }) {
+export function routeStdio({ clientIn, clientOut, spawnChild, emulatorFor, multi = true, initTimeoutMs = 120_000, log = () => {}, localTools = {} }) {
+  const local = multi ? localTools : {};
+  const listIds = new Set();        // client tools/list request ids: main's answer gets the local tools
   const lanes = new Map();          // agent → lane
   const callLane = new Map();       // client request id → lane (to route notifications/cancelled)
   const fromChild = new Map();      // our id for a child's request to the client → { lane, id }
@@ -111,6 +118,24 @@ export function routeStdio({ clientIn, clientOut, spawnChild, emulatorFor, multi
         write(line);
       },
       cancel(requestId, line) { finish(requestId, null); write(line); },
+      // A local tool: run here, with the agent's emulator held as for any call.
+      async local(id, name, args) {
+        calls.set(id, { name, args });
+        await lane.ready;
+        let result;
+        if (dead) result = { content: [{ type: 'text', text: `tandem: the browser MCP of agent ${agent} is not available` }], isError: true };
+        else {
+          await emulator.begin();
+          const askTool = async (n, a, ms = 30_000) => (await ask('tools/call', { name: n, arguments: a || {} }, ms))?.result ?? null;
+          try { result = await local[name].handle({ agent, args: args || {}, ask: askTool }); }
+          catch (e) { result = { content: [{ type: 'text', text: `tandem: ${name} failed: ${e.message}` }], isError: true }; }
+          if (!result?.isError) hasTabs = true;
+        }
+        if (!calls.has(id)) return;   // cancelled meanwhile
+        const notes = finish(id, result);
+        if (notes.length) result = { ...result, content: [...(result.content || []), ...notes.map((text) => ({ type: 'text', text }))] };
+        toClient(JSON.stringify({ jsonrpc: '2.0', id, result }));
+      },
       end() { queue.then(() => { try { child.stdin.end(); } catch {} }); },
       kill() { try { child.kill?.(); } catch {} },
       // The child is gone: its pending calls get an error (the client would wait for them forever).
@@ -138,6 +163,11 @@ export function routeStdio({ clientIn, clientOut, spawnChild, emulatorFor, multi
         if (isCall && owed && Array.isArray(m.result?.content)) {
           if (!hasPageSection(m.result)) notes.unshift(owed);
           owed = null;
+        }
+        if (agent === MAIN && listIds.delete(m.id) && Array.isArray(m.result?.tools) && Object.keys(local).length) {
+          m.result.tools.push(...Object.values(local).map((t) => t.def));
+          toClient(JSON.stringify(m));
+          return;
         }
         if (notes.length && Array.isArray(m.result?.content)) {
           m.result.content.push(...notes.map((text) => ({ type: 'text', text })));
@@ -181,7 +211,9 @@ export function routeStdio({ clientIn, clientOut, spawnChild, emulatorFor, multi
       const l = laneFor(agent);
       const fwd = stripped ? JSON.stringify(out) : line;
       callLane.set(m.id, l);   // now, not when its turn comes: a cancel may arrive while it waits
-      l.enqueue(() => l.call(m.id, out.params?.name, out.params?.arguments, fwd));
+      const name = out.params?.name;
+      if (Object.hasOwn(local, name)) l.enqueue(() => l.local(m.id, name, out.params?.arguments));
+      else l.enqueue(() => l.call(m.id, name, out.params?.arguments, fwd));
       return;
     }
     if (m?.method === 'notifications/cancelled') {
@@ -199,6 +231,7 @@ export function routeStdio({ clientIn, clientOut, spawnChild, emulatorFor, multi
       return;
     }
     if (m?.method === 'initialize') initParams = m.params;
+    if (m?.method === 'tools/list' && m.id !== undefined) listIds.add(m.id);
     main.enqueue(() => main.write(line));
   }, () => { ended = true; for (const l of lanes.values()) l.end(); });
 

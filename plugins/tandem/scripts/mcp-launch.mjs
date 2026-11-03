@@ -37,6 +37,8 @@ import { cdpPort, dataDir, ensureDataDir } from './paths.mjs';
 import { routeStdio } from './agent-router.mjs';
 import { startRelay } from './cdp-relay.mjs';
 import { DEFAULT_LINGER_MS, combine, focusEmulator, proxyStdio } from './focus-emulation.mjs';
+import { chooseHumanTab, humanTabs } from './human-tabs.mjs';
+import { tabOwners } from './tab-owners.mjs';
 import { pdfCapturer } from './pdf-capture.mjs';
 import { isMain } from './is-main.mjs';
 
@@ -72,6 +74,48 @@ export function resolveMcpCli(version, { timeoutMs = 60_000 } = {}) {
       } catch { resolve(null); }
     });
   });
+}
+
+// Phase 4 (R05 §16): the human hands a tab over. Only the one they brought into view (human-tabs.mjs);
+// closing it later gives it back (cdp-relay.mjs). A local tool of the router: never reaches an MCP child.
+export const ADOPT_TOOL = 'browser_tab_adopt';
+const tabIndex = (result, url) => {
+  const text = (result?.content || []).map((c) => c.text || '').join('\n');
+  for (const m of text.matchAll(/^- (\d+): .*?\((\S+?)\)\s*$/gm)) if (m[2] === url) return +m[1];
+  return null;
+};
+const textResult = (text, isError = false) => ({ content: [{ type: 'text', text }], ...(isError ? { isError: true } : {}) });
+export function adoptTool({ relay, port, dataDir: dir }) {
+  return {
+    def: {
+      name: ADOPT_TOOL,
+      title: 'Take over the human\'s tab',
+      description: 'Take over a tab of the HUMAN in the shared Chrome (with their logins), when the human wants to give it to you: '
+        + 'only the tab they brought into view can be taken, so ask them to bring it to the front first. If several are in view, '
+        + 'pass `url` (part of its URL). It becomes your current tab. Closing it later gives it back to the human: it is not closed.',
+      inputSchema: { type: 'object', properties: { url: { type: 'string', description: 'Part of the URL of the human\'s tab, when several are in view' } }, additionalProperties: false },
+    },
+    async handle({ agent, args, ask }) {
+      // The agent's MCP connects to Chrome (through the relay) on its first browser call.
+      if (!relay.agents().includes(agent)) await ask('browser_tabs', { action: 'list' });
+      const pick = chooseHumanTab(await humanTabs({ port, registry: tabOwners(dir) }), { url: typeof args.url === 'string' ? args.url : undefined });
+      if (!pick.tab) {
+        const list = pick.list.length ? `\n\nThe human's tabs in view:\n${pick.list.map((t) => `- ${t.title || '(untitled)'} (${t.url})`).join('\n')}` : '';
+        return textResult(`### Result\ntandem: ${pick.error}${list}`, true);
+      }
+      await relay.adopt(agent, pick.tab.id);
+      let idx = null;
+      for (const t0 = Date.now(); idx === null && Date.now() - t0 < 3000;) {
+        idx = tabIndex(await ask('browser_tabs', { action: 'list' }), pick.tab.url);
+        if (idx === null) await new Promise((r) => setTimeout(r, 150));
+      }
+      const sel = idx !== null ? await ask('browser_tabs', { action: 'select', index: idx }) : null;
+      const head = `### Result\nYou now have the human's tab "${pick.tab.title || '(untitled)'}" (${pick.tab.url})`
+        + (sel ? ' as your current tab.' : ', but it could not be selected: find it with browser_tabs list.')
+        + ' The human still sees it and may use it too. Closing it gives it back to the human (it is not closed).';
+      return { content: [{ type: 'text', text: head }, ...(sel?.content || [])] };
+    },
+  };
 }
 
 // cmd.exe quoting for the Windows `npx.cmd` shim (data dirs live under "C:\Users\First Last\…").
@@ -134,7 +178,8 @@ if (isCli) {
       log(`router: started the MCP of agent ${agent} (${agent !== 'main' && cli ? 'node cli.js' : 'npx'})`);
       return c;
     };
-    routeStdio({ clientIn: process.stdin, clientOut: process.stdout, spawnChild, emulatorFor, multi: true, log });
+    const localTools = { [ADOPT_TOOL]: adoptTool({ relay, port: cdpPort(), dataDir: dataDir() }) };
+    routeStdio({ clientIn: process.stdin, clientOut: process.stdout, spawnChild, emulatorFor, multi: true, log, localTools });
     // After main is up: later children skip npx if this resolves (it never delays the handshake).
     resolveMcpCli(mcpVersion()).then((p) => { cli = p; log(`router: MCP cli ${p ? 'resolved' : 'not resolved (children via npx)'}`); });
     for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { for (const c of children) { try { c.kill(sig); } catch {} } });

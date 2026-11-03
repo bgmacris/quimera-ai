@@ -24,6 +24,13 @@
 // Ownership is also written to tab-owners.mjs (shared by all sessions), so a foreign page can be told apart
 // as the human's or another session's.
 //
+// Handing over (phase 4, R05 §16): adopt(agent, targetId) gives an existing page — the human's — to an agent:
+// owner changes, then the relay attaches to it on that agent's upstream connection so Chrome announces it
+// there and Playwright takes it as a new tab (measured with 0.0.83). release(targetId) gives it back: the
+// agent's sessions on it are detached (Playwright sees the page close) and it is nobody's again. A page
+// the agent adopted is never really closed by it: Target.closeTarget / Page.close on it = release; and an
+// agent left with no connection (browser_close only disconnects Playwright: measured) releases them all.
+//
 // onPage(agent, targetInfo) — called when a page is shown to an agent (one it created, or its popup). If it
 // returns a promise, everything for that client waits behind it, in order, at most holdMs: the launcher arms
 // the agent's PDF capture and focus emulation on the page BEFORE Playwright learns of it, so the page's first
@@ -46,6 +53,7 @@ export async function startRelay({ port, dataDir = null, newWindow = true, log =
   const registry = dataDir ? tabOwners(dataDir) : null;
   try { registry?.sweep(); } catch { /* best effort */ }
   const owner = new Map();          // targetId → agent | FOREIGN
+  const adopted = new Set();        // targetIds handed over to an agent (the human's): closing = release
   const kind = new Map();           // targetId → target type, as seen in any event
   const conns = new Set();
   let pendingCreates = 0;           // createTarget in flight, all agents
@@ -191,9 +199,16 @@ export async function startRelay({ port, dataDir = null, newWindow = true, log =
       let m; try { m = JSON.parse(s); } catch { return; }
       if (m.sessionId) {
         if (!visible.has(m.sessionId)) return deny(m, `session not shown to ${agent}`);
+        const tid = pages.get(m.sessionId);
+        if (m.method === 'Page.close' && tid && adopted.has(tid)) {   // closing an adopted tab gives it back
+          return void relay.release(tid).then(() => toClient({ id: m.id, sessionId: m.sessionId, result: {} }));
+        }
         return toUp(s);
       }
       if (DENY_BROWSER.has(m.method)) return deny(m, `${m.method} is not allowed through the shared browser`);
+      if (m.method === 'Target.closeTarget' && adopted.has(m.params?.targetId) && owner.get(m.params.targetId) === agent) {
+        return void relay.release(m.params.targetId).then(() => toClient({ id: m.id, result: { success: true } }));
+      }
       if (m.method === 'Target.createTarget') {
         creates.add(m.id); pendingCreates++;
         if (newWindow && m.params?.newWindow === undefined) {
@@ -217,6 +232,11 @@ export async function startRelay({ port, dataDir = null, newWindow = true, log =
       ownCalls.clear();
       try { up?.close(); } catch {} try { client.close(); } catch {}
       resolveAll();
+      // The agent let go of the browser (browser_close disconnects Playwright, a child died, Chrome went away):
+      // the tabs it was handed go back to the human. Its own tabs stay — as before, closing them is phase 5.
+      if (![...conns].some((c) => c.agent === agent)) {
+        for (const id of [...adopted]) if (owner.get(id) === agent) relay.release(id).catch(() => {});
+      }
     };
     client.on('close', close);
 
@@ -230,7 +250,7 @@ export async function startRelay({ port, dataDir = null, newWindow = true, log =
   });
 
   const connsOf = (agent) => [...conns].filter((c) => c.agent === agent);
-  return {
+  const relay = {
     port: srv.port, stats, owner,
     endpoint: (agent) => `ws://127.0.0.1:${srv.port}/${token}/agent/${encodeURIComponent(agent)}`,
     // The agent's top-level page sessions on its own upstream connection(s).
@@ -238,8 +258,26 @@ export async function startRelay({ port, dataDir = null, newWindow = true, log =
     // A browser-level command on the agent's upstream connection.
     call: (agent, method, params) => { const c = connsOf(agent)[0]; return c ? c.call(method, params) : Promise.reject(new Error(`no connection for ${agent}`)); },
     agents: () => [...new Set([...conns].map((c) => c.agent))],
+    // Give a page (the human's: the caller checked) to an agent whose MCP is connected.
+    adopt: async (agent, targetId) => {
+      const c = connsOf(agent)[0]; if (!c) throw new Error(`no browser connection for ${agent} yet`);
+      const prev = owner.get(targetId);
+      setOwner(targetId, agent); kind.set(targetId, 'page'); adopted.add(targetId);
+      try { await c.call('Target.attachToTarget', { targetId, flatten: true }); }
+      catch (e) { adopted.delete(targetId); if (prev) owner.set(targetId, prev); else owner.delete(targetId); try { registry?.release(targetId); } catch {} throw e; }
+    },
+    // Give it back: nobody's (the human's) again, and the agents that saw it stop seeing it.
+    release: async (targetId) => {
+      adopted.delete(targetId);
+      owner.set(targetId, FOREIGN);
+      try { registry?.release(targetId); } catch {}
+      await Promise.all([...conns].flatMap((c) => [...c.pages].filter(([, t]) => t === targetId)
+        .map(([sessionId]) => c.call('Target.detachFromTarget', { sessionId }).catch(() => {}))));
+    },
+    isAdopted: (targetId) => adopted.has(targetId),
     // Target ids of the pages this agent owns (created, or popups of its pages).
     ownedBy: (agent) => [...owner].filter(([, a]) => a === agent).map(([id]) => id),
     close: () => srv.close(),
   };
+  return relay;
 }

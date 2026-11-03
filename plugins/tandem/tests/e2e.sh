@@ -132,6 +132,13 @@ check "pdf-capture-e2e.mjs green" "node '$HERE/pdf-capture-e2e.mjs' '$SITE'"
 echo "[3f] CDP relay (real MCP children, one per agent: each sees only its own tabs)"
 check "relay-e2e.mjs green" "node '$HERE/relay-e2e.mjs'"
 
+echo "[3g] handing a tab over (browser_tab_adopt, multi-session)"
+if [ "${TANDEM_MULTISESSION:-1}" != 0 ]; then
+  check "adopt-e2e.mjs green" "node '$HERE/adopt-e2e.mjs'"
+else
+  echo "  - skipped: TANDEM_MULTISESSION=0 (no relay, no adoption)"
+fi
+
 echo "[4] stop"
 check "stop" "'$ROOT/scripts/chrome-daemon.sh' stop | grep -q stopped"
 check "no Chrome left on our profile" "! pgrep -f -- '--user-data-dir=$TANDEM_DATA_DIR/chrome-profile' >/dev/null"

@@ -178,6 +178,54 @@ console.log('per-agent queues');
   ok('the slow agent\'s call goes out after its begin()', h.children.get('slowA').calls().length === 1);
 }
 
+console.log('local tools (browser_tab_adopt runs in the router, never in a child)');
+{
+  const clientIn = new PassThrough(); const clientOut = new PassThrough();
+  const toClient = []; const children = new Map(); const handled = [];
+  clientOut.on('data', (d) => { for (const l of String(d).split('\n').filter(Boolean)) toClient.push(JSON.parse(l)); });
+  const events = [];
+  routeStdio({
+    clientIn, clientOut, multi: true, initTimeoutMs: 300,
+    emulatorFor: (agent) => ({ async begin() { events.push(`begin:${agent}`); }, end(name) { events.push(`end:${agent}:${name}`); } }),
+    spawnChild: (agent) => { const c = fakeChild(agent); children.set(agent, c); return c; },
+    localTools: { browser_tab_adopt: {
+      def: { name: 'browser_tab_adopt', inputSchema: { type: 'object' } },
+      async handle({ agent, args, ask }) { handled.push({ agent, args }); const r = await ask('browser_tabs', { action: 'list' }); return { content: [{ type: 'text', text: `adopted for ${agent}; child said ${r?.content?.[0]?.text}` }] }; },
+    } },
+  });
+  const send = (s) => clientIn.write(s);
+  send(msg({ jsonrpc: '2.0', id: 1, method: 'tools/list' }));
+  await sleep(20);
+  children.get('main').reply({ jsonrpc: '2.0', id: 1, result: { tools: [{ name: 'browser_click' }] } });
+  await sleep(20);
+  const listed = toClient.find((m) => m.id === 1)?.result.tools.map((t) => t.name) || [];
+  ok('main\'s tools/list answer gets the local tool appended', listed.join() === 'browser_click,browser_tab_adopt');
+  send(call(2, 'browser_tab_adopt', { url: 'x', agent: 'subZ' }));
+  await sleep(40);
+  const z = children.get('subZ');
+  const asked = z.got.find((m) => m.method === 'tools/call');
+  ok('the handler gets its agent and args (agent taken out); its ask goes to THAT agent\'s child', handled[0]?.agent === 'subZ' && handled[0].args.url === 'x' && !('agent' in handled[0].args) && asked?.params.name === 'browser_tabs');
+  z.reply({ jsonrpc: '2.0', id: asked.id, result: { content: [{ type: 'text', text: 'tabs!' }] } });
+  await sleep(30);
+  const res = toClient.find((m) => m.id === 2);
+  ok('the result reaches the client; the child\'s answer to the ask does not', res?.result.content[0].text === 'adopted for subZ; child said tabs!' && !toClient.some((m) => m.id === asked.id));
+  ok('the local call never reaches a child as such', ![...children.values()].some((c) => c.calls().some((m) => m.params.name === 'browser_tab_adopt')));
+  ok('…and holds the agent\'s emulator like any call', events.includes('begin:subZ') && events.includes('end:subZ:browser_tab_adopt'));
+}
+{
+  // Single mode: no local tools at all.
+  const clientIn = new PassThrough(); const clientOut = new PassThrough(); const toClient = [];
+  clientOut.on('data', (d) => { for (const l of String(d).split('\n').filter(Boolean)) toClient.push(JSON.parse(l)); });
+  let c;
+  routeStdio({ clientIn, clientOut, multi: false, emulatorFor: () => ({ async begin() {}, end() {} }), spawnChild: (a) => (c = fakeChild(a)), localTools: { browser_tab_adopt: { def: { name: 'browser_tab_adopt' }, handle: async () => ({}) } } });
+  clientIn.write(msg({ jsonrpc: '2.0', id: 1, method: 'tools/list' }));
+  await sleep(20);
+  c.reply({ jsonrpc: '2.0', id: 1, result: { tools: [{ name: 'browser_click' }] } });
+  clientIn.write(call(2, 'browser_tab_adopt', {}));
+  await sleep(20);
+  ok('single mode: not listed, and a call goes to the MCP as is', toClient.find((m) => m.id === 1)?.result.tools.length === 1 && c.calls().some((m) => m.params.name === 'browser_tab_adopt'));
+}
+
 console.log('client EOF');
 {
   const h = harness();

@@ -25,7 +25,7 @@ import { lastPageUrl, rememberPageUrl } from './sandbox-guard.mjs';
 
 export const GRACE_MS = 15_000;
 
-const MOVERS = /browser_(navigate\w*|reload|click|drag|drop|press_key|press_sequentially|type|select_option|fill_form|handle_dialog|file_upload|mouse_\w+|run_code\w*|tabs|close)$/;
+const MOVERS = /browser_(navigate\w*|reload|click|drag|drop|press_key|press_sequentially|type|select_option|fill_form|handle_dialog|file_upload|mouse_\w+|run_code\w*|tabs|tab_adopt|close)$/;
 // browser_evaluate is a read unless its code can navigate.
 const NAVIGATING_JS = /\b(location|history)\b|\.click\s*\(|\.submit\s*\(|requestSubmit|dispatchEvent|window\.open\s*\(/;
 
