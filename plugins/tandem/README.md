@@ -73,6 +73,7 @@ from the already-rendered page.
 | skill `tandem` | How Claude operates the shared browser and hands walls to you |
 | skill `tandem:map` | Per-site navigation memory (recon → draft → you confirm → saved) |
 | agent `web-navigator` | Heavy extraction in its own context, so DOM noise stays out of yours |
+| tool `browser_tab_adopt` | You hand one of **your** tabs (with your logins) to the agent: only the one you brought into view |
 
 ## Site memory: `tandem:map`
 
@@ -102,6 +103,29 @@ Two hooks keep it honest:
   `TANDEM_PROFILE_GATE=strict` denies it.
 
 Design and research: [`docs/01-navigation-memory.md`](docs/01-navigation-memory.md).
+
+## Several agents, one Chrome (0.10)
+
+Claude Code's main agent and each of its subagents — and every other session on the machine — drive
+the same Chrome. Since 0.10 **each agent has its own tabs**: it sees and drives only the tabs it opened
+(and their popups), each in a window of its own opened in the background, without taking your keyboard.
+Your tabs and other agents' tabs are invisible to it.
+
+- **Handing a tab over.** To let an agent work in one of your tabs (say, one where you are logged in),
+  bring it to the front and tell the agent; it calls `browser_tab_adopt`. Only a tab of yours that is in
+  view can be taken — what you did with the mouse is the consent, so a page telling the agent to adopt
+  another tab can't point anywhere else. When the agent closes it, it is **given back**, not closed.
+- **Life cycle.** A subagent that hasn't used the browser for 10 min has its browser process stopped (it
+  comes back with its tabs on its next call); after 30 min its tabs are closed and the ones you handed
+  over are given back. When a session ends, its agents' tabs are closed; `/clear` keeps them.
+- **How.** tandem's `PreToolUse` hook writes the calling agent into each browser call; the launcher runs one
+  `@playwright/mcp` per agent behind a CDP relay that shows each one only its own tabs.
+- `TANDEM_MULTISESSION=0` brings back the 0.9 behaviour: one MCP per session that sees every tab. The
+  Cursor/OpenCode adapters use it by default (they have no hook to tell agents apart).
+
+Verified on Claude Code 2.1.317 with the real plugin (2026-11-03): a subagent lists only its tab, the main
+agent only its own, and both are closed when the session ends. Thirty simultaneous popup clicks from three
+agents on real pages: none hung. Details and measurements: research R05 (multi-session).
 
 ## Measured, not promised
 
@@ -167,7 +191,11 @@ That needs a pilot with templates where the plain arms fail.
 | `TANDEM_FOCUS_EMULATION` | on | `0`: don't keep the agent's tab painting while its tools run (see Troubleshooting) |
 | `TANDEM_TAB_DRIFT` | on | `0`: don't warn the agent when its tab moved without it asking (see Troubleshooting) |
 | `TANDEM_PDF_CAPTURE` | on | `0`: don't save the PDFs that reach the agent's tab (see Troubleshooting) |
-| `TANDEM_DEBUG` | off | `1`: the launcher logs what it does on the agent's tab (focus emulation, PDF capture) to the MCP's stderr |
+| `TANDEM_DEBUG` | off | `1`: the launcher logs what it does (agents' MCPs, relay, focus emulation, PDF capture) to the MCP's stderr |
+| `TANDEM_MULTISESSION` | on (off in the adapters) | `0`: one MCP per session that sees every tab, as in 0.9 (no per-agent tabs, no `browser_tab_adopt`) |
+| `TANDEM_AGENT_IDLE_MS` | `600000` | a subagent's browser process is stopped after this long without browser calls (its tabs stay) |
+| `TANDEM_AGENT_TABS_IDLE_MS` | `1800000` | …and its tabs are closed after this long (the ones you handed over are given back) |
+| `TANDEM_MAX_AGENTS` | `8` | subagents' browser processes alive at once (`0` = no cap); a new one stops the least recently used idle one |
 | `TANDEM_FOCUS_LINGER_MS` | `15000` | how long the agent's tab keeps painting after its last tool call |
 | `TANDEM_BROWSER`    | — | `external`: tandem only talks to the CDP port (e.g. Windows Chrome from WSL); start/stop via `TANDEM_BROWSER_START_CMD` / `_STOP_CMD` |
 
@@ -219,7 +247,7 @@ tandem denies those calls instead of hanging. Read such a page by `fetch()`ing i
 
 @playwright/mcp connects without focus emulation, so Chrome stops painting a page it thinks nobody
 sees, and the click's "stable" check waits for frames that never come. tandem's MCP launcher switches
-focus emulation on for the agent's current tab while its tools run, and off 15 s after the last one (an
+focus emulation on for the agent's tabs (its current one; with multi-session, all of its own) while its tools run, and off 15 s after the last one (an
 animated page keeps costing CPU only that long). The page sees `visibilitychange` around those
 windows. `TANDEM_FOCUS_EMULATION=0` turns it off.
 </details>
@@ -251,16 +279,24 @@ document.
 
 ```
 Chrome (headed, dedicated profile, --remote-debugging-port on 127.0.0.1)
-   ▲ mouse (human)                ▲ CDP (Claude)
-   └── visible window             └── npx @playwright/mcp --cdp-endpoint → browser_* tools
+   ▲ mouse (human)          ▲ CDP
+   └── visible windows      └── CDP relay (one per session: each agent sees only its own tabs)
+                                 ▲ ws://127.0.0.1/<token>/agent/<id>
+                                 └── @playwright/mcp × agent ── router ── stdio ── Claude Code
+                                                                   ▲ `agent` written by the PreToolUse hook
 ```
 
 - **`scripts/chrome-daemon.sh`** `{start|stop|restart|status}` — Chrome lifecycle, idempotent,
   based on the CDP healthcheck (the source of truth for state is CDP, not the PID).
 - **`scripts/mcp-launch.mjs`** — the `.mcp.json` command (`mcp-launch.sh` is a wrapper kept for the
   adapters); launches the Playwright MCP lazily (it doesn't start Chrome, so `initialize` never blocks)
-  behind a transparent stdio proxy that keeps the agent's tab painting while its tools run
-  (`scripts/focus-emulation.mjs`).
+  behind a stdio proxy that keeps each agent's tabs painting while its tools run
+  (`scripts/focus-emulation.mjs`) and saves the PDFs they receive (`scripts/pdf-capture.mjs`).
+- **`scripts/agent-router.mjs`** — the proxy: one MCP per agent, started on its first call, with its own
+  queue; `browser_tab_adopt` and the agents' life cycle. **`scripts/cdp-relay.mjs`** (+ `ws-server.mjs`) —
+  the CDP relay: tab ownership, popups, handing over, the hold that arms a new page before its first load.
+  **`scripts/tab-owners.mjs`** — who owns each tab, shared by every session on the machine.
+  **`scripts/human-tabs.mjs`** — which of your tabs is in view.
 - **`scripts/map.sh`**, **`fingerprint.mjs`**, **`page-signals.mjs`**, **`selector.mjs`**,
   **`recipe.mjs`**, **`hook-inject-profile.mjs`** — the `tandem:map` engine (profile store, page
   fingerprint, drift, executable selectors, recipes, auto-injection). `page-signals.mjs print` emits the
@@ -277,6 +313,9 @@ Two checks before publishing or after touching the shell/JS (neither starts Chro
 tests/smoke.sh                                         # tandem:map engine + regression guards
 shellcheck -x -S style scripts/*.sh bin/* tests/*.sh   # shell lint (brew install shellcheck)
 ```
+
+Real public pages, three agents in parallel (not in CI: sites change): `node tests/multi-real-e2e.mjs`
+with tandem's Chrome up on a disposable `TANDEM_DATA_DIR`/`TANDEM_CDP_PORT`.
 
 `smoke.sh` isolates state in a temporary `TANDEM_DATA_DIR` and verifies: parsing of all scripts, the
 `+x` bit on the invocables, `map.sh` (including `index` with valid JSON even when the frontmatter has

@@ -4,6 +4,47 @@ Format based on [Keep a Changelog](https://keepachangelog.com/); semantic versio
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-11-03
+
+### Added
+- **Each agent has its own tabs** (multi-session, T302, research R05 §15–18). Claude Code's main agent and
+  its subagents share one MCP process, and every session shares one Chrome; nobody owned a tab, so two
+  agents moved each other's pages. Now tandem's `PreToolUse` hook writes the calling agent into each browser
+  call (`updatedInput`; measured on Claude Code 2.1.317: it arrives with no decision, allow or an approved ask,
+  in subagents too, and is not checked against the tool's schema), and the launcher runs one
+  `@playwright/mcp` per agent — started on its first call, with the client's own handshake (`roots`
+  included) — behind a CDP relay that shows each one only the tabs it opened and their popups, each agent in
+  a window of its own opened in the background. Your tabs, other agents' and other sessions' are invisible
+  to it. Ownership is shared between sessions in `owners/` under the data dir.
+- **`browser_tab_adopt`: you hand one of your tabs over.** Only the tab you brought into view can be taken
+  (the gesture is the consent: a page asking the agent to adopt another tab can't point anywhere else);
+  `url` chooses among several in view. In view = the active tab of a window that is not minimized, also with
+  another app in front (measured headful), read in an isolated world so a page can't fake it. Closing it —
+  or the agent letting go of the browser — gives it back instead of closing it.
+- **Life cycle.** A subagent idle for 10 min has its MCP stopped (its next call brings it back, with its
+  tabs); after 30 min its tabs are closed and handed-over ones given back (not on `SubagentStop`: a subagent
+  resumed with `SendMessage` keeps its id — measured). At most 8 subagents' MCPs at once. When a session
+  ends (Claude Code: SIGINT, then SIGTERM, killed at ~400 ms — measured) its agents' tabs are closed; what
+  doesn't make it is closed by the next launcher. `/clear` keeps the MCP process and the tabs (measured).
+  `TANDEM_AGENT_IDLE_MS`, `TANDEM_AGENT_TABS_IDLE_MS`, `TANDEM_MAX_AGENTS`.
+- PDF capture and focus emulation follow every tab of the agent (from the relay, not guessed by URL), and a
+  new page is armed before its first load: an agent's very first navigation to a PDF is captured.
+
+### Changed
+- What the hooks remember per session (the tab's URL for the sandbox guard and tab drift, its last move,
+  which site profiles were injected) is kept per agent: a subagent gets its own profile injection and no
+  false drift warning from the main agent's moves.
+- Later MCP children run as `node <cli.js>` of the pinned version (no `npm` process kept alive per child).
+- `TANDEM_MULTISESSION=0` restores the 0.9 launcher (one MCP per session, every tab visible). **The
+  Cursor/OpenCode adapters default to it**: they have no hook to tell agents apart.
+
+### Notes
+- Verified with the real plugin on Claude Code 2.1.317 (`--plugin-dir`, headless): a subagent lists only its
+  tab, the main agent only its own, both closed at the end of the session. Thirty simultaneous popup clicks
+  from three agents on real pages: none hung (the pre-existing @playwright/mcp hang of R05 §M did not show).
+- `browser_close` over CDP only disconnects Playwright (measured): it never closed tabs; now it gives handed-
+  over tabs back.
+
 ## [0.9.7] — 2026-10-30
 
 ### Added

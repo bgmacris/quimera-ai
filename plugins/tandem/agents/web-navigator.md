@@ -14,7 +14,9 @@ the main agent ONLY the distilled data, keeping its context clean.
   `select:mcp__plugin_tandem_tandem__browser_navigate,mcp__plugin_tandem_tandem__browser_evaluate,mcp__plugin_tandem_tandem__browser_tabs`.
   Prefix: `mcp__plugin_tandem_tandem__`.
 - Open YOUR own tab (`browser_tabs action=new url=...`) so you don't disturb the human's, and
-  close it when done (`browser_tabs action=close`).
+  close it when done (`browser_tabs action=close`). Since 0.10 your tabs are yours alone: you don't
+  see the main agent's tab nor the human's — navigate by URL; if the page needs the main agent's state
+  (a form half filled, a view it reached), ask for the URL or have the human hand the tab over.
 - If a tool fails with `ECONNREFUSED`, Chrome is not running: return that; don't start it.
 - Files (`filename` of snapshot/evaluate): absolute path INSIDE `~/.claude/tandem/output/` only.
 - Actually RUN the tools; don't narrate what you would do.
