@@ -84,6 +84,40 @@ const out2 = run({ session_id: 'hook2', tool_name: T('snapshot'), tool_input: {}
 try { ctx = JSON.parse(out2.stdout).hookSpecificOutput.additionalContext; } catch { ctx = null; }
 ok('hook: a change between two reads → additionalContext with the warning', out2.status === 0 && typeof ctx === 'string' && ctx.includes('moved without you asking'));
 
+process.stdout.write('[multi-session: per agent]\n');
+{
+  // main and a subagent in ONE session, each on its own tab (the relay): one's moves are not the other's drift.
+  const session_id = `s${++sid}`;
+  const at = (agent_id, name, url, t, env = {}) => tabDrift({
+    input: { session_id, ...(agent_id ? { agent_id } : {}), tool_name: T(name), tool_input: {}, tool_response: page(url) }, dataDir: TMP, now: t, env,
+  });
+  at(null, 'navigate', R, 0);
+  at('a0e815c57e8d30939', 'navigate', C, 1000);
+  ok('main reads its tab after the subagent navigated elsewhere → no warning', at(null, 'snapshot', R, 60_000) === null);
+  ok('the subagent reads its own → no warning', at('a0e815c57e8d30939', 'snapshot', C, 61_000) === null);
+  ok('each agent remembers its own URL', lastPageUrl(TMP, session_id) === R && lastPageUrl(TMP, session_id, 'a0e815c57e8d30939') === C);
+  ok('…and real drift of the subagent\'s tab still warns', typeof at('a0e815c57e8d30939', 'snapshot', R + 'other', 120_000) === 'string');
+  // Single mode: one MCP, one tab for everyone → one state (the subagent's navigate IS the session's tab).
+  const s1 = `s${++sid}`;
+  const one = (agent_id, name, url, t) => tabDrift({ input: { session_id: s1, ...(agent_id ? { agent_id } : {}), tool_name: T(name), tool_input: {}, tool_response: page(url) }, dataDir: TMP, now: t, env: { TANDEM_MULTISESSION: '0' } });
+  one(null, 'navigate', R, 0);
+  one('a0e815c57e8d30939', 'navigate', C, 1000);
+  ok('TANDEM_MULTISESSION=0: one state per session, as before', lastPageUrl(TMP, s1) === C && one(null, 'snapshot', C, 60_000) === null);
+}
+{
+  const { tryInjectProfile, cleanupSessionMarkers } = await import('../scripts/map-inject-core.mjs');
+  const { mkdirSync, writeFileSync, existsSync } = await import('node:fs');
+  const D = join(TMP, 'inj'); mkdirSync(join(D, 'sites'), { recursive: true });
+  writeFileSync(join(D, 'sites', 'books.toscrape.com.md'), '# books.toscrape.com\n\nA profile.\n');
+  const url = 'https://books.toscrape.com/';
+  const first = tryInjectProfile({ url, sessionId: 'sx', dataDir: D });
+  const again = tryInjectProfile({ url, sessionId: 'sx', dataDir: D });
+  const sub = tryInjectProfile({ url, sessionId: 'sx', dataDir: D, agentId: 'a0e815c57e8d30939' });
+  ok('a site profile is injected once per AGENT: main once, a subagent (its own context) once too', first.ok && !again.ok && sub.ok && !tryInjectProfile({ url, sessionId: 'sx', dataDir: D, agentId: 'a0e815c57e8d30939' }).ok);
+  cleanupSessionMarkers('sx', D);
+  ok('session cleanup removes the subagents\' markers too', !existsSync(join(D, '.hook-state', 'sx')));
+}
+
 rmSync(TMP, { recursive: true, force: true });
 process.stdout.write(`\ndrift: ${pass} ok, ${fail} failures\n`);
 process.exit(fail ? 1 : 0);

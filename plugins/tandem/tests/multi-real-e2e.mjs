@@ -11,6 +11,8 @@
 //      simultaneous popups from several clients, reproduced without the relay)
 //   M5 roots reach the lazy children: a relative screenshot filename lands in the client's root
 //   M6 client EOF: the launcher and every child exit
+//   M7 (before M6) a NEW subagent's FIRST call opens a real PDF: captured as it arrives (phase 3b: the
+//      relay holds the new page until the capture is armed)
 // NOT in tests/e2e.sh (CI): real sites can be down or change. Run by hand with tandem's Chrome up:
 //   TANDEM_DATA_DIR=… TANDEM_CDP_PORT=… node tests/multi-real-e2e.mjs      (exit 0 = green)
 // MULTI_REAL_ROUNDS=n repeats M4 (default 3).
@@ -175,6 +177,14 @@ try {
   ok('every child asked the client roots/list (main + 2 subagents, ours ids for the subs)', rootsAsked.length >= 3 && rootsAsked.filter((x) => String(x).startsWith('tandem-')).length >= 2, JSON.stringify(rootsAsked));
   const shot = await call(A, 'browser_take_screenshot', { filename: `shot-${short(A)}.png` });
   ok('a subagent\'s relative screenshot filename lands in the client\'s root', existsSync(join(ROOT, `shot-${short(A)}.png`)), `${shot.t.slice(0, 200)} root=${ROOT}`);
+
+  console.log('M7 a new subagent\'s first call is a real PDF');
+  const C = 'a7f3c2e1b0d9e8f7a';
+  const PDF = 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf';
+  const first = await call(C, 'browser_navigate', { url: PDF });
+  const path = first.t.match(/saved to (\S+\.pdf) \(/)?.[1];
+  const head = path && existsSync(path) ? readFileSync(path).subarray(0, 5).toString('latin1') : null;
+  ok(`captured on its first call (${first.ms} ms), the file is a PDF`, first.t.includes('### tandem: PDF captured') && head === '%PDF-', first.t.slice(-300));
 
   console.log('M6 client EOF');
   const exited = new Promise((r) => p.on('exit', r));

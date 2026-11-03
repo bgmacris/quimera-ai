@@ -20,7 +20,7 @@
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { extractNavigateUrl, extractPageUrl, sessionKey } from './map-inject-core.mjs';
+import { extractNavigateUrl, extractPageUrl, hookStateDir, stateAgent } from './map-inject-core.mjs';
 import { lastPageUrl, rememberPageUrl } from './sandbox-guard.mjs';
 
 export const GRACE_MS = 15_000;
@@ -38,17 +38,17 @@ export function movesPage(tool, toolInput = {}) {
 
 const sameUrl = (a, b) => a.replace(/#.*$/, '') === b.replace(/#.*$/, '');
 
-const movedFile = (dataDir, sessionId) => join(dataDir, '.hook-state', sessionKey(sessionId), '.moved');
+const movedFile = (dataDir, sessionId, agentId) => join(hookStateDir(dataDir, sessionId, agentId), '.moved');
 
-function markMoved(dataDir, sessionId, now) {
+function markMoved(dataDir, sessionId, now, agentId) {
   try {
-    mkdirSync(join(dataDir, '.hook-state', sessionKey(sessionId)), { recursive: true });
-    writeFileSync(movedFile(dataDir, sessionId), String(now));
+    mkdirSync(hookStateDir(dataDir, sessionId, agentId), { recursive: true });
+    writeFileSync(movedFile(dataDir, sessionId, agentId), String(now));
   } catch { /* never break the session */ }
 }
 
-function lastMove(dataDir, sessionId) {
-  try { return Number(readFileSync(movedFile(dataDir, sessionId), 'utf8')) || 0; } catch { return 0; }
+function lastMove(dataDir, sessionId, agentId) {
+  try { return Number(readFileSync(movedFile(dataDir, sessionId, agentId), 'utf8')) || 0; } catch { return 0; }
 }
 
 /**
@@ -57,18 +57,19 @@ function lastMove(dataDir, sessionId) {
  */
 export function tabDrift({ input, dataDir, now = Date.now(), env = process.env }) {
   const sessionId = input?.session_id;
+  const agentId = stateAgent(input, env);   // multi-session: each agent's own tab
   const tool = String(input?.tool_name || '');
   const url = extractPageUrl(input) || extractNavigateUrl(input);
   if (movesPage(tool, input?.tool_input || {})) {
-    markMoved(dataDir, sessionId, now);
-    if (url) rememberPageUrl(dataDir, sessionId, url);
+    markMoved(dataDir, sessionId, now, agentId);
+    if (url) rememberPageUrl(dataDir, sessionId, url, agentId);
     return null;
   }
   if (!url) return null;
-  const before = lastPageUrl(dataDir, sessionId);
-  rememberPageUrl(dataDir, sessionId, url);
+  const before = lastPageUrl(dataDir, sessionId, agentId);
+  rememberPageUrl(dataDir, sessionId, url, agentId);
   if (!before || sameUrl(before, url)) return null;
-  if (now - lastMove(dataDir, sessionId) < GRACE_MS) return null;
+  if (now - lastMove(dataDir, sessionId, agentId) < GRACE_MS) return null;
   if (env.TANDEM_TAB_DRIFT === '0') return null;
   const name = tool.replace(/^.*__/, '');
   return `tandem: your tab moved without you asking. It is now on ${url}; at your previous browser call it was on ${before}, and nothing you ran since navigates (${name} only reads). In a shared browser that is usually the human clicking in the window; it can also be a page redirect or script. What you read before belongs to the old page: check where you are before continuing a multi-step extraction, and browser_navigate back if you need the old page.`;

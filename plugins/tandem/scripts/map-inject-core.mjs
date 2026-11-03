@@ -50,6 +50,21 @@ export function sessionKey(sessionId) {
   return (sessionId || 'no-session').replace(/[^a-z0-9_-]/gi, '_').slice(0, 64);
 }
 
+// Multi-session (R05 §15): a subagent has its own tab and its own context, so what the hooks remember per
+// session (the tab's URL, its last move, which site profiles were injected) is kept per AGENT: main in the
+// session's directory as before, each subagent in `.agents/<agent_id>` inside it (a host never starts with
+// '.'; cleanupSessionMarkers removes them with the session). Single mode (TANDEM_MULTISESSION=0): one MCP,
+// one current tab for every agent → one state per session, as before.
+export function stateAgent(input, env = process.env) {
+  if (env.TANDEM_MULTISESSION === '0') return null;
+  return typeof input?.agent_id === 'string' && input.agent_id ? input.agent_id : null;
+}
+
+export function hookStateDir(dataDir, sessionId, agentId = null) {
+  return agentId ? join(dataDir, '.hook-state', sessionKey(sessionId), '.agents', sessionKey(agentId))
+    : join(dataDir, '.hook-state', sessionKey(sessionId));
+}
+
 // Big profile → its INDEX (profile.mjs), wrapped as data like the inline form. Instruction-like lines are
 // searched in the WHOLE profile, not just the index (a poisoned line may sit in a section not shown).
 export function indexContext(key, profile, source) {
@@ -102,7 +117,7 @@ export function profileContext(host, profile, source = `sites/${host}.md`) {
  */
 // `normalizeHost` is still accepted (adapters pass it) but resolution lives in profile.mjs:
 // key = host or host_port, falling back to the legacy port-less profile.
-export function tryInjectProfile({ url, sessionId, dataDir }) {
+export function tryInjectProfile({ url, sessionId, dataDir, agentId = null }) {
   if (!url || typeof url !== 'string') return { ok: false };
 
   let r;
@@ -110,8 +125,8 @@ export function tryInjectProfile({ url, sessionId, dataDir }) {
   if (!r) return { ok: false };
   const host = r.key;
 
-  const sid = sessionKey(sessionId);
-  const marker = join(dataDir, '.hook-state', sid, host);
+  const dir = hookStateDir(dataDir, sessionId, agentId);
+  const marker = join(dir, host);
   if (existsSync(marker)) return { ok: false };
 
   // Read first, mark after: a failed read must not mark the host as already injected.
@@ -119,7 +134,7 @@ export function tryInjectProfile({ url, sessionId, dataDir }) {
   try { profile = readFileSync(r.path, 'utf8'); } catch { return { ok: false }; }
 
   try {
-    mkdirSync(join(dataDir, '.hook-state', sid), { recursive: true });
+    mkdirSync(dir, { recursive: true });
     writeFileSync(marker, '');
   } catch {
     return { ok: false };

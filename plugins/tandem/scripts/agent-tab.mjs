@@ -11,6 +11,10 @@
 // any more (it moved on its own) — a locator, the proxy asking the MCP `browser_tabs list` itself, names
 // it; the first begin() may wait up to firstBudgetMs (the MCP connects to Chrome on its first call anyway). Unknown → nothing. Only those pages: the human's other
 // tabs are not touched.
+// Multi-session (pagesFor given): which pages are the agent's is KNOWN — the relay's ownership — so all of
+// them are held (its tab and its popups), no URL guess, no locator. adopt(page): a page the relay is about
+// to show the agent (cdp-relay.mjs onPage): held at once if the hold is active, armed as `fresh` (not
+// navigated yet, or a paused popup: no Runtime.evaluate — it would not answer, R07); the relay waits for it.
 // begin() before each tools/call is forwarded (waits at most budgetMs, or firstBudgetMs while the tab
 // is still unknown); end() after its response;
 // LINGER after the last one, everything is released.
@@ -24,7 +28,7 @@ export const DEFAULT_LINGER_MS = 15_000;
 // onClient(client): once per connection (register event handlers). onAttach(client, sessionId, page):
 // once per attached tab — what to switch on.
 // callTimeoutMs: per CDP call on the hold's connection (begin() is bounded by its budget either way).
-export function agentTabHold({ port, lingerMs = DEFAULT_LINGER_MS, budgetMs = 500, firstBudgetMs = 3000, callTimeoutMs = budgetMs, log = () => {}, label = 'tab', onClient = () => {}, onAttach }) {
+export function agentTabHold({ port, lingerMs = DEFAULT_LINGER_MS, budgetMs = 500, firstBudgetMs = 3000, callTimeoutMs = budgetMs, log = () => {}, label = 'tab', onClient = () => {}, onAttach, pagesFor = null }) {
   let client = null;
   let lastUrl = null;
   let locate = null;   // async (lastKnownUrl) => the MCP's current tab URL, or null
@@ -43,7 +47,26 @@ export function agentTabHold({ port, lingerMs = DEFAULT_LINGER_MS, budgetMs = 50
   const release = (id) => { const s = held.get(id); held.delete(id); client?.call('Target.detachFromTarget', { sessionId: s }).catch(() => {}); };
   const releaseAll = () => { for (const id of [...held.keys()]) release(id); };
 
+  async function attach(page, opts = {}) {
+    if (held.has(page.id)) return;
+    const c = await ensureClient();
+    const { sessionId } = await c.call('Target.attachToTarget', { targetId: page.id, flatten: true });
+    if (held.has(page.id)) { c.call('Target.detachFromTarget', { sessionId }).catch(() => {}); return; }   // raced
+    held.set(page.id, sessionId);
+    await onAttach(c, sessionId, page, opts);
+    // Past budgetMs the call went ahead; if it already ended AND the linger fired, nobody will release this.
+    if (busy === 0 && !timer) release(page.id);
+  }
+
   async function enable() {
+    if (pagesFor) {
+      const pages = await pagesFor();
+      log(`${label}: ${pages.length} page(s) of the agent`);
+      const want = new Set(pages.map((p) => p.id));
+      for (const id of held.keys()) if (!want.has(id)) release(id);   // closed, or no longer its
+      for (const page of pages) await attach(page);
+      return;
+    }
     const all = await listPages(port, budgetMs);
     let pages = candidatePages(all, lastUrl);
     // No page on the last URL a result showed: none yet, or the tab moved on its own since (a script
@@ -57,15 +80,7 @@ export function agentTabHold({ port, lingerMs = DEFAULT_LINGER_MS, budgetMs = 50
     const want = new Set(pages.map((p) => p.id));
     for (const id of held.keys()) if (!want.has(id)) release(id);   // no longer the current tab
     if (!want.size) return;
-    const c = await ensureClient();
-    for (const page of pages) {
-      if (held.has(page.id)) continue;
-      const { sessionId } = await c.call('Target.attachToTarget', { targetId: page.id, flatten: true });
-      held.set(page.id, sessionId);
-      await onAttach(c, sessionId, page);
-      // Past budgetMs the call went ahead; if it already ended AND the linger fired, nobody will release this.
-      if (busy === 0 && !timer) release(page.id);
-    }
+    for (const page of pages) await attach(page);
   }
 
   return {
@@ -74,10 +89,16 @@ export function agentTabHold({ port, lingerMs = DEFAULT_LINGER_MS, budgetMs = 50
     async begin() {
       busy++; clearTimeout(timer); timer = null;
       const done = enable().catch((e) => log(`${label}: ${e.message}`));
-      const wait = !lastUrl && locate ? firstBudgetMs : budgetMs;
+      const wait = !pagesFor && !lastUrl && locate ? firstBudgetMs : budgetMs;
       await Promise.race([done, new Promise((r) => setTimeout(r, wait).unref())]);
     },
     useLocator(fn) { locate = fn; },
+    // A new page of the agent (the relay holds it from the agent until this settles). Only while active:
+    // a page born outside any call is held at the next begin().
+    adopt(page) {
+      if (busy === 0 && !timer) return null;
+      return attach(page, { fresh: true }).catch((e) => log(`${label}: adopt: ${e.message}`));
+    },
     // After its response. `name`/`args`/`result` update the current-tab guess.
     end(name, args, result) {
       const url = extractTabUrl({ tool_name: name, tool_input: args || {}, tool_response: result })

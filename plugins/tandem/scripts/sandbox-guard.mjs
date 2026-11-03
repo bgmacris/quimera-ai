@@ -20,7 +20,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { browserWsUrl, connect, listPages } from './cdp.mjs';
-import { sessionKey } from './map-inject-core.mjs';
+import { hookStateDir, stateAgent } from './map-inject-core.mjs';
 
 // The tools whose handler goes through the MCP's waitForCompletion (read from the 0.0.83 bundle).
 // browser_type only with submit/slowly; a click that NAVIGATES returns (the navigation rejects the wait),
@@ -33,18 +33,18 @@ export function guarded(tool, toolInput = {}) {
   return TYPE.test(tool) && !!(toolInput.submit || toolInput.slowly);
 }
 
-const urlFile = (dataDir, sessionId) => join(dataDir, '.hook-state', sessionKey(sessionId), '.page-url');
+const urlFile = (dataDir, sessionId, agentId) => join(hookStateDir(dataDir, sessionId, agentId), '.page-url');
 
 // PostToolUse records it; '.page-url' cannot clash with the per-host markers (hosts don't start with '.').
-export function rememberPageUrl(dataDir, sessionId, url) {
+export function rememberPageUrl(dataDir, sessionId, url, agentId = null) {
   try {
-    mkdirSync(join(dataDir, '.hook-state', sessionKey(sessionId)), { recursive: true });
-    writeFileSync(urlFile(dataDir, sessionId), url);
+    mkdirSync(hookStateDir(dataDir, sessionId, agentId), { recursive: true });
+    writeFileSync(urlFile(dataDir, sessionId, agentId), url);
   } catch { /* never break the session */ }
 }
 
-export function lastPageUrl(dataDir, sessionId) {
-  try { return readFileSync(urlFile(dataDir, sessionId), 'utf8'); } catch { return null; }
+export function lastPageUrl(dataDir, sessionId, agentId = null) {
+  try { return readFileSync(urlFile(dataDir, sessionId, agentId), 'utf8'); } catch { return null; }
 }
 
 // Which page targets can be the MCP's current tab: those on the last URL seen, else the only page.
@@ -80,7 +80,7 @@ export async function sandboxGuard({ input, port, dataDir, env = process.env }) 
   if (!guarded(tool, input?.tool_input || {})) return null;
   let client;
   try {
-    const pages = candidatePages(await listPages(port, 1000), lastPageUrl(dataDir, input.session_id));
+    const pages = candidatePages(await listPages(port, 1000), lastPageUrl(dataDir, input.session_id, stateAgent(input)));
     if (!pages.length) return null;
     client = await connect(await browserWsUrl(port, 1000), { timeoutMs: 1000 });
     for (const p of pages) if (await probeTarget(client, p.id) !== 'blocked') return null;

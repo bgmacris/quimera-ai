@@ -30,7 +30,7 @@ import { dataDir as resolveDataDir, ensureDataDir } from './paths.mjs';
 import { tabDrift } from './tab-drift.mjs';
 import {
   tryInjectProfile, cleanupSessionMarkers,
-  extractNavigateUrl, extractSessionId,
+  extractNavigateUrl, extractSessionId, stateAgent,
 } from './map-inject-core.mjs';
 
 const dataDir = resolveDataDir();
@@ -66,7 +66,7 @@ try { ensureDataDir(dataDir); touchLease(dataDir, sessionId); } catch { /* never
 let drift = null;
 try { drift = tabDrift({ input, dataDir }); } catch { /* never break the session */ }
 const result = tryInjectProfile({
-  url: extractNavigateUrl(input), sessionId, dataDir, normalizeHost,
+  url: extractNavigateUrl(input), sessionId, dataDir, normalizeHost, agentId: stateAgent(input),
 });
 const context = [drift, result.ok ? result.context : null].filter(Boolean).join('\n\n');
 if (!context) silent();

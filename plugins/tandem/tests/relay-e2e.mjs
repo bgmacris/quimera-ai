@@ -177,6 +177,32 @@ try {
   const shot = await call('T', 'browser_take_screenshot', { fullPage: true, type: 'png' });
   const img = shot.content.find((c) => c.type === 'image');
   ok(`R8 full-page screenshot crosses the relay (${img ? Math.round(img.data.length / 1024) : 0} KB base64)`, !shot.err && img && img.data.length > 100_000, shot.text.slice(0, 200));
+
+  console.log('R9 onPage holds a new page from its agent, in order (phase 3b: arm PDF capture first)');
+  for (const [label, onPageMs, holdMs] of [['slow onPage (300 ms)', 300, 1000], ['onPage that never settles (cap 400 ms)', Infinity, 400]]) {
+    const seen = [];
+    const r9 = await startRelay({ port: PORT, dataDir: null, holdMs, onPage: (agent, info) => { seen.push({ agent, id: info.targetId }); return new Promise((res) => { if (onPageMs !== Infinity) setTimeout(res, onPageMs); }); } });
+    const ws = new WebSocket(r9.endpoint('H'));
+    await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
+    let n = 0; const order = []; const wait = new Map(); const t0 = Date.now();
+    ws.onmessage = (e) => {
+      const m = JSON.parse(e.data);
+      if (m.method === 'Target.attachedToTarget' && m.params.targetInfo.type === 'page') order.push({ what: 'attach', ms: Date.now() - t0, id: m.params.targetInfo.targetId });
+      if (m.id !== undefined) { if (wait.get(m.id)?.create) order.push({ what: 'response', ms: Date.now() - t0 }); wait.get(m.id)?.r(m); wait.delete(m.id); }
+    };
+    const send = (method, params, extra = {}) => new Promise((r) => { const id = ++n; wait.set(id, { r, ...extra }); ws.send(JSON.stringify({ id, method, params })); });
+    await send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true });   // as Playwright does
+    const created = await send('Target.createTarget', { url: 'about:blank' }, { create: true });
+    const tid = created.result?.targetId;
+    const a = order.find((o) => o.what === 'attach'); const resp = order.find((o) => o.what === 'response');
+    const want = onPageMs === Infinity ? holdMs : onPageMs;
+    ok(`R9 ${label}: onPage got the agent and the new page`, seen.length === 1 && seen[0].agent === 'H' && seen[0].id === tid, JSON.stringify(seen));
+    ok(`R9 ${label}: the attach waits for it (${a?.ms} ms ≥ ${want - 20})`, a && a.ms >= want - 20 && a.id === tid, JSON.stringify(order));
+    ok(`R9 ${label}: …and the createTarget response comes after the attach, not before`, a && resp && order.indexOf(a) < order.indexOf(resp), JSON.stringify(order));
+    if (onPageMs === Infinity) ok(`R9 ${label}: counted as a hold timeout`, r9.stats.holdTimeouts === 1, JSON.stringify(r9.stats));
+    if (tid) await send('Target.closeTarget', { targetId: tid });
+    ws.close(); r9.close();
+  }
 } catch (e) {
   ok(`no exception: ${e.message}`, false);
 } finally {

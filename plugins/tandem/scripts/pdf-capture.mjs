@@ -87,7 +87,7 @@ export function pdfFileName(url, headers, now = new Date()) {
   return `${now.toISOString().replace(/[:.]/g, '-').slice(0, 19)}-${safe(host)}-${name}.pdf`;
 }
 
-export function pdfCapturer({ port, outDir, lingerMs = DEFAULT_LINGER_MS, budgetMs = 500, log = () => {}, maxBytes = MAX_BYTES }) {
+export function pdfCapturer({ port, outDir, lingerMs = DEFAULT_LINGER_MS, budgetMs = 500, log = () => {}, maxBytes = MAX_BYTES, pagesFor = null }) {
   const pending = [];        // notes not yet added to a result
   const captured = new Set(); // URLs captured (this process): no "not captured" hint for them, no duplicates
   const hinted = new Set();
@@ -146,7 +146,7 @@ export function pdfCapturer({ port, outDir, lingerMs = DEFAULT_LINGER_MS, budget
   }
 
   const hold = agentTabHold({
-    port, lingerMs, budgetMs, log, label: 'pdf', callTimeoutMs: 30_000,   // a 100 MB getResponseBody takes seconds
+    port, lingerMs, budgetMs, log, label: 'pdf', callTimeoutMs: 30_000, pagesFor,   // a 100 MB getResponseBody takes seconds
     onClient: (c) => {
       c.on('Fetch.requestPaused', (p, sessionId) => { onPaused(c, p, sessionId); });
       c.on('Runtime.bindingCalled', (p) => { if (p.name === BINDING) onBlob(String(p.payload || '')); });
@@ -163,7 +163,9 @@ export function pdfCapturer({ port, outDir, lingerMs = DEFAULT_LINGER_MS, budget
         finally { if (p.waitingForDebugger) c.call('Runtime.runIfWaitingForDebugger', {}, p.sessionId).catch(() => {}); }
       });
     },
-    onAttach: (c, sessionId) => arm(c, sessionId),
+    // fresh (multi-session, the relay holds it): not navigated yet or a paused popup — no Runtime.evaluate,
+    // the hook script for new documents covers its first one (R05 §15.4).
+    onAttach: (c, sessionId, page, opts) => arm(c, sessionId, { child: !!opts?.fresh }),
   });
 
   return {

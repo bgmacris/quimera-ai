@@ -32,6 +32,7 @@
 import { execFile, spawn } from 'node:child_process';
 import { mkdirSync, readFileSync, realpathSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
+import { listPages } from './cdp.mjs';
 import { cdpPort, dataDir, ensureDataDir } from './paths.mjs';
 import { routeStdio } from './agent-router.mjs';
 import { startRelay } from './cdp-relay.mjs';
@@ -88,13 +89,21 @@ if (isCli) {
   const log = process.env.TANDEM_DEBUG === '1' ? (m) => process.stderr.write(`tandem: ${m}\n`) : () => {};
   const linger = Number(process.env.TANDEM_FOCUS_LINGER_MS);
   const lingerMs = Number.isFinite(linger) && linger >= 0 ? linger : DEFAULT_LINGER_MS;
+  // Multi-session: the relay says which pages are the agent's (pagesFor), and hands each new one over before
+  // the agent's MCP learns of it (onPage → adopt), so PDF capture is armed for its first navigation.
+  let relay = null;
+  const emulators = new Map();   // agent → its emulator
   const emulatorFor = (agent) => {
     const tag = agent === 'main' ? log : (m) => log(`[${agent}] ${m}`);
-    return combine(
-      focus && focusEmulator({ port: cdpPort(), lingerMs, log: tag }),
-      capture && pdfCapturer({ port: cdpPort(), lingerMs, outDir: join(dataDir(), 'output', 'pdf'), log: tag }),
+    const pagesFor = relay ? async () => { const ids = new Set(relay.ownedBy(agent)); return (await listPages(cdpPort(), 500)).filter((p) => ids.has(p.id)); } : null;
+    const e = combine(
+      focus && focusEmulator({ port: cdpPort(), lingerMs, log: tag, pagesFor }),
+      capture && pdfCapturer({ port: cdpPort(), lingerMs, outDir: join(dataDir(), 'output', 'pdf'), log: tag, pagesFor }),
     );
+    emulators.set(agent, e);
+    return e;
   };
+  const onPage = (agent, info) => emulators.get(agent)?.adopt({ id: info.targetId, url: info.url, type: info.type }) ?? null;
   // Windows: npx is a .cmd shim; Node refuses to spawn .cmd/.bat without a shell (CVE-2024-27980),
   // so go through cmd.exe with explicit quoting. Elsewhere: plain spawn, no shell.
   const spawnNpx = (a, stdio) => (win
@@ -105,9 +114,8 @@ if (isCli) {
     process.exit(127);
   };
 
-  let relay = null;
   if (multiSession()) {
-    try { relay = await startRelay({ port: cdpPort(), dataDir: dataDir(), log: (m) => log(`relay: ${m}`) }); }
+    try { relay = await startRelay({ port: cdpPort(), dataDir: dataDir(), log: (m) => log(`relay: ${m}`), onPage }); }
     catch (e) { process.stderr.write(`tandem: multi-session relay could not start (${e.message}); one MCP for the whole session, as before.\n`); }
   }
 

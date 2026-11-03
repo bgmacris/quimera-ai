@@ -25,9 +25,9 @@ import { routeStdio } from './agent-router.mjs';
 
 export { DEFAULT_LINGER_MS };
 
-export function focusEmulator({ port, lingerMs = DEFAULT_LINGER_MS, budgetMs = 500, log = () => {} }) {
+export function focusEmulator({ port, lingerMs = DEFAULT_LINGER_MS, budgetMs = 500, log = () => {}, pagesFor = null }) {
   return agentTabHold({
-    port, lingerMs, budgetMs, log, label: 'focus',
+    port, lingerMs, budgetMs, log, label: 'focus', pagesFor,
     onAttach: (c, sessionId) => c.call('Emulation.setFocusEmulationEnabled', { enabled: true }, sessionId),
   });
 }
@@ -41,6 +41,8 @@ export function combine(...watchers) {
     end(name, args, result) { for (const w of ws) w.end(name, args, result); },
     notes(name, args, result) { return ws.flatMap((w) => (w.notes ? w.notes(name, args, result) : [])); },
     useLocator(fn) { for (const w of ws) w.useLocator?.(fn); },
+    // A new page of the agent (multi-session): every watcher holds it; settles when all did (or declined).
+    adopt(page) { const ps = ws.map((w) => w.adopt?.(page)).filter(Boolean); return ps.length ? Promise.all(ps) : null; },
     close() { for (const w of ws) w.close?.(); },
   };
 }

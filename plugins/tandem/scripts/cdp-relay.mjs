@@ -23,6 +23,12 @@
 //
 // Ownership is also written to tab-owners.mjs (shared by all sessions), so a foreign page can be told apart
 // as the human's or another session's.
+//
+// onPage(agent, targetInfo) — called when a page is shown to an agent (one it created, or its popup). If it
+// returns a promise, everything for that client waits behind it, in order, at most holdMs: the launcher arms
+// the agent's PDF capture and focus emulation on the page BEFORE Playwright learns of it, so the page's first
+// navigation is already seen (R05 §15.4: a createTarget page is not paused, but Playwright navigates only
+// after the attach and the createTarget response, both held here; a popup is paused until Playwright resumes it).
 
 import { browserWsUrl } from './cdp.mjs';
 import { tabOwners } from './tab-owners.mjs';
@@ -34,7 +40,7 @@ const AGENT = /^[\w.-]{1,64}$/;
 const DENY_BROWSER = new Set(['Browser.close', 'Browser.crash', 'Browser.crashGpuProcess']);
 const BY_TARGET = new Set(['Target.closeTarget', 'Target.activateTarget', 'Target.attachToTarget', 'Target.getTargetInfo']);
 
-export async function startRelay({ port, dataDir = null, newWindow = true, log = () => {}, callTimeoutMs = 10_000 }) {
+export async function startRelay({ port, dataDir = null, newWindow = true, log = () => {}, callTimeoutMs = 10_000, onPage = null, holdMs = 1000 }) {
   const token = newToken();
   const srv = await startWsServer({ token });
   const registry = dataDir ? tabOwners(dataDir) : null;
@@ -43,7 +49,7 @@ export async function startRelay({ port, dataDir = null, newWindow = true, log =
   const kind = new Map();           // targetId → target type, as seen in any event
   const conns = new Set();
   let pendingCreates = 0;           // createTarget in flight, all agents
-  const stats = { shown: 0, hidden: 0, buffered: 0, popupsInherited: 0, denied: 0 };
+  const stats = { shown: 0, hidden: 0, buffered: 0, popupsInherited: 0, denied: 0, held: 0, holdTimeouts: 0 };
 
   const setOwner = (id, agent) => {
     owner.set(id, agent);
@@ -78,14 +84,31 @@ export async function startRelay({ port, dataDir = null, newWindow = true, log =
     const getTargets = new Set();     // ids of this client's Target.getTargets requests
     let buffer = [];                  // browser-level attachedToTarget of unknown owner
 
-    const toClient = (m) => client.send(typeof m === 'string' ? m : JSON.stringify(m));
+    // In order, always: while a hold (onPage) is pending, every message queues behind it.
+    let outQ = Promise.resolve(); let queued = 0;
+    const toClient = (m) => {
+      const s = typeof m === 'string' ? m : JSON.stringify(m);
+      if (!queued) return client.send(s);
+      queued++; outQ = outQ.then(() => { queued--; client.send(s); });
+    };
+    const holdOut = (p) => {
+      queued++; stats.held++;
+      const t0 = Date.now();
+      outQ = outQ.then(() => Promise.race([Promise.resolve(p).catch((e) => log(`relay ${agent}: onPage: ${e.message}`)), new Promise((r) => setTimeout(r, holdMs).unref())]))
+        .then(() => { queued--; const ms = Date.now() - t0; if (ms >= holdMs) { stats.holdTimeouts++; log(`relay ${agent}: page hold hit ${holdMs} ms`); } });
+    };
     const toUp = (s) => (up ? up.send(s) : early.push(s));
     const relaySend = (method, params, sessionId) => { const id = relayId++; toUp(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) })); return id; };
     const deny = (m, why) => { stats.denied++; toClient({ id: m.id, ...(m.sessionId ? { sessionId: m.sessionId } : {}), error: { code: -32000, message: `tandem: ${why}` } }); };
 
     const show = (ev) => {
       stats.shown++; visible.add(ev.params.sessionId);
-      if (ev.params.targetInfo.type === 'page') pages.set(ev.params.sessionId, ev.params.targetInfo.targetId);
+      if (ev.params.targetInfo.type === 'page') {
+        pages.set(ev.params.sessionId, ev.params.targetInfo.targetId);
+        let hold = null;
+        try { hold = onPage?.(agent, ev.params.targetInfo); } catch (e) { log(`relay ${agent}: onPage: ${e.message}`); }
+        if (hold && typeof hold.then === 'function') holdOut(hold);
+      }
       toClient(ev);
     };
     const hide = (ev) => {
@@ -215,6 +238,8 @@ export async function startRelay({ port, dataDir = null, newWindow = true, log =
     // A browser-level command on the agent's upstream connection.
     call: (agent, method, params) => { const c = connsOf(agent)[0]; return c ? c.call(method, params) : Promise.reject(new Error(`no connection for ${agent}`)); },
     agents: () => [...new Set([...conns].map((c) => c.agent))],
+    // Target ids of the pages this agent owns (created, or popups of its pages).
+    ownedBy: (agent) => [...owner].filter(([, a]) => a === agent).map(([id]) => id),
     close: () => srv.close(),
   };
 }
