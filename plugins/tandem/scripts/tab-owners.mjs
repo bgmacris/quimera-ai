@@ -7,6 +7,10 @@
 // holding {pid, agent}. pid = the relay's process (the session's MCP launcher): a claim whose pid is gone
 // is stale (crashed session) and reads as nobody's — the tab goes back to the human.
 //
+// adopted: the tab was the human's and was handed over (phase 4). When its session dies, reap() tells the
+// two apart: an agent's own tab is closed (decided 2026-11-03: they must not pile up as the human's), a
+// handed-over one is only given back.
+//
 // Files, not a daemon: no process to keep alive, and a crash leaves at worst a stale file that the pid
 // check ignores and sweep() removes. Target ids are Chrome's hex ids; anything else is refused (they become
 // file names).
@@ -32,9 +36,9 @@ export function tabOwners(dataDir, { pid = process.pid } = {}) {
     } catch { return null; }
   };
   return {
-    claim(targetId, agent) {
+    claim(targetId, agent, { adopted = false } = {}) {
       mkdirSync(dir, { recursive: true, mode: 0o700 });
-      writeFileSync(file(targetId), JSON.stringify({ pid, agent }), { mode: 0o600 });
+      writeFileSync(file(targetId), JSON.stringify({ pid, agent, ...(adopted ? { adopted: true } : {}) }), { mode: 0o600 });
     },
     // Only drops our own claim: another session may have adopted the tab since.
     release(targetId) {
@@ -47,6 +51,22 @@ export function tabOwners(dataDir, { pid = process.pid } = {}) {
     classify(targetId) {
       const o = read(targetId);
       return !o ? 'human' : o.pid === pid ? 'mine' : 'session';
+    },
+    // Claims of DEAD sessions: removed, and returned so the caller can close the agents' own tabs.
+    // → [{ targetId, agent, adopted }]. A corrupt claim is removed and not returned (nothing to trust).
+    reap() {
+      let names = [];
+      try { names = readdirSync(dir); } catch { return []; }
+      const dead = [];
+      for (const id of names) {
+        if (!ID.test(id)) continue;
+        let o = null;
+        try { o = JSON.parse(readFileSync(join(dir, id), 'utf8')); } catch { /* corrupt */ }
+        if (o && Number.isInteger(o.pid) && alive(o.pid)) continue;
+        rmSync(join(dir, id), { force: true });
+        if (o && Number.isInteger(o.pid)) dead.push({ targetId: id, agent: o.agent, adopted: o.adopted === true });
+      }
+      return dead;
     },
     // Remove claims of dead sessions and of targets that no longer exist (liveIds: current page ids).
     sweep(liveIds) {

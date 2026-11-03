@@ -139,6 +139,13 @@ else
   echo "  - skipped: TANDEM_MULTISESSION=0 (no relay, no adoption)"
 fi
 
+echo "[3h] life cycle: idle agents, end of session, a dead session's leftovers (multi-session)"
+if [ "${TANDEM_MULTISESSION:-1}" != 0 ]; then
+  check "lifecycle-e2e.mjs green" "node '$HERE/lifecycle-e2e.mjs'"
+else
+  echo "  - skipped: TANDEM_MULTISESSION=0 (no relay)"
+fi
+
 echo "[4] stop"
 check "stop" "'$ROOT/scripts/chrome-daemon.sh' stop | grep -q stopped"
 check "no Chrome left on our profile" "! pgrep -f -- '--user-data-dir=$TANDEM_DATA_DIR/chrome-profile' >/dev/null"

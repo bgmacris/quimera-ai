@@ -226,6 +226,51 @@ console.log('local tools (browser_tab_adopt runs in the router, never in a child
   ok('single mode: not listed, and a call goes to the MCP as is', toClient.find((m) => m.id === 1)?.result.tools.length === 1 && c.calls().some((m) => m.params.name === 'browser_tab_adopt'));
 }
 
+console.log('life cycle (idle stop at stopMs, tabs closed at tabsMs, cap of agents; main never)');
+{
+  let t = 0; const now = () => t;
+  const clientIn = new PassThrough(); const clientOut = new PassThrough(); const toClient = [];
+  clientOut.on('data', (d) => { for (const l of String(d).split('\n').filter(Boolean)) toClient.push(JSON.parse(l)); });
+  const spawned = []; const children = new Map(); const stopped = []; const tabsClosed = [];
+  const r = routeStdio({
+    clientIn, clientOut, multi: true, initTimeoutMs: 300, now,
+    emulatorFor: () => ({ async begin() {}, end() {} }),
+    spawnChild: (agent) => { const c = fakeChild(agent); spawned.push(agent); children.set(agent, c); return c; },
+    lifecycle: { stopMs: 600_000, tabsMs: 1_800_000, maxAgents: 2, onStop: (a) => stopped.push(a), onTabsIdle: async (a) => { tabsClosed.push(a); } },
+  });
+  const answer = async (agent, id) => { await sleep(30); const c = children.get(agent); const m = c.calls().find((x) => x.id === id); if (m) c.reply({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: 'ok' }] } }); await sleep(20); };
+  clientIn.write(call(1, 'browser_snapshot', { agent: 'main' })); await answer('main', 1);
+  clientIn.write(call(2, 'browser_snapshot', { agent: 's1' })); await answer('s1', 2);
+  t = 9 * 60_000; await r.tick();
+  ok('9 min idle: nothing stopped', !stopped.length && r.agents().includes('s1'));
+  t = 10 * 60_000; await r.tick();
+  ok('10 min idle: the subagent\'s MCP is stopped (onStop first), main is not', stopped.join() === 's1' && !r.agents().includes('s1') && r.agents().includes('main') && children.get('s1').killed);
+  t = 11 * 60_000;
+  clientIn.write(call(3, 'browser_snapshot', { agent: 's1' })); await answer('s1', 3);
+  ok('it comes back: its next call starts a new MCP and is answered', spawned.filter((a) => a === 's1').length === 2 && toClient.some((m) => m.id === 3 && m.result));
+  t = 11 * 60_000 + 29 * 60_000; await r.tick();
+  ok('its idle time starts again from that call (29 min later: tabs not closed yet)', !tabsClosed.length);
+  t = 11 * 60_000 + 30 * 60_000; await r.tick();
+  ok('30 min idle: its tabs are closed', tabsClosed.join() === 's1');
+  t = 200 * 60_000; await r.tick();
+  ok('main: never stopped, its tabs never closed by idleness', r.agents().includes('main') && !stopped.includes('main') && !tabsClosed.includes('main'));
+  // Cap of 2 subagents: a third stops the least recently used IDLE one.
+  clientIn.write(call(4, 'browser_snapshot', { agent: 'c1' })); await answer('c1', 4);
+  t += 1000; clientIn.write(call(5, 'browser_snapshot', { agent: 'c2' })); await answer('c2', 5);
+  t += 1000; clientIn.write(call(6, 'browser_click', { agent: 'c2' })); await sleep(30);   // c2 busy (unanswered)
+  stopped.length = 0;
+  t += 1000; clientIn.write(call(7, 'browser_snapshot', { agent: 'c3' })); await answer('c3', 7);
+  ok('cap: a 3rd subagent stops the least recently used idle one (c1), not the busy c2', stopped.join() === 'c1' && r.agents().includes('c2') && r.agents().includes('c3'));
+  ok('…and the busy call of c2 is still answered later', (await answer('c2', 6), toClient.some((m) => m.id === 6 && m.result)));
+  // A lane that died must not take a NEWER lane of the same agent with it.
+  const oldC3 = children.get('c3'); t += 1000;
+  r.tick(); stopped.length = 0;
+  t = 1e9; await r.tick();   // everything idle for ages: c2, c3 stopped
+  clientIn.write(call(8, 'browser_snapshot', { agent: 'c3' })); await sleep(10);
+  oldC3.emit('exit', 0, null); await answer('c3', 8);
+  ok('the old MCP of an agent exiting late does not drop its new lane', r.agents().includes('c3') && toClient.some((m) => m.id === 8 && m.result));
+}
+
 console.log('client EOF');
 {
   const h = harness();

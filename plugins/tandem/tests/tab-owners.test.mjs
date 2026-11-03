@@ -51,6 +51,18 @@ try {
   for (const bad of ['../x', 'abc/def', '', 'zzzz9999', 'A'.repeat(65)]) { try { me.claim(bad, 'main'); } catch { threw++; } }
   ok('non-Chrome target ids are refused (they become file names)', threw === 5);
   ok('sweep on a missing dir is a no-op', tabOwners(join(dir, 'nope')).sweep() === 0);
+  // reap(): claims of DEAD sessions, removed and returned with what they were (phase 5).
+  const rdir = join(dir, 'reap'); const live = tabOwners(rdir);
+  const deadPid = 2 ** 22 + 12345;   // above macOS/Linux pid ranges in practice: not alive
+  const deadReg = tabOwners(rdir, { pid: deadPid });
+  deadReg.claim('AAAA0000AAAA0000', 'a1');
+  deadReg.claim('BBBB0000BBBB0000', 'a1', { adopted: true });
+  live.claim('CCCC0000CCCC0000', 'main');
+  const reaped = live.reap().sort((x, y) => x.targetId.localeCompare(y.targetId));
+  ok('reap returns the dead session\'s claims, own and handed-over told apart', JSON.stringify(reaped) === JSON.stringify([{ targetId: 'AAAA0000AAAA0000', agent: 'a1', adopted: false }, { targetId: 'BBBB0000BBBB0000', agent: 'a1', adopted: true }]));
+  ok('…removes them, and keeps the live session\'s', live.classify('AAAA0000AAAA0000') === 'human' && !existsSync(join(ownersDir(rdir), 'BBBB0000BBBB0000')) && live.classify('CCCC0000CCCC0000') === 'mine');
+  ok('reap twice: nothing more', live.reap().length === 0);
+  ok('an adopted claim records it', (live.claim('DDDD0000DDDD0000', 'x', { adopted: true }), live.lookup('DDDD0000DDDD0000')?.adopted === true));
 } finally {
   other.kill(); rmSync(dir, { recursive: true, force: true });
 }

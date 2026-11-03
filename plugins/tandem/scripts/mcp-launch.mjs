@@ -166,6 +166,12 @@ if (isCli) {
   if (relay) {
     let cli = null;
     const children = new Set();
+    // End of the session (Claude Code: SIGINT, +100 ms SIGTERM, killed at ~400 ms — R05 §17; or the client's
+    // EOF): close this session's agents' tabs, give back the handed-over ones (decided 2026-11-03). Bounded:
+    // what doesn't make it is reaped by the next relay. Once, whoever asks first; exits wait for it.
+    let ending = null;
+    const shutdown = () => (ending ??= Promise.race([relay.closeAll().catch(() => 0), new Promise((r) => setTimeout(r, 300))])
+      .then((n) => log(`relay: session end, closed ${typeof n === 'number' ? n : '?'} agent tab(s)`)));
     const spawnChild = (agent) => {
       const a = mcpArgs(process.env, { cdpEndpoint: relay.endpoint(agent) });
       const c = agent !== 'main' && cli ? spawn(process.execPath, [cli, ...a.slice(2)], { stdio: ['pipe', 'pipe', 'inherit'] }) : spawnNpx(a, ['pipe', 'pipe', 'inherit']);
@@ -173,16 +179,27 @@ if (isCli) {
       c.on('exit', () => children.delete(c));
       if (agent === 'main') {
         c.on('error', onSpawnError);
-        c.on('exit', (code, signal) => { for (const o of children) { try { o.kill(); } catch {} } process.exit(signal ? 1 : (code ?? 0)); });
+        c.on('exit', async (code, signal) => { await shutdown(); for (const o of children) { try { o.kill(); } catch {} } process.exit(signal ? 1 : (code ?? 0)); });
       } else c.on('error', (e) => log(`router: agent ${agent}: cannot start its MCP (${e.message})`));
       log(`router: started the MCP of agent ${agent} (${agent !== 'main' && cli ? 'node cli.js' : 'npx'})`);
       return c;
     };
     const localTools = { [ADOPT_TOOL]: adoptTool({ relay, port: cdpPort(), dataDir: dataDir() }) };
-    routeStdio({ clientIn: process.stdin, clientOut: process.stdout, spawnChild, emulatorFor, multi: true, log, localTools });
+    const envMs = (name, def) => { const n = Number(process.env[name]); return process.env[name] !== undefined && Number.isFinite(n) && n >= 0 ? n : def; };
+    const lifecycle = {
+      stopMs: envMs('TANDEM_AGENT_IDLE_MS', 10 * 60_000),        // a subagent's MCP stopped after 10 min unused
+      tabsMs: envMs('TANDEM_AGENT_TABS_IDLE_MS', 30 * 60_000),   // …and its tabs closed after 30
+      maxAgents: envMs('TANDEM_MAX_AGENTS', 8),                  // subagents' MCPs alive at once (0 = no cap)
+      checkMs: envMs('TANDEM_LIFECYCLE_CHECK_MS', 30_000),
+      onStop: (agent) => relay.suspend(agent),
+      onTabsIdle: (agent) => relay.closeAgent(agent),
+    };
+    routeStdio({ clientIn: process.stdin, clientOut: process.stdout, spawnChild, emulatorFor, multi: true, log, localTools, lifecycle });
+    // Leftovers of sessions that died without closing their tabs (crash, SIGKILL before the 300 ms).
+    setInterval(() => { relay.reapDead().catch(() => {}); }, 60_000).unref();
     // After main is up: later children skip npx if this resolves (it never delays the handshake).
     resolveMcpCli(mcpVersion()).then((p) => { cli = p; log(`router: MCP cli ${p ? 'resolved' : 'not resolved (children via npx)'}`); });
-    for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { for (const c of children) { try { c.kill(sig); } catch {} } });
+    for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, async () => { await shutdown(); for (const c of children) { try { c.kill(sig); } catch {} } });
   } else {
     const proxied = focus || capture;
     const stdio = proxied ? ['pipe', 'pipe', 'inherit'] : 'inherit';

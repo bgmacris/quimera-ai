@@ -31,13 +31,19 @@
 // the agent adopted is never really closed by it: Target.closeTarget / Page.close on it = release; and an
 // agent left with no connection (browser_close only disconnects Playwright: measured) releases them all.
 //
+// Life cycle (phase 5, R05 §17, decided 2026-11-03): suspend(agent) before stopping an idle agent's MCP —
+// its connection closes but its handed-over tabs stay its (they go back with its own tabs closing, later);
+// closeAgent(agent) closes its own tabs and gives back the handed-over ones; closeAll() does that for the
+// whole session (the launcher, on Claude Code's SIGINT: ~400 ms). What a session could not close is reaped
+// by the next relay: claims of dead sessions → their agents' own tabs closed, handed-over ones given back.
+//
 // onPage(agent, targetInfo) — called when a page is shown to an agent (one it created, or its popup). If it
 // returns a promise, everything for that client waits behind it, in order, at most holdMs: the launcher arms
 // the agent's PDF capture and focus emulation on the page BEFORE Playwright learns of it, so the page's first
 // navigation is already seen (R05 §15.4: a createTarget page is not paused, but Playwright navigates only
 // after the attach and the createTarget response, both held here; a popup is paused until Playwright resumes it).
 
-import { browserWsUrl } from './cdp.mjs';
+import { browserWsUrl, connect } from './cdp.mjs';
 import { tabOwners } from './tab-owners.mjs';
 import { newToken, startWsServer } from './ws-server.mjs';
 
@@ -51,7 +57,22 @@ export async function startRelay({ port, dataDir = null, newWindow = true, log =
   const token = newToken();
   const srv = await startWsServer({ token });
   const registry = dataDir ? tabOwners(dataDir) : null;
-  try { registry?.sweep(); } catch { /* best effort */ }
+  // Close a set of pages over a connection of our own (an agent's may be gone). Browser down → nothing.
+  const closeTargets = async (ids) => {
+    if (!ids.length) return 0;
+    let c; try { c = await connect(await browserWsUrl(port, 1000), { timeoutMs: 1000 }); } catch { return 0; }
+    try { return (await Promise.all(ids.map((targetId) => c.call('Target.closeTarget', { targetId }).then(() => 1, () => 0)))).reduce((a, b) => a + b, 0); }
+    finally { c.close(); }
+  };
+  // Leftovers of dead sessions (registry claims whose pid is gone).
+  const reapDead = async () => {
+    let dead = []; try { dead = registry?.reap() || []; } catch { /* best effort */ }
+    const own = dead.filter((d) => !d.adopted).map((d) => d.targetId);
+    const n = await closeTargets(own);
+    if (dead.length) log(`relay: reaped ${dead.length} claim(s) of dead sessions, closed ${n} agent tab(s)`);
+    return { reaped: dead.length, closed: n };
+  };
+  const reaping = reapDead();
   const owner = new Map();          // targetId → agent | FOREIGN
   const adopted = new Set();        // targetIds handed over to an agent (the human's): closing = release
   const kind = new Map();           // targetId → target type, as seen in any event
@@ -59,9 +80,10 @@ export async function startRelay({ port, dataDir = null, newWindow = true, log =
   let pendingCreates = 0;           // createTarget in flight, all agents
   const stats = { shown: 0, hidden: 0, buffered: 0, popupsInherited: 0, denied: 0, held: 0, holdTimeouts: 0 };
 
+  const suspended = new Set();      // agents whose MCP was stopped for idleness: keep their handed-over tabs
   const setOwner = (id, agent) => {
     owner.set(id, agent);
-    if (agent !== FOREIGN) { try { registry?.claim(id, agent); } catch (e) { log(`owners: ${e.message}`); } }
+    if (agent !== FOREIGN) { try { registry?.claim(id, agent, { adopted: adopted.has(id) }); } catch (e) { log(`owners: ${e.message}`); } }
   };
   const ownerOf = (info) => {
     const known = owner.get(info.targetId);
@@ -81,6 +103,7 @@ export async function startRelay({ port, dataDir = null, newWindow = true, log =
   srv.on('connection', (client, path) => {
     const agent = decodeURIComponent((path.match(/^\/agent\/([^/?]+)$/) || [])[1] || '');
     if (!AGENT.test(agent)) { client.close(1008); return; }
+    suspended.delete(agent);   // back: its handed-over tabs are released again when it lets go
 
     let up = null;                    // upstream WebSocket, once open
     const early = [];                 // client messages before upstream opened
@@ -234,7 +257,7 @@ export async function startRelay({ port, dataDir = null, newWindow = true, log =
       resolveAll();
       // The agent let go of the browser (browser_close disconnects Playwright, a child died, Chrome went away):
       // the tabs it was handed go back to the human. Its own tabs stay — as before, closing them is phase 5.
-      if (![...conns].some((c) => c.agent === agent)) {
+      if (!suspended.has(agent) && ![...conns].some((c) => c.agent === agent)) {
         for (const id of [...adopted]) if (owner.get(id) === agent) relay.release(id).catch(() => {});
       }
     };
@@ -262,7 +285,7 @@ export async function startRelay({ port, dataDir = null, newWindow = true, log =
     adopt: async (agent, targetId) => {
       const c = connsOf(agent)[0]; if (!c) throw new Error(`no browser connection for ${agent} yet`);
       const prev = owner.get(targetId);
-      setOwner(targetId, agent); kind.set(targetId, 'page'); adopted.add(targetId);
+      adopted.add(targetId); setOwner(targetId, agent); kind.set(targetId, 'page');
       try { await c.call('Target.attachToTarget', { targetId, flatten: true }); }
       catch (e) { adopted.delete(targetId); if (prev) owner.set(targetId, prev); else owner.delete(targetId); try { registry?.release(targetId); } catch {} throw e; }
     },
@@ -275,6 +298,21 @@ export async function startRelay({ port, dataDir = null, newWindow = true, log =
         .map(([sessionId]) => c.call('Target.detachFromTarget', { sessionId }).catch(() => {}))));
     },
     isAdopted: (targetId) => adopted.has(targetId),
+    suspend: (agent) => { suspended.add(agent); },
+    // Its own tabs closed, the handed-over ones given back. → number closed.
+    closeAgent: async (agent) => {
+      suspended.delete(agent);
+      const mine = [...owner].filter(([, a]) => a === agent).map(([id]) => id);
+      // Both lists first: release() takes a tab out of `adopted`.
+      const back = mine.filter((id) => adopted.has(id));
+      const own = mine.filter((id) => !adopted.has(id));
+      await Promise.all(back.map((id) => relay.release(id)));
+      for (const id of own) { owner.delete(id); try { registry?.release(id); } catch {} }
+      return closeTargets(own);
+    },
+    closeAll: async () => (await Promise.all([...new Set([...owner.values()].filter((a) => a !== FOREIGN))].map((a) => relay.closeAgent(a)))).reduce((a, b) => a + b, 0),
+    reapDead,
+    reaping,
     // Target ids of the pages this agent owns (created, or popups of its pages).
     ownedBy: (agent) => [...owner].filter(([, a]) => a === agent).map(([id]) => id),
     close: () => srv.close(),

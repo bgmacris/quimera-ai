@@ -25,6 +25,14 @@
 // child. handle({ agent, args, ask }) → an MCP tool result; ask(name, args) calls a tool on THAT agent's child
 // without the client seeing it. browser_tab_adopt (mcp-launch.mjs, phase 4) is one.
 //
+// Life cycle (multi mode, phase 5, decided 2026-11-03): a subagent that has not used the browser for
+// lifecycle.stopMs (10 min) gets its MCP stopped — onStop(agent) first (the relay keeps its handed-over
+// tabs) — and is started again by its next call, seeing its tabs; after lifecycle.tabsMs (30 min)
+// onTabsIdle(agent) closes its tabs too. A subagent may come back: Claude Code resumes one with the same
+// agent_id (measured), so "it stopped" is never final. At most lifecycle.maxAgents subagents' MCPs live at
+// once: a new one stops the least recently used idle one (none idle → over the cap, logged). "main" is
+// never stopped: the client's handshake lives in it.
+//
 // Single mode (multi: false — TANDEM_MULTISESSION=0, and focus-emulation.mjs's proxyStdio): one child,
 // no `agent` handling, every line forwarded byte for byte as before 0.10 — except notes added to a result.
 // MCP stdio transport: one JSON-RPC message per line, no embedded newlines.
@@ -50,7 +58,8 @@ export function takeAgent(m) {
 
 // spawnChild(agent) → { stdin, stdout, on?(event, fn) } (a ChildProcess fits). emulatorFor(agent) → emulator.
 // initTimeoutMs: a new child's handshake (npx may install on its first run).
-export function routeStdio({ clientIn, clientOut, spawnChild, emulatorFor, multi = true, initTimeoutMs = 120_000, log = () => {}, localTools = {} }) {
+export function routeStdio({ clientIn, clientOut, spawnChild, emulatorFor, multi = true, initTimeoutMs = 120_000, log = () => {}, localTools = {}, lifecycle = null, now = Date.now }) {
+  const lastUsed = new Map();       // agent → last time it used the browser (call queued or answered)
   const local = multi ? localTools : {};
   const listIds = new Set();        // client tools/list request ids: main's answer gets the local tools
   const lanes = new Map();          // agent → lane
@@ -96,12 +105,14 @@ export function routeStdio({ clientIn, clientOut, spawnChild, emulatorFor, multi
     // → the notes to add to this response (none for a cancelled call: its response never comes).
     const finish = (id, result) => {
       const c = calls.get(id); if (!c) return [];
-      calls.delete(id); callLane.delete(id); emulator.end(c.name, c.args, result);
+      calls.delete(id); callLane.delete(id); lastUsed.set(agent, now()); emulator.end(c.name, c.args, result);
       return result ? (emulator.notes?.(c.name, c.args, result) || []) : [];
     };
 
     const lane = {
       agent,
+      queued: 0,                    // calls waiting in its queue (not yet in `calls`)
+      idle: () => calls.size === 0 && lane.queued === 0,
       // Everything for this child goes through its queue, in arrival order.
       enqueue(fn) { queue = queue.then(fn).catch((e) => log(`router ${agent}: ${e.message}`)); return queue; },
       write,
@@ -141,7 +152,7 @@ export function routeStdio({ clientIn, clientOut, spawnChild, emulatorFor, multi
       // The child is gone: its pending calls get an error (the client would wait for them forever).
       fail(why) {
         if (dead) return; dead = true;
-        lanes.delete(agent);
+        if (lanes.get(agent) === lane) lanes.delete(agent);   // not a newer lane of the same agent
         for (const id of [...calls.keys()]) {
           finish(id, null);
           toClient(JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32603, message: `tandem: ${why}` } }));
@@ -195,11 +206,48 @@ export function routeStdio({ clientIn, clientOut, spawnChild, emulatorFor, multi
     return lane;
   }
 
+  // Stop an agent's MCP (its lane goes; the next call starts a new one). Its tabs stay (onStop).
+  const retire = (l, why) => {
+    if (lanes.get(l.agent) !== l) return;
+    lanes.delete(l.agent);
+    try { lifecycle?.onStop?.(l.agent); } catch (e) { log(`router: onStop ${l.agent}: ${e.message}`); }
+    log(`router: stopped the MCP of agent ${l.agent} (${why})`);
+    l.end(); l.kill();
+  };
   const laneFor = (agent) => {
     let l = lanes.get(agent);
-    if (!l) { l = makeLane(agent); lanes.set(agent, l); }
+    if (!l) {
+      if (lifecycle?.maxAgents && agent !== MAIN) {
+        const subs = [...lanes.values()].filter((x) => x.agent !== MAIN);
+        if (subs.length >= lifecycle.maxAgents) {
+          const lru = subs.filter((x) => x.idle()).sort((a, b) => (lastUsed.get(a.agent) || 0) - (lastUsed.get(b.agent) || 0))[0];
+          if (lru) retire(lru, `cap of ${lifecycle.maxAgents} agents`);
+          else log(`router: ${subs.length + 1} agents' MCPs alive, over the cap of ${lifecycle.maxAgents} (none idle)`);
+        }
+      }
+      l = makeLane(agent); lanes.set(agent, l);
+    }
     return l;
   };
+  // Idle checks (also callable from tests).
+  const tick = async () => {
+    if (!lifecycle) return;
+    const t = now();
+    for (const l of [...lanes.values()]) {
+      if (l.agent === MAIN || !l.idle()) continue;
+      if (lifecycle.stopMs && t - (lastUsed.get(l.agent) ?? t) >= lifecycle.stopMs) retire(l, `idle ${Math.round((t - lastUsed.get(l.agent)) / 60_000)} min`);
+    }
+    for (const [agent, at] of [...lastUsed]) {
+      if (agent === MAIN || !lifecycle.tabsMs || t - at < lifecycle.tabsMs) continue;
+      const l = lanes.get(agent);
+      if (l && !l.idle()) continue;
+      if (l) retire(l, 'idle, closing its tabs');
+      lastUsed.delete(agent);
+      try { await lifecycle.onTabsIdle?.(agent); log(`router: closed the tabs of agent ${agent} (idle)`); }
+      catch (e) { log(`router: onTabsIdle ${agent}: ${e.message}`); }
+    }
+  };
+  if (lifecycle?.checkMs) setInterval(() => { tick(); }, lifecycle.checkMs).unref?.();
   laneFor(MAIN);   // at once: the client's handshake goes to it
 
   lines(clientIn, (line) => {
@@ -212,8 +260,9 @@ export function routeStdio({ clientIn, clientOut, spawnChild, emulatorFor, multi
       const fwd = stripped ? JSON.stringify(out) : line;
       callLane.set(m.id, l);   // now, not when its turn comes: a cancel may arrive while it waits
       const name = out.params?.name;
-      if (Object.hasOwn(local, name)) l.enqueue(() => l.local(m.id, name, out.params?.arguments));
-      else l.enqueue(() => l.call(m.id, name, out.params?.arguments, fwd));
+      lastUsed.set(agent, now()); l.queued++;
+      if (Object.hasOwn(local, name)) l.enqueue(() => { l.queued--; return l.local(m.id, name, out.params?.arguments); });
+      else l.enqueue(() => { l.queued--; return l.call(m.id, name, out.params?.arguments, fwd); });
       return;
     }
     if (m?.method === 'notifications/cancelled') {
@@ -237,6 +286,7 @@ export function routeStdio({ clientIn, clientOut, spawnChild, emulatorFor, multi
 
   return {
     agents: () => [...lanes.keys()],
+    tick,
     kill() { for (const l of lanes.values()) l.kill(); },
   };
 }

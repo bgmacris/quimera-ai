@@ -10,7 +10,7 @@
 //      MEASURED, not asserted: how many clicks hang (R05 §M: a pre-existing @playwright/mcp issue with
 //      simultaneous popups from several clients, reproduced without the relay)
 //   M5 roots reach the lazy children: a relative screenshot filename lands in the client's root
-//   M6 client EOF: the launcher and every child exit
+//   M6 client EOF: the launcher and every child exit, the agents' tabs closed (phase 5)
 //   M7 (before M6) a NEW subagent's FIRST call opens a real PDF: captured as it arrives (phase 3b: the
 //      relay holds the new page until the capture is armed)
 // NOT in tests/e2e.sh (CI): real sites can be down or change. Run by hand with tandem's Chrome up:
@@ -193,7 +193,7 @@ try {
   ok('the launcher exits', code !== 'timeout', `exit=${code}`);
   await sleep(500);
   const left = (await pages()).filter((t) => [...Object.values(PAGES), ...Object.values(POPUPS)].some((x) => t.url.startsWith(x.url)));
-  note(`agent tabs left open in Chrome after exit: ${left.length} (closing them is phase 5)`);
+  ok(`the agents' tabs are closed with the session (phase 5): ${left.length} left`, left.length === 0, JSON.stringify(left.map((t) => t.url)));
   await cdp.call('Target.closeTarget', { targetId: human }).catch(() => {});
   exitCode = fail ? 1 : 0;
 } catch (e) {

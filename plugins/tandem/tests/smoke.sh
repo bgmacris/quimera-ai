@@ -264,7 +264,13 @@ else
   bad "human-tabs.test.mjs"
 fi
 
-echo "[19] multi-session router (node tests/router.test.mjs)"
+echo "[19] adapters start in single mode (no hook to tell agents apart)"
+OUT=$(HOME="$(mktemp -d)" TANDEM_MCP_DRYRUN=1 bash "$ROOT/adapters/shared/mcp-wrap.sh" 2>/dev/null || true)
+if printf '%s' "$OUT" | grep -q '"multiSession":false'; then ok "mcp-wrap.sh: TANDEM_MULTISESSION=0 by default"; else bad "mcp-wrap.sh multi-session default ($OUT)"; fi
+OUT=$(HOME="$(mktemp -d)" TANDEM_MULTISESSION=1 TANDEM_MCP_DRYRUN=1 bash "$ROOT/adapters/shared/mcp-wrap.sh" 2>/dev/null || true)
+if printf '%s' "$OUT" | grep -q '"multiSession":true'; then ok "mcp-wrap.sh: TANDEM_MULTISESSION=1 opts in"; else bad "mcp-wrap.sh opt-in ($OUT)"; fi
+
+echo "[20] multi-session router (node tests/router.test.mjs)"
 if run_suite "$HERE/router.test.mjs"; then
   ok "router.test.mjs green"
 else
