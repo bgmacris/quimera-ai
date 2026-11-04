@@ -29,7 +29,9 @@
 // lifecycle.stopMs (10 min) gets its MCP stopped — onStop(agent) first (the relay keeps its handed-over
 // tabs) — and is started again by its next call, seeing its tabs; after lifecycle.tabsMs (30 min)
 // onTabsIdle(agent) closes its tabs too. A subagent may come back: Claude Code resumes one with the same
-// agent_id (measured), so "it stopped" is never final. At most lifecycle.maxAgents subagents' MCPs live at
+// agent_id (measured), so "it stopped" is never final. A subagent that finished (lifecycle.finished, from
+// the SubagentStop hook) has its MCP stopped on the next tick, not 10 min later; its tabs wait for tabsMs, since it
+// may come back, and a call from it clears the mark. At most lifecycle.maxAgents subagents' MCPs live at
 // once: a new one stops the least recently used idle one (none idle → over the cap, logged). "main" is
 // never stopped: the client's handshake lives in it.
 //
@@ -235,6 +237,7 @@ export function routeStdio({ clientIn, clientOut, spawnChild, emulatorFor, multi
     const t = now();
     for (const l of [...lanes.values()]) {
       if (l.agent === MAIN || !l.idle()) continue;
+      if (lifecycle.finished?.(l.agent)) { retire(l, 'subagent finished'); lifecycle.clearFinished?.(l.agent); continue; }
       if (lifecycle.stopMs && t - (lastUsed.get(l.agent) ?? t) >= lifecycle.stopMs) retire(l, `idle ${Math.round((t - lastUsed.get(l.agent)) / 60_000)} min`);
     }
     for (const [agent, at] of [...lastUsed]) {
@@ -261,6 +264,7 @@ export function routeStdio({ clientIn, clientOut, spawnChild, emulatorFor, multi
       callLane.set(m.id, l);   // now, not when its turn comes: a cancel may arrive while it waits
       const name = out.params?.name;
       lastUsed.set(agent, now()); l.queued++;
+      if (agent !== MAIN) lifecycle?.clearFinished?.(agent);   // it was resumed, it isn't finished any more
       if (Object.hasOwn(local, name)) l.enqueue(() => { l.queued--; return l.local(m.id, name, out.params?.arguments); });
       else l.enqueue(() => { l.queued--; return l.call(m.id, name, out.params?.arguments, fwd); });
       return;

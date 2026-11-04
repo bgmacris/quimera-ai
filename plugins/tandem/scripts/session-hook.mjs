@@ -11,6 +11,7 @@
 //   compact  SessionStart (matcher: compact) → drop injection markers, so the profile that the
 //            compaction just summarized away is injected again on the next navigate
 //   handoff  SessionStart (matcher: clear|resume) → take over the lease the previous session left
+//   subagent-stop  SubagentStop → tell the launcher this subagent finished, to stop its MCP (agents-finished.mjs)
 //
 // /clear and /resume END the session (SessionEnd, reason clear/resume) and START another in the same
 // terminal: the browser must survive that. On those reasons `end` keeps its lease and leaves a handoff
@@ -26,6 +27,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dataDir, ensureDataDir } from './paths.mjs';
 import { cleanupSessionMarkers, extractSessionId, sessionKey } from './map-inject-core.mjs';
+import { markFinished } from './agents-finished.mjs';
 import { isMain } from './is-main.mjs';
 
 export const LEASE_TTL_MS = 12 * 60 * 60 * 1000;
@@ -93,6 +95,11 @@ if (isCli) {
       cleanupSessionMarkers(sid, dir);
     } else if (mode === 'handoff') {
       takeHandoff(dir, sid);
+    } else if (mode === 'subagent-stop') {
+      if (process.env.TANDEM_MULTISESSION !== '0' && typeof input?.agent_id === 'string' && input.agent_id) {
+        ensureDataDir(dir);
+        markFinished(dir, input.agent_id);
+      }
     } else if (mode === 'end' && HANDOFF_REASONS.has(input?.reason)) {
       // /clear or /resume: keep the lease (the next SessionStart takes it over), never stop Chrome.
       cleanupSessionMarkers(sid, dir);

@@ -40,6 +40,7 @@ import { DEFAULT_LINGER_MS, combine, focusEmulator, proxyStdio } from './focus-e
 import { chooseHumanTab, humanTabs } from './human-tabs.mjs';
 import { tabOwners } from './tab-owners.mjs';
 import { pdfCapturer } from './pdf-capture.mjs';
+import { clearFinished, isFinished } from './agents-finished.mjs';
 import { isMain } from './is-main.mjs';
 
 export const MCP_VERSION_PIN = '0.0.83';
@@ -193,6 +194,8 @@ if (isCli) {
       checkMs: envMs('TANDEM_LIFECYCLE_CHECK_MS', 30_000),
       onStop: (agent) => relay.suspend(agent),
       onTabsIdle: (agent) => relay.closeAgent(agent),
+      finished: (agent) => isFinished(dataDir(), agent),
+      clearFinished: (agent) => clearFinished(dataDir(), agent),
     };
     routeStdio({ clientIn: process.stdin, clientOut: process.stdout, spawnChild, emulatorFor, multi: true, log, localTools, lifecycle });
     // Leftovers of sessions that died without closing their tabs (crash, SIGKILL before the 300 ms).

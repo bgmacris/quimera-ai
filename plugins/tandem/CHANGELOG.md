@@ -4,7 +4,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/); semantic versio
 
 ## [Unreleased]
 
-## [0.10.0] — 2026-11-03
+## [0.10.0] — 2026-11-04
+
+### Changed
+- **Chrome starts with `--disable-back-forward-cache`.** A tab going through several sites kept a live renderer
+  per site visited: 1700 → 940 MB of renderers over 10 real sites in one tab (research R08, one pass, headless).
+  Playwright sets it when it launches its own Chrome; tandem launches its own. Price: going back reloads the
+  page, in your tabs too. Takes effect the next time tandem's Chrome starts.
 
 ### Added
 - **Each agent has its own tabs** (multi-session, T302, research R05 §15–18). Claude Code's main agent and
@@ -21,9 +27,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/); semantic versio
   `url` chooses among several in view. In view = the active tab of a window that is not minimized, also with
   another app in front (measured headful), read in an isolated world so a page can't fake it. Closing it —
   or the agent letting go of the browser — gives it back instead of closing it.
-- **Life cycle.** A subagent idle for 10 min has its MCP stopped (its next call brings it back, with its
-  tabs); after 30 min its tabs are closed and handed-over ones given back (not on `SubagentStop`: a subagent
-  resumed with `SendMessage` keeps its id — measured). At most 8 subagents' MCPs at once. When a session
+- **Life cycle.** A subagent that finishes has its MCP stopped within 30 s (`SubagentStop`), and one idle for
+  10 min too; its next call brings it back, with its tabs. After 30 min idle its tabs are closed and handed-over
+  ones given back (the tabs not on `SubagentStop`: a subagent resumed with `SendMessage` keeps its id —
+  measured). At most 8 subagents' MCPs at once. When a session
   ends (Claude Code: SIGINT, then SIGTERM, killed at ~400 ms — measured) its agents' tabs are closed; what
   doesn't make it is closed by the next launcher. `/clear` keeps the MCP process and the tabs (measured).
   `TANDEM_AGENT_IDLE_MS`, `TANDEM_AGENT_TABS_IDLE_MS`, `TANDEM_MAX_AGENTS`.

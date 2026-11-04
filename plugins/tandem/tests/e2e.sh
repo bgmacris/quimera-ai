@@ -40,6 +40,7 @@ echo "tandem e2e — data dir: $TANDEM_DATA_DIR · port $TANDEM_CDP_PORT"
 echo "[1] daemon"
 check "start" "'$ROOT/scripts/chrome-daemon.sh' start >/dev/null"
 check "status: our Chrome" "'$ROOT/scripts/chrome-daemon.sh' status | grep -q '✅ active'"
+check "Chrome runs without the back/forward cache (R08)" "ps axww -o command= | grep -- '$TANDEM_DATA_DIR' | grep -q -- --disable-back-forward-cache"
 check "data dir is 0700" "[ \"\$(ls -ld '$TANDEM_DATA_DIR' | cut -c1-10)\" = drwx------ ]"
 check "start again is idempotent" "'$ROOT/scripts/chrome-daemon.sh' start | grep -q 'already running'"
 

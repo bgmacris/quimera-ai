@@ -71,6 +71,16 @@
           }
         ]
       }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/session-hook.mjs subagent-stop"
+          }
+        ]
+      }
     ]
   }
 }

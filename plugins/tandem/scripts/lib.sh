@@ -207,10 +207,12 @@ start_chrome() {
   # --disable-sync: a dedicated profile has no business syncing to a Google account (it was dialing
   # Google in the background, external audit). NOT --disable-background-networking: the human browses
   # and logs in here, and that flag also stops Safe Browsing and component (e.g. Widevine) updates.
+  # --disable-back-forward-cache: a tab that goes through N sites otherwise keeps a live renderer per site
+  # visited (R08: 10 real sites in one tab, 1700 → 940 MB of renderers). Price: going back reloads.
   nohup "$CHROME_BIN" \
     --remote-debugging-port="${port}" \
     --user-data-dir="$PROFILE" \
-    --no-first-run --no-default-browser-check --disable-sync \
+    --no-first-run --no-default-browser-check --disable-sync --disable-back-forward-cache \
     ${extra[@]+"${extra[@]}"} \
     about:blank \
     >>"$LOGDIR/chrome.log" 2>&1 &

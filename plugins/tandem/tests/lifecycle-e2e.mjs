@@ -6,8 +6,12 @@
 //      one given back, the launcher exits
 //   L4 leftovers of a dead session (claims of a pid that is gone): the next launcher closes the agent's
 //      own tab and leaves the handed-over one open (the human's)
+//   L5 a subagent finishes (the real SubagentStop hook): its MCP is stopped at once, its tab stays, its next
+//      call (resumed) sees it
 // Needs a DISPOSABLE Chrome on TANDEM_CDP_PORT (tests/e2e.sh). Usage: node tests/lifecycle-e2e.mjs
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { connect, browserWsUrl } from '../scripts/cdp.mjs';
@@ -97,6 +101,22 @@ try {
   ok('L4 the next launcher closes the dead session\'s agent tab', !(await has('/dead-agent-tab')), L2.stderr.filter((l) => /reaped/.test(l)).join(' | '));
   ok('L4 …and leaves the handed-over one open, the human\'s', (await has('/dead-handed')) && tabOwners(DATA).classify(handed) === 'human');
   L2.p.kill('SIGINT'); await Promise.race([L2.exited, sleep(5000)]);
+
+  // L5: long idle timers, so only the hook can stop it.
+  const L3 = launch({ TANDEM_AGENT_IDLE_MS: '600000', TANDEM_AGENT_TABS_IDLE_MS: '6000000', TANDEM_LIFECYCLE_CHECK_MS: '250' });
+  await L3.init();
+  const F = 'b1f926d68f9e41a4a';
+  await L3.call(F, 'browser_navigate', { url: U('/finished-own') });
+  const hook = spawnSync(process.execPath, [fileURLToPath(new URL('../scripts/session-hook.mjs', import.meta.url)), 'subagent-stop'],
+    { input: JSON.stringify({ session_id: 's', hook_event_name: 'SubagentStop', agent_id: F, agent_type: 'general-purpose' }), env: process.env });
+  ok('L5 the SubagentStop hook exits 0, silent', hook.status === 0 && !String(hook.stdout));
+  await sleep(1000);
+  ok('L5 its MCP is stopped without waiting for the idle timer', L3.stderr.some((l) => l.includes(`stopped the MCP of agent ${F} (subagent finished)`)), L3.stderr.slice(-5).join(' | '));
+  ok('L5 …the mark is consumed', !existsSync(join(DATA, 'agents-finished', F)));
+  ok('L5 …its tab stays open: it may come back', await has('/finished-own'));
+  const resumed = await tabsOf(L3, F);
+  ok('L5 resumed: a new MCP sees its tab', resumed.includes(U('/finished-own')), JSON.stringify(resumed));
+  L3.p.kill('SIGINT'); await Promise.race([L3.exited, sleep(5000)]);
 } catch (e) {
   ok(`no exception: ${e.stack}`, false);
 } finally {

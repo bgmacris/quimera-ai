@@ -231,12 +231,12 @@ console.log('life cycle (idle stop at stopMs, tabs closed at tabsMs, cap of agen
   let t = 0; const now = () => t;
   const clientIn = new PassThrough(); const clientOut = new PassThrough(); const toClient = [];
   clientOut.on('data', (d) => { for (const l of String(d).split('\n').filter(Boolean)) toClient.push(JSON.parse(l)); });
-  const spawned = []; const children = new Map(); const stopped = []; const tabsClosed = [];
+  const spawned = []; const children = new Map(); const stopped = []; const tabsClosed = []; const done = new Set();
   const r = routeStdio({
     clientIn, clientOut, multi: true, initTimeoutMs: 300, now,
     emulatorFor: () => ({ async begin() {}, end() {} }),
     spawnChild: (agent) => { const c = fakeChild(agent); spawned.push(agent); children.set(agent, c); return c; },
-    lifecycle: { stopMs: 600_000, tabsMs: 1_800_000, maxAgents: 2, onStop: (a) => stopped.push(a), onTabsIdle: async (a) => { tabsClosed.push(a); } },
+    lifecycle: { stopMs: 600_000, tabsMs: 1_800_000, maxAgents: 2, onStop: (a) => stopped.push(a), onTabsIdle: async (a) => { tabsClosed.push(a); }, finished: (a) => done.has(a), clearFinished: (a) => done.delete(a) },
   });
   const answer = async (agent, id) => { await sleep(30); const c = children.get(agent); const m = c.calls().find((x) => x.id === id); if (m) c.reply({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: 'ok' }] } }); await sleep(20); };
   clientIn.write(call(1, 'browser_snapshot', { agent: 'main' })); await answer('main', 1);
@@ -252,6 +252,25 @@ console.log('life cycle (idle stop at stopMs, tabs closed at tabsMs, cap of agen
   ok('its idle time starts again from that call (29 min later: tabs not closed yet)', !tabsClosed.length);
   t = 11 * 60_000 + 30 * 60_000; await r.tick();
   ok('30 min idle: its tabs are closed', tabsClosed.join() === 's1');
+  // Finished (SubagentStop): stopped on the next tick, tabs kept; a call clears the mark; busy → waits; main → never.
+  stopped.length = 0; tabsClosed.length = 0;
+  clientIn.write(call(40, 'browser_snapshot', { agent: 'f1' })); await answer('f1', 40);
+  done.add('f1'); await r.tick();
+  ok('a finished subagent: its MCP stopped at once, not after 10 min', stopped.join() === 'f1' && !r.agents().includes('f1') && !done.has('f1'));
+  ok('…its tabs are not closed: it may come back', !tabsClosed.length);
+  stopped.length = 0;
+  clientIn.write(call(41, 'browser_snapshot', { agent: 'f2' })); await answer('f2', 41);
+  done.add('f2'); clientIn.write(call(42, 'browser_snapshot', { agent: 'f2' })); await answer('f2', 42);
+  await r.tick();
+  ok('resumed before the tick: the call clears the mark, not stopped', !done.has('f2') && r.agents().includes('f2') && !stopped.length);
+  clientIn.write(call(43, 'browser_click', { agent: 'f2' })); await sleep(30);
+  done.add('f2'); await r.tick();
+  ok('busy: not stopped, the mark stays for a later tick', r.agents().includes('f2') && done.has('f2') && !stopped.length);
+  await answer('f2', 43); await r.tick();
+  ok('…stopped once idle', !r.agents().includes('f2') && stopped.join() === 'f2');
+  done.add('main'); await r.tick();
+  ok('main: a mark never stops it', r.agents().includes('main'));
+  done.clear();
   t = 200 * 60_000; await r.tick();
   ok('main: never stopped, its tabs never closed by idleness', r.agents().includes('main') && !stopped.includes('main') && !tabsClosed.includes('main'));
   // Cap of 2 subagents: a third stops the least recently used IDLE one.

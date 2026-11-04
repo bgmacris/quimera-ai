@@ -20,6 +20,7 @@ const { profileContext, MAX_PROFILE_CHARS, suspiciousLines } = await import('../
 const { redactHeaders } = await import('../scripts/redact.mjs');
 const { domainMatches } = await import('../scripts/cookie-match.mjs');
 const { autostartEnabled, isWsl, agentTag, withAgent } = await import('../scripts/autostart.mjs');
+const { markFinished, isFinished, clearFinished, FINISHED_MAX_AGE_MS } = await import('../scripts/agents-finished.mjs');
 
 let pass = 0; let fail = 0;
 function ok(desc, cond) {
@@ -50,6 +51,22 @@ ok('expired lease (crashed session) does not hold Chrome', liveLeases(TMP).lengt
 ok('expired lease is deleted on read', !existsSync(join(leaseDir(TMP), 'sess-B')));
 touchLease(TMP, '../../evil');
 ok('session id sanitized (no traversal out of leases/)', liveLeases(TMP).every((n) => !n.includes('/')));
+
+// --- finished subagents ---------------------------------------------------------------
+process.stdout.write('[finished subagents]\n');
+ok('no mark yet', !isFinished(TMP, 'a1'));
+markFinished(TMP, 'a1');
+ok('marked by the hook → the launcher sees it', isFinished(TMP, 'a1'));
+ok('…only that agent', !isFinished(TMP, 'a2'));
+clearFinished(TMP, 'a1');
+ok('cleared', !isFinished(TMP, 'a1'));
+clearFinished(TMP, 'a1');
+ok('clearing twice is harmless', !isFinished(TMP, 'a1'));
+markFinished(TMP, '../../evil');
+ok('agent id sanitized (no traversal out of agents-finished/)', existsSync(join(TMP, 'agents-finished', '______evil')) && !existsSync(join(TMP, '..', 'evil')));
+markFinished(TMP, 'never-used-the-browser');
+markFinished(TMP, 'recent', Date.now() + FINISHED_MAX_AGE_MS + 1000);
+ok('a later mark prunes the ones nobody consumed', !isFinished(TMP, 'never-used-the-browser') && isFinished(TMP, 'recent'));
 
 // --- guard ---------------------------------------------------------------------------
 process.stdout.write('[guard]\n');

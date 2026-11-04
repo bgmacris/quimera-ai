@@ -115,7 +115,7 @@ Your tabs and other agents' tabs are invisible to it.
   bring it to the front and tell the agent; it calls `browser_tab_adopt`. Only a tab of yours that is in
   view can be taken — what you did with the mouse is the consent, so a page telling the agent to adopt
   another tab can't point anywhere else. When the agent closes it, it is **given back**, not closed.
-- **Life cycle.** A subagent that hasn't used the browser for 10 min has its browser process stopped (it
+- **Life cycle.** A subagent that finishes, or hasn't used the browser for 10 min, has its browser process stopped (it
   comes back with its tabs on its next call); after 30 min its tabs are closed and the ones you handed
   over are given back. When a session ends, its agents' tabs are closed; `/clear` keeps them.
 - **How.** tandem's `PreToolUse` hook writes the calling agent into each browser call; the launcher runs one

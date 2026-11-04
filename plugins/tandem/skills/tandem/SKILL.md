@@ -70,7 +70,7 @@ There are two ways to navigate; choose by the task, not one by default:
 - Every Claude session on this machine shares the SAME Chrome (one port). Each session that uses a
   `browser_*` tool holds a lease; closing a session stops Chrome only if no other live lease remains.
 - The other session may be acting in another tab: don't close tabs you didn't open.
-- Your tabs live as long as you need them: a subagent idle for 10 min has its browser process stopped
+- Your tabs live as long as you need them: a subagent that finishes or sits idle for 10 min has its browser process stopped
   (its next call brings it back, with its tabs); after 30 min its tabs are closed. When the session ends,
   its agents' tabs are closed; `/clear` keeps them. Don't count on a tab outliving the session.
 
