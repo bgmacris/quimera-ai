@@ -180,6 +180,10 @@ if (isCli) {
       c.on('exit', () => children.delete(c));
       if (agent === 'main') {
         c.on('error', onSpawnError);
+        // Only once main's MCP is up, i.e. npx has installed the pin: two npx at once on a cold cache share one
+        // _npx dir and can kill main's (CI on Linux: ENOTEMPTY, no handshake, the session without tools). Later
+        // children skip npx if this resolves (it never delays the handshake).
+        c.stdout.once('data', () => resolveMcpCli(mcpVersion()).then((p) => { cli = p; log(`router: MCP cli ${p ? 'resolved' : 'not resolved (children via npx)'}`); }));
         c.on('exit', async (code, signal) => { await shutdown(); for (const o of children) { try { o.kill(); } catch {} } process.exit(signal ? 1 : (code ?? 0)); });
       } else c.on('error', (e) => log(`router: agent ${agent}: cannot start its MCP (${e.message})`));
       log(`router: started the MCP of agent ${agent} (${agent !== 'main' && cli ? 'node cli.js' : 'npx'})`);
@@ -200,8 +204,6 @@ if (isCli) {
     routeStdio({ clientIn: process.stdin, clientOut: process.stdout, spawnChild, emulatorFor, multi: true, log, localTools, lifecycle });
     // Leftovers of sessions that died without closing their tabs (crash, SIGKILL before the 300 ms).
     setInterval(() => { relay.reapDead().catch(() => {}); }, 60_000).unref();
-    // After main is up: later children skip npx if this resolves (it never delays the handshake).
-    resolveMcpCli(mcpVersion()).then((p) => { cli = p; log(`router: MCP cli ${p ? 'resolved' : 'not resolved (children via npx)'}`); });
     for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, async () => { await shutdown(); for (const c of children) { try { c.kill(sig); } catch {} } });
   } else {
     const proxied = focus || capture;

@@ -33,7 +33,8 @@ try {
   // upgrade would not renew the lease. Fail when the two lists drift.
   const cursor = JSON.parse(readFileSync(fileURLToPath(new URL('../adapters/cursor/hooks/hooks.json', import.meta.url)), 'utf8'));
   const touched = new Set(cursor.hooks.postToolUse.filter((e) => /run-session-hook\.sh touch/.test(e.command)).map((e) => e.matcher.replace(/^MCP:/, '')));
-  const missing = names.filter((n) => !touched.has(n)); const stale = [...touched].filter((n) => !names.includes(n));
+  // browser_tab_adopt comes from the multi-session router, and the adapters run with TANDEM_MULTISESSION=0 (mcp-wrap.sh).
+  const missing = names.filter((n) => !touched.has(n) && n !== 'browser_tab_adopt'); const stale = [...touched].filter((n) => !names.includes(n));
   if (missing.length || stale.length) {
     ok = false;
     process.stdout.write(`cursor lease matchers drift — missing: ${missing.join(', ') || '-'} · stale: ${stale.join(', ') || '-'} (adapters/cursor/hooks/hooks.json)\n`);
