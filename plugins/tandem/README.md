@@ -108,7 +108,7 @@ Design and research: [`docs/01-navigation-memory.md`](docs/01-navigation-memory.
 
 Claude Code's main agent and each of its subagents — and every other session on the machine — drive
 the same Chrome. Since 0.10 **each agent has its own tabs**: it sees and drives only the tabs it opened
-(and their popups), each in a window of its own opened in the background, without taking your keyboard.
+(and their popups), each in a window of its own opened in the background (in our tests it didn't take keyboard focus).
 Your tabs and other agents' tabs are invisible to it.
 
 - **Handing a tab over.** To let an agent work in one of your tabs (say, one where you are logged in),

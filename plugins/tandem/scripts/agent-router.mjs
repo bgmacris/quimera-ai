@@ -274,9 +274,14 @@ export function routeStdio({ clientIn, clientOut, spawnChild, emulatorFor, multi
       l.enqueue(() => l.cancel(m.params?.requestId, line));
       return;
     }
-    if (multi && m && !m.method && m.id !== undefined && fromChild.has(m.id)) {   // the answer to a child's request
-      const { lane, id } = fromChild.get(m.id); fromChild.delete(m.id);
-      lane.enqueue(() => lane.write(JSON.stringify({ ...m, id })));
+    // The answer to a child's request goes straight to it, never behind its queue: a call that waits on the
+    // child (a local tool's ask) holds the queue, and the child answers nothing until it has this — its
+    // roots/list on its first call, so a browser_tab_adopt as an agent's first call hung for 30 s and failed.
+    if (m && !m.method && m.id !== undefined) {
+      if (multi && fromChild.has(m.id)) {
+        const { lane, id } = fromChild.get(m.id); fromChild.delete(m.id);
+        lane.write(JSON.stringify({ ...m, id }));
+      } else main.write(line);
       return;
     }
     if (multi && m?.method === 'notifications/roots/list_changed') {

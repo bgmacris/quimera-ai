@@ -226,6 +226,35 @@ console.log('local tools (browser_tab_adopt runs in the router, never in a child
   ok('single mode: not listed, and a call goes to the MCP as is', toClient.find((m) => m.id === 1)?.result.tools.length === 1 && c.calls().some((m) => m.params.name === 'browser_tab_adopt'));
 }
 
+console.log('an answer to a child\'s request never waits behind its queue (roots/list while a local tool waits on the child)');
+{
+  const clientIn = new PassThrough(); const clientOut = new PassThrough();
+  const toClient = []; const children = new Map();
+  clientOut.on('data', (d) => { for (const l of String(d).split('\n').filter(Boolean)) toClient.push(JSON.parse(l)); });
+  routeStdio({
+    clientIn, clientOut, multi: true, initTimeoutMs: 300,
+    emulatorFor: () => ({ async begin() {}, end() {} }),
+    spawnChild: (agent) => { const c = fakeChild(agent); children.set(agent, c); return c; },
+    localTools: { browser_tab_adopt: { def: { name: 'browser_tab_adopt', inputSchema: { type: 'object' } },
+      async handle({ ask }) { const r = await ask('browser_tabs', { action: 'list' }, 2000); return { content: [{ type: 'text', text: r ? 'got it' : 'ask timed out' }] }; } } },
+  });
+  for (const [agent, id, rootsId] of [['main', 50, 'r-main'], ['subR', 51, 'r-sub']]) {
+    clientIn.write(call(id, 'browser_tab_adopt', { agent }));
+    await sleep(40);
+    const c = children.get(agent);
+    const probe = c.got.find((m) => String(m.id).startsWith('tandem-probe') && m.method === 'tools/call');   // not its handshake
+    c.reply({ jsonrpc: '2.0', id: rootsId, method: 'roots/list' });   // as the MCP does on its first call
+    await sleep(20);
+    const asked = toClient.filter((m) => m.method === 'roots/list').pop();
+    clientIn.write(msg({ jsonrpc: '2.0', id: asked.id, result: { roots: [] } }));
+    await sleep(20);
+    ok(`${agent}: the client's answer reaches the child while the local tool is still waiting`, c.got.some((m) => m.id === rootsId && m.result));
+    c.reply({ jsonrpc: '2.0', id: probe.id, result: { content: [] } });   // only now the child answers the ask
+    await sleep(20);
+    ok(`${agent}: …and the local tool finishes`, toClient.find((m) => m.id === id)?.result?.content?.[0]?.text === 'got it');
+  }
+}
+
 console.log('life cycle (idle stop at stopMs, tabs closed at tabsMs, cap of agents; main never)');
 {
   let t = 0; const now = () => t;

@@ -74,6 +74,12 @@ try {
   send({ jsonrpc: '2.0', method: 'notifications/initialized' });
   const tools = (await rpc('tools/list', {})).result?.tools || [];
   ok('A1 tools/list has browser_tab_adopt', tools.some((t) => t.name === 'browser_tab_adopt'));
+  // An agent whose FIRST browser call is the adoption (the MCP asks roots/list on its first call): it hung 30 s and failed.
+  const h0 = await human('/h0');
+  const t0 = Date.now();
+  const first = await call('af1rst0000000000a', 'browser_tab_adopt');
+  ok('A1b adopting as an agent\'s first browser call works, without hanging', !first.err && first.t.includes(U('/h0')) && Date.now() - t0 < 10_000, `${Date.now() - t0} ms: ${first.t.slice(0, 200)}`);
+  await cdp.call('Target.closeTarget', { targetId: h0 }); await sleep(300);
   await call(A, 'browser_navigate', { url: U('/a-own') });
   await call(B, 'browser_navigate', { url: U('/b-own') });
 
