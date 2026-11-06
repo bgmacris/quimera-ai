@@ -7,8 +7,8 @@
 // are additionalProperties:false) and sends the call to that agent's child, each child connected to Chrome
 // through the CDP relay (cdp-relay.mjs), so it only ever sees its own tabs.
 //
-// Children: "main" is started with the launcher (the client's handshake goes to it); any other agent's
-// child is started on its first call, and the router does its handshake with the CLIENT's own
+// Children: "main" is started with the launcher (the client's handshake goes to it) unless the memo below
+// answers that handshake; any other agent's child is started on its first call, and the router does its handshake with the CLIENT's own
 // `initialize` params — Claude Code declares `roots`, and @playwright/mcp then asks roots/list and uses
 // the first root as its working root (R05 §15.2). A child's requests to the client (roots/list) are
 // forwarded with ids of our own and the answers routed back. initialize, server/discover, tools/list and
@@ -35,6 +35,12 @@
 // once: a new one stops the least recently used idle one (none idle → over the cap, logged). "main" is
 // never stopped: the client's handshake lives in it.
 //
+// Main on demand (multi mode, `memo`: mcp-memo.mjs, T306): when the memo has the MCP's answers to this client's
+// handshake, the router gives them and no MCP runs until the first call that needs one: main is then started like
+// any other agent (client's own handshake; if it dies its calls fail and the next call starts a new one) and its
+// tools are compared with the memo — if they differ the memo is corrected and the client told (list_changed).
+// With no answer in the memo main starts at once, as ever, and its answers fill the memo.
+//
 // Single mode (multi: false — TANDEM_MULTISESSION=0, and focus-emulation.mjs's proxyStdio): one child,
 // no `agent` handling, every line forwarded byte for byte as before 0.10 — except notes added to a result.
 // MCP stdio transport: one JSON-RPC message per line, no embedded newlines.
@@ -60,7 +66,7 @@ export function takeAgent(m) {
 
 // spawnChild(agent) → { stdin, stdout, on?(event, fn) } (a ChildProcess fits). emulatorFor(agent) → emulator.
 // initTimeoutMs: a new child's handshake (npx may install on its first run).
-export function routeStdio({ clientIn, clientOut, spawnChild, emulatorFor, multi = true, initTimeoutMs = 120_000, log = () => {}, localTools = {}, lifecycle = null, now = Date.now }) {
+export function routeStdio({ clientIn, clientOut, spawnChild, emulatorFor, multi = true, initTimeoutMs = 120_000, log = () => {}, localTools = {}, lifecycle = null, memo = null, onClientEnd = () => {}, now = Date.now }) {
   const lastUsed = new Map();       // agent → last time it used the browser (call queued or answered)
   const local = multi ? localTools : {};
   const listIds = new Set();        // client tools/list request ids: main's answer gets the local tools
@@ -68,14 +74,20 @@ export function routeStdio({ clientIn, clientOut, spawnChild, emulatorFor, multi
   const callLane = new Map();       // client request id → lane (to route notifications/cancelled)
   const fromChild = new Map();      // our id for a child's request to the client → { lane, id }
   let initParams = null;            // the client's initialize params, for the children started later
+  const memoize = multi ? memo : null;
+  const memoReqs = new Map();       // client request id → the request whose answer goes to the memo
+  let mainOnDemand = false;         // the memo answered the handshake: main starts when something needs it
+  let toolsChecked = false;         // an MCP that started has been compared with the memo, once per session
   let reqN = 0;
   let ended = false;
   const toClient = (s) => clientOut.write(s + '\n');
 
   function makeLane(agent) {
-    const child = spawnChild(agent);
+    const onDemand = multi && (agent !== MAIN || mainOnDemand);   // started later: the handshake is ours
+    const child = spawnChild(agent, { onDemand });
     const emulator = emulatorFor(agent);
     const calls = new Map();        // request id → { name, args }
+    const requests = new Set();     // other client requests it has to answer (fail() answers them if it can't)
     const probes = new Map();       // our own request id → resolve
     let probeId = 0;
     let asking = null;
@@ -113,11 +125,13 @@ export function routeStdio({ clientIn, clientOut, spawnChild, emulatorFor, multi
 
     const lane = {
       agent,
+      up: false,                    // its handshake is done (only tracked for those started on demand)
       queued: 0,                    // calls waiting in its queue (not yet in `calls`)
       idle: () => calls.size === 0 && lane.queued === 0,
       // Everything for this child goes through its queue, in arrival order.
       enqueue(fn) { queue = queue.then(fn).catch((e) => log(`router ${agent}: ${e.message}`)); return queue; },
       write,
+      expect(id) { requests.add(id); },
       async call(id, name, args, line) {
         calls.set(id, { name, args });
         await lane.ready;
@@ -159,6 +173,10 @@ export function routeStdio({ clientIn, clientOut, spawnChild, emulatorFor, multi
           finish(id, null);
           toClient(JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32603, message: `tandem: ${why}` } }));
         }
+        for (const id of requests) toClient(JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32603, message: `tandem: ${why}` } }));
+        requests.clear();
+        // Who waits on the child's answer (its handshake, above all: the calls queued behind it) stops waiting now.
+        for (const [id, r] of [...probes]) { probes.delete(id); r(null); }
         for (const [rid, r] of fromChild) if (r.lane === lane) fromChild.delete(rid);
         emulator.close?.();
       },
@@ -170,6 +188,8 @@ export function routeStdio({ clientIn, clientOut, spawnChild, emulatorFor, multi
       if (!m) { toClient(line); return; }
       if (!m.method && probes.has(m.id)) { const r = probes.get(m.id); probes.delete(m.id); r(m); return; }   // ours
       if (!m.method && m.id !== undefined) {   // a response, not a server request
+        requests.delete(m.id);
+        if (agent === MAIN && memoReqs.has(m.id)) { memoize.record(memoReqs.get(m.id), m); memoReqs.delete(m.id); }
         const isCall = calls.has(m.id);
         if (isCall && m.result) hasTabs = true;
         const notes = finish(m.id, m.result ?? null);
@@ -195,14 +215,25 @@ export function routeStdio({ clientIn, clientOut, spawnChild, emulatorFor, multi
         toClient(JSON.stringify({ ...m, id: rid }));
       } else if (!LIST_CHANGED.test(m.method)) toClient(line);
     });
-    child.on?.('exit', () => { if (agent !== MAIN) lane.fail(`the browser MCP of agent ${agent} exited`); });
+    child.on?.('exit', () => { if (onDemand) lane.fail(`the browser MCP of agent ${agent} exited`); });
+    child.on?.('error', (e) => { if (onDemand) lane.fail(`could not start the browser MCP for agent ${agent} (${e.message})`); });   // no 'exit' follows
 
-    if (multi && agent !== MAIN) {
+    if (onDemand) {
       // Its handshake, as the client did main's. A child that can't start fails its calls; the next call retries.
       lane.ready = ask('initialize', initParams || DEFAULT_INIT, initTimeoutMs).then((r) => {
         if (!r?.result) { lane.fail(`could not start the browser MCP for agent ${agent}`); lane.kill(); return; }
         write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }));
+        lane.up = true;
         log(`router: agent ${agent} ready`);
+        if (memoize && !toolsChecked) {   // the client is working from the memo's tools; any MCP can say (same flags)
+          toolsChecked = true;
+          ask('tools/list', {}, 10_000).then((t) => {
+            if (!Array.isArray(t?.result?.tools) || memoize.sameTools(t.result)) return;
+            log('router: the MCP\'s tools differ from the memo: memo corrected, client told');
+            memoize.record({ method: 'tools/list' }, t);
+            toClient(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' }));
+          });
+        }
       });
     }
     return lane;
@@ -251,12 +282,28 @@ export function routeStdio({ clientIn, clientOut, spawnChild, emulatorFor, multi
     }
   };
   if (lifecycle?.checkMs) setInterval(() => { tick(); }, lifecycle.checkMs).unref?.();
-  laneFor(MAIN);   // at once: the client's handshake goes to it
+  if (!memoize) laneFor(MAIN);   // at once: the client's handshake goes to it
 
   lines(clientIn, (line) => {
     if (ended) return;
     let m = null; try { m = JSON.parse(line); } catch { /* forward as is */ }
-    const main = laneFor(MAIN);
+    if (m?.method === 'initialize') initParams = m.params;
+    // What the memo can answer, it answers: with no MCP running, the rest falls through and starts main. Also
+    // while main on demand starts: a ping must not wait behind a handshake that npx can take 2 min on.
+    if (memoize && (!lanes.has(MAIN) || (mainOnDemand && !lanes.get(MAIN).up))) {
+      const request = m?.method !== undefined && m.id !== undefined;
+      const hit = request ? memoize.answer(m) : null;
+      if (hit) {
+        if (m.method === 'initialize') mainOnDemand = true;
+        const reply = m.method === 'tools/list'
+          ? { result: { ...hit.result, tools: [...hit.result.tools, ...Object.values(local).map((t) => t.def)] } } : hit;
+        toClient(JSON.stringify({ jsonrpc: '2.0', id: m.id, ...reply }));
+        return;
+      }
+      if (mainOnDemand && m?.method === 'ping' && request) { toClient(JSON.stringify({ jsonrpc: '2.0', id: m.id, result: {} })); return; }
+      if (mainOnDemand && m?.method === 'notifications/initialized') return;
+      if (mainOnDemand && m?.method === 'notifications/cancelled' && !callLane.has(m.params?.requestId)) return;
+    }
     if (m?.method === 'tools/call' && m.id !== undefined) {
       const { agent, m: out, stripped } = multi ? takeAgent(m) : { agent: MAIN, m, stripped: false };
       const l = laneFor(agent);
@@ -270,7 +317,8 @@ export function routeStdio({ clientIn, clientOut, spawnChild, emulatorFor, multi
       return;
     }
     if (m?.method === 'notifications/cancelled') {
-      const l = callLane.get(m.params?.requestId) || main;
+      const l = callLane.get(m.params?.requestId) || lanes.get(MAIN);
+      if (!l) return;   // nothing running that could have it
       l.enqueue(() => l.cancel(m.params?.requestId, line));
       return;
     }
@@ -281,17 +329,19 @@ export function routeStdio({ clientIn, clientOut, spawnChild, emulatorFor, multi
       if (multi && fromChild.has(m.id)) {
         const { lane, id } = fromChild.get(m.id); fromChild.delete(m.id);
         lane.write(JSON.stringify({ ...m, id }));
-      } else main.write(line);
+      } else lanes.get(MAIN)?.write(line);
       return;
     }
     if (multi && m?.method === 'notifications/roots/list_changed') {
       for (const l of lanes.values()) l.enqueue(() => l.write(line));
       return;
     }
-    if (m?.method === 'initialize') initParams = m.params;
     if (m?.method === 'tools/list' && m.id !== undefined) listIds.add(m.id);
-    main.enqueue(() => main.write(line));
-  }, () => { ended = true; for (const l of lanes.values()) l.end(); });
+    if (memoize && m?.id !== undefined && ['initialize', 'server/discover', 'tools/list'].includes(m.method)) memoReqs.set(m.id, m);
+    const main = laneFor(MAIN);
+    if (multi && m?.method !== undefined && m.id !== undefined) main.expect(m.id);
+    main.enqueue(async () => { await main.ready; main.write(line); });
+  }, () => { ended = true; for (const l of lanes.values()) l.end(); onClientEnd(); });
 
   return {
     agents: () => [...lanes.keys()],

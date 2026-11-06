@@ -270,6 +270,13 @@ if printf '%s' "$OUT" | grep -q '"multiSession":false'; then ok "mcp-wrap.sh: TA
 OUT=$(HOME="$(mktemp -d)" TANDEM_MULTISESSION=1 TANDEM_MCP_DRYRUN=1 bash "$ROOT/adapters/shared/mcp-wrap.sh" 2>/dev/null || true)
 if printf '%s' "$OUT" | grep -q '"multiSession":true'; then ok "mcp-wrap.sh: TANDEM_MULTISESSION=1 opts in"; else bad "mcp-wrap.sh opt-in ($OUT)"; fi
 
+echo "[20b] handshake memo (node tests/mcp-memo.test.mjs)"
+if run_suite "$HERE/mcp-memo.test.mjs"; then
+  ok "mcp-memo.test.mjs green"
+else
+  bad "mcp-memo.test.mjs"
+fi
+
 echo "[20] multi-session router (node tests/router.test.mjs)"
 if run_suite "$HERE/router.test.mjs"; then
   ok "router.test.mjs green"

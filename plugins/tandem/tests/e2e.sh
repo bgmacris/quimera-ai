@@ -143,6 +143,7 @@ fi
 echo "[3h] life cycle: idle agents, end of session, a dead session's leftovers (multi-session)"
 if [ "${TANDEM_MULTISESSION:-1}" != 0 ]; then
   check "lifecycle-e2e.mjs green" "node '$HERE/lifecycle-e2e.mjs'"
+  check "lazy-main-e2e.mjs green" "node '$HERE/lazy-main-e2e.mjs'"
 else
   echo "  - skipped: TANDEM_MULTISESSION=0 (no relay)"
 fi

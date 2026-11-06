@@ -181,6 +181,7 @@ That needs a pilot with templates where the plain arms fail.
 |---|---|---|
 | `TANDEM_CHROME_BIN` | autodetect (macOS/Linux) | path to the Chrome/Chromium binary |
 | `TANDEM_AUTOSTART` | on (off under WSL) | `1`/`0`: start tandem's Chrome automatically on the first `browser_*` call. Off by default under WSL, where the browser is often an external Windows Chrome |
+| `TANDEM_LAZY_MCP` | on | `0`: start `@playwright/mcp` with the session instead of on the first browser call |
 | `TANDEM_MCP_ARGS` | — | extra `@playwright/mcp` flags, appended last so they override tandem's defaults (`--output-max-size 52428800 --timeout-action 10000`), e.g. `--image-responses omit` |
 | `TANDEM_CHROME_ARGS` | — | extra Chrome flags (e.g. `--headless=new` for unattended runs/CI) |
 | `TANDEM_CDP_PORT`   | `9222` | CDP port on loopback. Wins over the port saved by the last start (`cdp-port`); set it where Claude Code gets its env (shell or settings `env`) so the MCP, commands and hooks all see it |

@@ -10,17 +10,22 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const launcher = fileURLToPath(new URL('../scripts/mcp-launch.mjs', import.meta.url));
-const env = { ...process.env, TANDEM_DATA_DIR: mkdtempSync(join(tmpdir(), 'tandem hs ')), TANDEM_CDP_PORT: '9399' }; // a space on purpose
-const mcp = spawn(process.execPath, [launcher], { env, stdio: ['pipe', 'pipe', 'inherit'] });
-let buf = ''; const waiters = new Map(); let id = 0;
-mcp.stdout.on('data', (d) => {
-  buf += d; let i;
-  while ((i = buf.indexOf('\n')) >= 0) { const l = buf.slice(0, i); buf = buf.slice(i + 1); try { const m = JSON.parse(l); waiters.get(m.id)?.(m); } catch {} }
-});
-const rpc = (method, params) => new Promise((res, rej) => {
-  const n = ++id; waiters.set(n, res); mcp.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: n, method, params }) + '\n');
-  setTimeout(() => rej(new Error(`${method} timeout`)), 180000);
-});
+const env = { ...process.env, TANDEM_DATA_DIR: mkdtempSync(join(tmpdir(), 'tandem hs ')), TANDEM_CDP_PORT: '9399', TANDEM_DEBUG: '1' }; // a space on purpose
+function start() {
+  const mcp = spawn(process.execPath, [launcher], { env, stdio: ['pipe', 'pipe', 'pipe'] });
+  let buf = ''; let err = ''; const waiters = new Map(); let id = 0;
+  mcp.stderr.on('data', (d) => { err += d; process.stderr.write(d); });
+  mcp.stdout.on('data', (d) => {
+    buf += d; let i;
+    while ((i = buf.indexOf('\n')) >= 0) { const l = buf.slice(0, i); buf = buf.slice(i + 1); try { const m = JSON.parse(l); waiters.get(m.id)?.(m); } catch {} }
+  });
+  const rpc = (method, params) => new Promise((res, rej) => {
+    const n = ++id; waiters.set(n, res); mcp.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: n, method, params }) + '\n');
+    setTimeout(() => rej(new Error(`${method} timeout`)), 180000).unref();
+  });
+  return { mcp, rpc, stderr: () => err };
+}
+const { mcp, rpc } = start();
 let ok = false;
 try {
   const init = await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'tandem-ci', version: '0' } });
@@ -39,6 +44,24 @@ try {
     ok = false;
     process.stdout.write(`cursor lease matchers drift — missing: ${missing.join(', ') || '-'} · stale: ${stale.join(', ') || '-'} (adapters/cursor/hooks/hooks.json)\n`);
   } else process.stdout.write(`cursor lease matchers: ${touched.size}/${names.length} tools covered\n`);
-} catch (e) { process.stdout.write(`handshake FAILED: ${e.message}\n`); }
-mcp.kill();
+  const expected = JSON.stringify(result.tools);
+  // T306: the first launch filled the memo; a second session gets the same handshake from it, with no MCP running.
+  mcp.kill();
+  await new Promise((r) => { mcp.once('exit', r); setTimeout(r, 3000).unref(); });
+  const again = start();
+  const init2 = await again.rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'tandem-ci', version: '0' } });
+  again.mcp.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
+  const list2 = await again.rpc('tools/list', {});
+  await new Promise((r) => setTimeout(r, 300));
+  const started = /started the MCP of agent main/.test(again.stderr());
+  const same = JSON.stringify(list2.result?.tools) === expected && init2.result?.serverInfo?.name === init.result?.serverInfo?.name;
+  process.stdout.write(`handshake from the memo: ${same ? 'same answers' : 'DIFFERENT ANSWERS'}, ${started ? 'an MCP STARTED' : 'no MCP started'}\n`);
+  if (!same || started) ok = false;
+  const exited = new Promise((r) => again.mcp.once('exit', r));
+  again.mcp.stdin.end();
+  const gone = await Promise.race([exited.then(() => true), new Promise((r) => setTimeout(() => r(false), 5000))]);
+  process.stdout.write(`client gone: launcher ${gone ? 'exited' : 'STILL RUNNING'}\n`);
+  if (!gone) { ok = false; again.mcp.kill(); }
+} catch (e) { process.stdout.write(`handshake FAILED: ${e.message}\n`); ok = false; }
+try { mcp.kill(); } catch {}
 process.exit(ok ? 0 : 1);

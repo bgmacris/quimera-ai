@@ -4,6 +4,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/); semantic versio
 
 ## [Unreleased]
 
+### Changed
+- **A session that never uses the browser no longer runs `@playwright/mcp`** (T306). Tandem keeps the MCP's answers
+  to the handshake on disk (`<dataDir>/mcp-memo/`, per MCP version and flags), gives them itself, and starts the MCP
+  on the first browser call. Measured with Claude Code on macOS: 349 → 54 MB at peak in a session without the browser.
+  The first session after installing or changing the MCP version still starts it at once, to fill the memo. When the
+  MCP does start its tools are compared with the memo: if they differ the memo is corrected and the client told.
+  `TANDEM_LAZY_MCP=0` starts it at once, as before.
+
 ## [0.10.2] — 2026-11-06
 
 ### Fixed

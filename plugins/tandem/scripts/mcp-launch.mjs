@@ -19,9 +19,11 @@
 // MULTI-SESSION (default; TANDEM_MULTISESSION=0 turns it off — the 0.9.x launcher below): one MCP child PER
 // AGENT (main + each subagent), each connected to Chrome through tandem's CDP relay (cdp-relay.mjs), so it
 // sees only its own tabs; the router (agent-router.mjs) sends each call to its agent's child by the `agent`
-// that autostart.mjs writes into it. "main" starts with the launcher via npx (it installs the pin on its
-// first run, and the handshake must not wait); the others on their first call, via `node <cli.js>` of the
-// same pin when it resolves (npx keeps a ~100 MB npm process alive per child — R05 §M2), npx otherwise.
+// that autostart.mjs writes into it. The others start on their first call, via `node <cli.js>` of the same pin
+// when it resolves (npx keeps a ~100 MB npm process alive per child — R05 §M2), npx otherwise. So does "main"
+// when mcp-memo.mjs holds the MCP's answers to the handshake (T306: a session that never uses the browser
+// runs no MCP); when it doesn't (first run of this pin, flags or protocol), main starts with the launcher via
+// npx (it installs the pin, and the handshake must not wait) and fills the memo. TANDEM_LAZY_MCP=0: always at once.
 // If the relay can't start, it falls back to single mode, straight to Chrome.
 //
 // Per agent, the proxy keeps the agent's tab painting while its tools run (focus-emulation.mjs) — without
@@ -30,7 +32,7 @@
 // off → plain stdio inherit, as before 0.9.5.
 
 import { execFile, spawn } from 'node:child_process';
-import { mkdirSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { listPages } from './cdp.mjs';
 import { cdpPort, dataDir, ensureDataDir } from './paths.mjs';
@@ -39,6 +41,7 @@ import { startRelay } from './cdp-relay.mjs';
 import { DEFAULT_LINGER_MS, combine, focusEmulator, proxyStdio } from './focus-emulation.mjs';
 import { chooseHumanTab, humanTabs } from './human-tabs.mjs';
 import { tabOwners } from './tab-owners.mjs';
+import { handshakeMemo } from './mcp-memo.mjs';
 import { pdfCapturer } from './pdf-capture.mjs';
 import { clearFinished, isFinished } from './agents-finished.mjs';
 import { isMain } from './is-main.mjs';
@@ -61,6 +64,14 @@ export function mcpArgs(env = process.env, { cdpEndpoint } = {}) {
 
 export const multiSession = (env = process.env) => env.TANDEM_MULTISESSION !== '0';
 
+// Is this path the cli.js of exactly this version of the MCP? (npx's cache can be emptied at any time.)
+export function isMcpCli(cli, version) {
+  try {
+    const pkg = JSON.parse(readFileSync(join(dirname(cli), 'package.json'), 'utf8'));
+    return basename(cli) === 'cli.js' && pkg.name === '@playwright/mcp' && pkg.version === version && existsSync(cli);
+  } catch { return false; }
+}
+
 // The pinned MCP's cli.js, as npx installed it, to start more children with plain `node` (R05 §15.2:
 // 0.25–0.42 s with the cache warm). → path, or null (Windows: .bin is a .cmd shim; any doubt → null, npx).
 export function resolveMcpCli(version, { timeoutMs = 60_000 } = {}) {
@@ -70,8 +81,7 @@ export function resolveMcpCli(version, { timeoutMs = 60_000 } = {}) {
       if (err) return resolve(null);
       try {
         const cli = realpathSync(String(out).trim().split('\n').pop());
-        const pkg = JSON.parse(readFileSync(join(dirname(cli), 'package.json'), 'utf8'));
-        resolve(basename(cli) === 'cli.js' && pkg.name === '@playwright/mcp' && pkg.version === version ? cli : null);
+        resolve(isMcpCli(cli, version) ? cli : null);
       } catch { resolve(null); }
     });
   });
@@ -165,7 +175,11 @@ if (isCli) {
   }
 
   if (relay) {
-    let cli = null;
+    const memo = process.env.TANDEM_LAZY_MCP === '0' ? null : handshakeMemo({ dir: dataDir(), version: mcpVersion(), args: mcpArgs(process.env, { cdpEndpoint: 'relay' }).slice(2) });
+    let cli = memo?.cli() && isMcpCli(memo.cli(), mcpVersion()) ? memo.cli() : null;
+    let resolving = false;
+    let unresolvable = false;   // this pin's cli can't be found: don't ask npx again for each new child
+    let mainAtOnce = false;   // main started with the launcher: its exit ends the launcher, as ever
     const children = new Set();
     // End of the session (Claude Code: SIGINT, +100 ms SIGTERM, killed at ~400 ms — R05 §17; or the client's
     // EOF): close this session's agents' tabs, give back the handed-over ones (decided 2026-11-03). Bounded:
@@ -173,20 +187,40 @@ if (isCli) {
     let ending = null;
     const shutdown = () => (ending ??= Promise.race([relay.closeAll().catch(() => 0), new Promise((r) => setTimeout(r, 300))])
       .then((n) => log(`relay: session end, closed ${typeof n === 'number' ? n : '?'} agent tab(s)`)));
-    const spawnChild = (agent) => {
+    const stopAll = async () => { await shutdown(); for (const o of children) { try { o.kill(); } catch {} } };
+    const spawnChild = (agent, { onDemand = true } = {}) => {
       const a = mcpArgs(process.env, { cdpEndpoint: relay.endpoint(agent) });
-      const c = agent !== 'main' && cli ? spawn(process.execPath, [cli, ...a.slice(2)], { stdio: ['pipe', 'pipe', 'inherit'] }) : spawnNpx(a, ['pipe', 'pipe', 'inherit']);
+      // Checked again each time: a session can wait for hours on its first call, and npx's cache can go meanwhile.
+      if (cli && !isMcpCli(cli, mcpVersion())) { cli = null; unresolvable = false; }
+      const viaCli = onDemand && cli;
+      const c = viaCli ? spawn(process.execPath, [cli, ...a.slice(2)], { stdio: ['pipe', 'pipe', 'inherit'] }) : spawnNpx(a, ['pipe', 'pipe', 'inherit']);
       children.add(c);
-      c.on('exit', () => children.delete(c));
-      if (agent === 'main') {
+      let spoke = false;
+      c.stdout.once('data', () => { spoke = true; });
+      // Only once an MCP is up, i.e. npx has installed the pin: two npx at once on a cold cache share one
+      // _npx dir and can kill main's (CI on Linux: ENOTEMPTY, no handshake, the session without tools). Later
+      // children skip npx if this resolves (it never delays the handshake).
+      const resolves = !cli && !resolving && !unresolvable;
+      if (resolves) {
+        resolving = true;
+        c.stdout.once('data', () => resolveMcpCli(mcpVersion()).then((p) => {
+          cli = p; resolving = false; unresolvable = !p;
+          if (p) memo?.setCli(p);
+          log(`router: MCP cli ${p ? 'resolved' : 'not resolved (children via npx)'}`);
+        }));
+      }
+      c.on('exit', () => {
+        children.delete(c);
+        if (spoke) return;
+        if (resolves) resolving = false;           // it never got to ask
+        if (viaCli) { cli = null; log(`router: ${viaCli} didn't start: next via npx`); }
+      });
+      if (agent === 'main' && !onDemand) {
+        mainAtOnce = true;
         c.on('error', onSpawnError);
-        // Only once main's MCP is up, i.e. npx has installed the pin: two npx at once on a cold cache share one
-        // _npx dir and can kill main's (CI on Linux: ENOTEMPTY, no handshake, the session without tools). Later
-        // children skip npx if this resolves (it never delays the handshake).
-        c.stdout.once('data', () => resolveMcpCli(mcpVersion()).then((p) => { cli = p; log(`router: MCP cli ${p ? 'resolved' : 'not resolved (children via npx)'}`); }));
-        c.on('exit', async (code, signal) => { await shutdown(); for (const o of children) { try { o.kill(); } catch {} } process.exit(signal ? 1 : (code ?? 0)); });
+        c.on('exit', async (code, signal) => { await stopAll(); process.exit(signal ? 1 : (code ?? 0)); });
       } else c.on('error', (e) => log(`router: agent ${agent}: cannot start its MCP (${e.message})`));
-      log(`router: started the MCP of agent ${agent} (${agent !== 'main' && cli ? 'node cli.js' : 'npx'})`);
+      log(`router: started the MCP of agent ${agent} (${viaCli ? 'node cli.js' : 'npx'})`);
       return c;
     };
     const localTools = { [ADOPT_TOOL]: adoptTool({ relay, port: cdpPort(), dataDir: dataDir() }) };
@@ -201,10 +235,16 @@ if (isCli) {
       finished: (agent) => isFinished(dataDir(), agent),
       clearFinished: (agent) => clearFinished(dataDir(), agent),
     };
-    routeStdio({ clientIn: process.stdin, clientOut: process.stdout, spawnChild, emulatorFor, multi: true, log, localTools, lifecycle });
+    // With main on demand no MCP's exit ends the launcher: the client going away does.
+    const onClientEnd = async () => { if (!mainAtOnce) { await stopAll(); process.exit(0); } };
+    routeStdio({ clientIn: process.stdin, clientOut: process.stdout, spawnChild, emulatorFor, multi: true, log, localTools, lifecycle, memo, onClientEnd });
     // Leftovers of sessions that died without closing their tabs (crash, SIGKILL before the 300 ms).
     setInterval(() => { relay.reapDead().catch(() => {}); }, 60_000).unref();
-    for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, async () => { await shutdown(); for (const c of children) { try { c.kill(sig); } catch {} } });
+    for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, async () => {
+      await shutdown();
+      for (const c of children) { try { c.kill(sig); } catch {} }
+      if (!mainAtOnce) process.exit(0);
+    });
   } else {
     const proxied = focus || capture;
     const stdio = proxied ? ['pipe', 'pipe', 'inherit'] : 'inherit';

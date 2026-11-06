@@ -6,7 +6,11 @@
 
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { routeStdio, takeAgent } from '../scripts/agent-router.mjs';
+import { handshakeMemo } from '../scripts/mcp-memo.mjs';
 
 let pass = 0; let fail = 0;
 function ok(desc, cond, extra = '') {
@@ -36,7 +40,7 @@ function fakeChild(agent, { autoInit = true, initOk = true } = {}) {
   return c;
 }
 
-function harness({ opts = {}, emulator } = {}) {
+function harness({ opts = {}, emulator, route = {} } = {}) {
   const clientIn = new PassThrough(); const clientOut = new PassThrough();
   const toClient = []; const children = new Map(); const spawned = [];
   clientOut.on('data', (d) => { for (const l of String(d).split('\n').filter(Boolean)) toClient.push(JSON.parse(l)); });
@@ -47,7 +51,8 @@ function harness({ opts = {}, emulator } = {}) {
   };
   const r = routeStdio({
     clientIn, clientOut, emulatorFor, multi: true, initTimeoutMs: 300,
-    spawnChild: (agent) => { const c = fakeChild(agent, opts[agent] || opts['*'] || {}); spawned.push(agent); children.set(agent, c); return c; },
+    spawnChild: (agent, how) => { const c = fakeChild(agent, opts[agent] || opts['*'] || {}); c.how = how; spawned.push(agent); children.set(agent, c); return c; },
+    ...route,
   });
   return { clientIn, toClient, children, spawned, events, r, send: (s) => clientIn.write(s) };
 }
@@ -329,6 +334,290 @@ console.log('client EOF');
   h.clientIn.end();
   await sleep(30);
   ok('closes every child\'s stdin', ends.sort().join() === 'main,x1');
+}
+
+// A real memo on a temporary disk (mcp-memo.mjs).
+const INIT = { protocolVersion: '2025-11-25', capabilities: { roots: {} }, clientInfo: { name: 'claude-code' } };
+const TOOLS = { tools: [{ name: 'browser_navigate', inputSchema: {} }] };
+const LOCAL = { browser_tab_adopt: { def: { name: 'browser_tab_adopt' }, handle: async () => ({ content: [{ type: 'text', text: 'adopted' }] }) } };
+const warmMemo = (tools = TOOLS) => {
+  const memo = handshakeMemo({ dir: mkdtempSync(join(tmpdir(), 'tandem router ')), version: '0.0.83', env: {} });
+  memo.record({ method: 'server/discover' }, { error: { code: -32601, message: 'Method not found' } });
+  memo.record({ method: 'initialize', params: INIT }, { result: { protocolVersion: INIT.protocolVersion, capabilities: { tools: { listChanged: true } }, serverInfo: { name: 'Playwright' } } });
+  memo.record({ method: 'tools/list' }, { result: tools });
+  return memo;
+};
+const handshake = async (h) => {
+  h.send(msg({ jsonrpc: '2.0', id: 'd', method: 'server/discover', params: {} }));
+  h.send(msg({ jsonrpc: '2.0', id: 0, method: 'initialize', params: INIT }));
+  h.send(msg({ jsonrpc: '2.0', method: 'notifications/initialized' }));
+  h.send(msg({ jsonrpc: '2.0', id: 1, method: 'tools/list' }));
+  await sleep(30);
+};
+const answer = (h, id) => h.toClient.find((m) => m.id === id);
+// A fake MCP that answers tools/list (with these tools) and every call.
+const answering = (c, tools = TOOLS) => {
+  c.stdin.on('data', (d) => {
+    for (const l of String(d).split('\n').filter(Boolean)) {
+      const m = JSON.parse(l);
+      if (m.method === 'tools/list') c.reply({ jsonrpc: '2.0', id: m.id, result: tools });
+      else if (m.method === 'tools/call') c.reply({ jsonrpc: '2.0', id: m.id, result: { content: [{ type: 'text', text: `done ${m.params.name}` }] } });
+    }
+  });
+};
+
+console.log('main on demand: the memo answers the handshake, no MCP runs');
+{
+  const h = harness({ route: { memo: warmMemo(), localTools: LOCAL } });
+  ok('nothing started before the client speaks', h.spawned.length === 0);
+  await handshake(h);
+  ok('…nor after the whole handshake', h.spawned.length === 0, h.spawned.join());
+  ok('server/discover: the MCP\'s "method not found"', answer(h, 'd')?.error?.code === -32601);
+  ok('initialize: the MCP\'s answer', answer(h, 0)?.result?.serverInfo?.name === 'Playwright' && answer(h, 0)?.result?.protocolVersion === INIT.protocolVersion);
+  ok('tools/list: its tools + the local ones', answer(h, 1)?.result?.tools.map((t) => t.name).join() === 'browser_navigate,browser_tab_adopt');
+  ok('…answers are JSON-RPC', answer(h, 1)?.jsonrpc === '2.0');
+  h.send(msg({ jsonrpc: '2.0', id: 'p', method: 'ping' }));
+  h.send(msg({ jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 77 } }));
+  await sleep(20);
+  ok('ping answered, a stray cancel dropped, still no MCP', JSON.stringify(answer(h, 'p')?.result) === '{}' && h.spawned.length === 0);
+  // Second tools/list: the local tools aren't added twice.
+  h.send(msg({ jsonrpc: '2.0', id: 2, method: 'tools/list' }));
+  await sleep(20);
+  ok('a second tools/list: same list', answer(h, 2)?.result?.tools.length === 2);
+}
+
+console.log('main on demand: the first call starts it, with the client\'s handshake');
+{
+  const h = harness({ route: { memo: warmMemo() } });
+  await handshake(h);
+  h.send(call(5, 'browser_navigate', { url: 'http://a/', agent: 'main' }));
+  await sleep(30);
+  const main = h.children.get('main');
+  ok('main started now, marked on demand', h.spawned.join() === 'main' && main.how?.onDemand === true);
+  ok('…with the client\'s own initialize', JSON.stringify(main.got[0]?.params) === JSON.stringify(INIT) && main.got[0]?.method === 'initialize');
+  ok('…then notifications/initialized', main.got[1]?.method === 'notifications/initialized');
+  const c = main.calls();
+  ok('the call reaches it, without `agent`', c.length === 1 && c[0].id === 5 && !('agent' in c[0].params.arguments));
+  ok('the handshake isn\'t answered to the client again', h.toClient.filter((m) => m.id !== undefined && String(m.id).startsWith('tandem-probe')).length === 0);
+  main.reply({ jsonrpc: '2.0', id: 5, result: { content: [{ type: 'text', text: 'ok' }] } });
+  await sleep(20);
+  ok('its answer reaches the client', answer(h, 5)?.result?.content?.[0]?.text === 'ok');
+  // Up now: everything goes to it, as ever.
+  h.send(msg({ jsonrpc: '2.0', id: 6, method: 'tools/list' }));
+  await sleep(20);
+  ok('main up: tools/list goes to it', main.got.some((m) => m.id === 6));
+  main.reply({ jsonrpc: '2.0', method: 'roots/list', id: 40 });
+  await sleep(20);
+  ok('its requests reach the client', h.toClient.some((m) => m.method === 'roots/list'));
+  h.send(msg({ jsonrpc: '2.0', id: 40, result: { roots: [] } }));
+  await sleep(20);
+  ok('…and the answer comes back', main.got.some((m) => m.id === 40 && m.result));
+}
+
+console.log('main on demand: a roots/list during its first call doesn\'t deadlock');
+{
+  const h = harness({ route: { memo: warmMemo() } });
+  await handshake(h);
+  h.send(call(5, 'browser_navigate', { agent: 'main' }));
+  await sleep(20);
+  const main = h.children.get('main');
+  main.reply({ jsonrpc: '2.0', id: 0, method: 'roots/list' });
+  await sleep(20);
+  ok('the request reaches the client while the call is pending', h.toClient.some((m) => m.method === 'roots/list'));
+  h.send(msg({ jsonrpc: '2.0', id: h.toClient.find((m) => m.method === 'roots/list').id, result: { roots: [{ uri: 'file:///x' }] } }));
+  await sleep(20);
+  ok('the answer reaches main at once', main.got.some((m) => !m.method && m.result?.roots));
+}
+
+console.log('main on demand: a subagent\'s call doesn\'t start main');
+{
+  const h = harness({ route: { memo: warmMemo() } });
+  await handshake(h);
+  h.send(call(5, 'browser_click', { agent: 'x1' }));
+  await sleep(30);
+  ok('only the subagent\'s MCP', h.spawned.join() === 'x1', h.spawned.join());
+  h.send(msg({ jsonrpc: '2.0', id: 2, method: 'tools/list' }));
+  await sleep(20);
+  ok('tools/list is still the memo\'s', answer(h, 2)?.result?.tools?.length === 1 && h.spawned.join() === 'x1');
+  h.send(msg({ jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 5 } }));
+  await sleep(20);
+  ok('cancelling its call goes to it', h.children.get('x1').got.some((m) => m.method === 'notifications/cancelled'));
+}
+
+console.log('main on demand: tools checked against the memo when it starts');
+{
+  const memo = warmMemo();
+  const h = harness({ route: { memo, localTools: LOCAL } });
+  await handshake(h);
+  h.send(call(5, 'browser_navigate', { agent: 'main' }));
+  await sleep(5);
+  const NEW = { tools: [{ name: 'browser_navigate', inputSchema: {} }, { name: 'browser_new', inputSchema: {} }] };
+  answering(h.children.get('main'), NEW);
+  // Its probe may already be out: the fake answers from now on, so ask it again if needed.
+  const probe = h.children.get('main').got.find((m) => m.method === 'tools/list');
+  if (probe) h.children.get('main').reply({ jsonrpc: '2.0', id: probe.id, result: NEW });
+  await sleep(40);
+  ok('different tools: the client is told', h.toClient.some((m) => m.method === 'notifications/tools/list_changed'));
+  ok('…the memo is corrected', memo.answer({ method: 'tools/list' })?.result.tools.length === 2);
+  h.send(msg({ jsonrpc: '2.0', id: 8, method: 'tools/list' }));
+  await sleep(30);
+  ok('…the new list has the new tool and the local one, once', answer(h, 8)?.result?.tools.map((t) => t.name).join() === 'browser_navigate,browser_new,browser_tab_adopt', JSON.stringify(answer(h, 8)));
+  ok('…the correction carries no local tool', memo.answer({ method: 'tools/list' })?.result.tools.every((t) => t.name !== 'browser_tab_adopt'));
+
+  const same = harness({ route: { memo: warmMemo() } });
+  await handshake(same);
+  same.send(call(5, 'browser_navigate', { agent: 'main' }));
+  await sleep(5);
+  const c = same.children.get('main');
+  answering(c);
+  const p2 = c.got.find((m) => m.method === 'tools/list');
+  if (p2) c.reply({ jsonrpc: '2.0', id: p2.id, result: TOOLS });
+  await sleep(30);
+  ok('same tools: the client hears nothing', !same.toClient.some((m) => m.method === 'notifications/tools/list_changed'));
+}
+
+console.log('main on demand: it dies, or can\'t start');
+{
+  const ends = [];
+  const h = harness({ route: { memo: warmMemo(), onClientEnd: () => ends.push(1) } });
+  await handshake(h);
+  h.send(call(5, 'browser_navigate', { agent: 'main' }));
+  await sleep(30);
+  const first = h.children.get('main');
+  first.kill();
+  await sleep(20);
+  ok('its pending call gets an error, not silence', answer(h, 5)?.error?.message?.includes('main'));
+  h.send(msg({ jsonrpc: '2.0', id: 'p2', method: 'ping' }));
+  h.send(msg({ jsonrpc: '2.0', id: 3, method: 'tools/list' }));
+  await sleep(20);
+  ok('still answered from the memo while down', answer(h, 'p2') && answer(h, 3)?.result?.tools?.length === 1);
+  h.send(call(6, 'browser_snapshot', {}));
+  await sleep(30);
+  ok('the next call starts a new one', h.spawned.join() === 'main,main' && h.children.get('main') !== first && h.children.get('main').calls()[0]?.id === 6);
+  h.clientIn.end();
+  await sleep(20);
+  ok('the client going away is reported (the launcher exits on it)', ends.length === 1);
+
+  const noInit = harness({ opts: { main: { initOk: false } }, route: { memo: warmMemo() } });
+  await handshake(noInit);
+  noInit.send(call(5, 'browser_navigate', {}));
+  await sleep(30);
+  ok('a failed handshake fails the call', answer(noInit, 5)?.error?.message?.includes('main'));
+
+  const noSpawn = harness({ opts: { main: { autoInit: false } }, route: { memo: warmMemo() } });
+  await handshake(noSpawn);
+  noSpawn.send(call(5, 'browser_navigate', {}));
+  await sleep(20);
+  noSpawn.children.get('main').emit('error', new Error('spawn npx ENOENT'));
+  await sleep(20);
+  ok('can\'t be spawned: the call fails now, not after the handshake\'s timeout', answer(noSpawn, 5)?.error?.message?.includes('ENOENT'), JSON.stringify(answer(noSpawn, 5)));
+}
+
+console.log('main on demand: nobody waits for an MCP that failed (review of T306)');
+{
+  const h = harness({ opts: { main: { autoInit: false } }, route: { memo: warmMemo(), localTools: LOCAL } });
+  await handshake(h);
+  h.send(call(10, 'browser_navigate', {})); h.send(call(11, 'browser_navigate', {}));
+  await sleep(20);
+  const main = h.children.get('main');
+  h.send(msg({ jsonrpc: '2.0', id: 12, method: 'ping' }));
+  h.send(msg({ jsonrpc: '2.0', id: 13, method: 'tools/list' }));
+  await sleep(20);
+  ok('while it starts, a ping doesn\'t wait for it', answer(h, 12)?.result && !main.got.some((m) => m.method === 'ping'));
+  ok('…nor tools/list: the memo answers', answer(h, 13)?.result?.tools.some((t) => t.name === 'browser_navigate'));
+  h.send(msg({ jsonrpc: '2.0', id: 14, method: 'resources/list' }));
+  await sleep(20);
+  const t0 = Date.now();
+  main.emit('exit', 1, null);
+  await sleep(30);
+  ok('it dies while starting: the call in flight gets an error', answer(h, 10)?.error);
+  ok('…the one queued behind it too, now, not at the handshake\'s timeout', answer(h, 11)?.error && Date.now() - t0 < 200, `${Date.now() - t0} ms`);
+  ok('…and a request only it could answer', answer(h, 14)?.error);
+  h.send(call(15, 'browser_navigate', {}));
+  await sleep(20);
+  ok('the next call starts a new one', h.spawned.filter((a) => a === 'main').length === 2);
+}
+{
+  const h = harness({ opts: { main: { autoInit: true } }, route: { memo: warmMemo(), localTools: LOCAL } });
+  await handshake(h);
+  h.send(call(20, 'browser_navigate', {}));
+  await sleep(20);
+  const main = h.children.get('main');
+  h.send(msg({ jsonrpc: '2.0', id: 21, method: 'resources/list' }));
+  await sleep(20);
+  main.emit('exit', 1, null);
+  await sleep(20);
+  ok('it dies running: a pending request gets an error', answer(h, 21)?.error);
+  const before = h.toClient.filter((m) => m.id === 21).length;
+  ok('…only one', before === 1);
+}
+{
+  const memo = warmMemo();
+  const h = harness({ opts: { '*': { autoInit: true } }, route: { memo, localTools: LOCAL } });
+  await handshake(h);
+  h.send(call(30, 'browser_navigate', { agent: 'a0e815c57e8d30939' }));
+  await sleep(10);
+  const sub = h.children.get('a0e815c57e8d30939');
+  ok('only a subagent uses the browser: main stays off', !h.spawned.includes('main'));
+  await sleep(10);
+  const list = sub.got.find((m) => m.method === 'tools/list');
+  ok('…and its MCP is compared with the memo', !!list);
+  sub.reply({ jsonrpc: '2.0', id: list?.id, result: { tools: [{ name: 'browser_new' }] } });
+  await sleep(20);
+  ok('…which it corrects, telling the client', h.toClient.some((m) => m.method === 'notifications/tools/list_changed') && memo.answer({ method: 'tools/list' })?.result.tools[0].name === 'browser_new');
+  h.send(call(31, 'browser_navigate', { agent: 'a1e815c57e8d30939' }));
+  await sleep(20);
+  ok('…once per session', !h.children.get('a1e815c57e8d30939').got.some((m) => m.method === 'tools/list'));
+}
+
+console.log('cold memo: main at once, its answers fill the memo');
+{
+  const memo = handshakeMemo({ dir: mkdtempSync(join(tmpdir(), 'tandem router ')), version: '0.0.83', env: {} });
+  const h = harness({ opts: { main: { autoInit: true } }, route: { memo, localTools: LOCAL } });
+  ok('nothing yet: the client hasn\'t said what it wants', h.spawned.length === 0);
+  h.send(msg({ jsonrpc: '2.0', id: 'd', method: 'server/discover', params: {} }));
+  await sleep(20);
+  ok('the first message starts main', h.spawned.join() === 'main');
+  const main = h.children.get('main');
+  ok('…at once, not on demand', main.how?.onDemand === false);
+  main.reply({ jsonrpc: '2.0', id: 'd', error: { code: -32601, message: 'Method not found' } });
+  h.send(msg({ jsonrpc: '2.0', id: 0, method: 'initialize', params: INIT }));
+  h.send(msg({ jsonrpc: '2.0', method: 'notifications/initialized' }));
+  h.send(msg({ jsonrpc: '2.0', id: 1, method: 'tools/list' }));
+  await sleep(20);
+  ok('the client\'s handshake goes to it, in order', ['server/discover', 'initialize', 'notifications/initialized', 'tools/list'].every((x, i) => main.got[i]?.method === x), main.got.map((m) => m.method).join());
+  ok('its handshake isn\'t done twice', main.got.filter((m) => m.method === 'initialize').length === 1);
+  main.reply({ jsonrpc: '2.0', id: 1, result: { tools: [{ name: 'browser_navigate' }] } });
+  await sleep(20);
+  ok('the client gets its tools + the local one', answer(h, 1)?.result?.tools.map((t) => t.name).join() === 'browser_navigate,browser_tab_adopt');
+  ok('the memo gets its tools, without the local one', memo.answer({ method: 'tools/list' })?.result.tools.map((t) => t.name).join() === 'browser_navigate');
+  ok('…and the initialize + discover', memo.answer({ method: 'initialize', params: INIT }) && memo.answer({ method: 'server/discover' }));
+
+  // Memo warm for discover but not for this protocolVersion: main at once, from initialize.
+  const partial = warmMemo();
+  const p = harness({ route: { memo: partial } });
+  p.send(msg({ jsonrpc: '2.0', id: 'd', method: 'server/discover', params: {} }));
+  await sleep(10);
+  ok('another protocol: server/discover still from the memo', answer(p, 'd')?.error?.code === -32601 && p.spawned.length === 0);
+  p.send(msg({ jsonrpc: '2.0', id: 0, method: 'initialize', params: { ...INIT, protocolVersion: '2024-11-05' } }));
+  await sleep(20);
+  ok('…its initialize starts main at once, and gets the real answer', p.spawned.join() === 'main' && p.children.get('main').how?.onDemand === false && answer(p, 0)?.result?.protocolVersion === '2024-11-05');
+
+  const unknown = harness({ route: { memo: warmMemo() } });
+  await handshake(unknown);
+  unknown.send(msg({ jsonrpc: '2.0', id: 'r', method: 'resources/list' }));
+  await sleep(30);
+  ok('a request the memo can\'t answer starts main and reaches it after its handshake', unknown.spawned.join() === 'main' && unknown.children.get('main').got.map((m) => m.method).join().endsWith('resources/list') && unknown.children.get('main').got[0].method === 'initialize', unknown.children.get('main')?.got.map((m) => m.method).join());
+}
+
+console.log('no memo, or single mode: as before');
+{
+  const h = harness();
+  ok('no memo: main at once', h.spawned.join() === 'main');
+  const memo = warmMemo();
+  const clientIn = new PassThrough(); const clientOut = new PassThrough(); const spawned = [];
+  routeStdio({ clientIn, clientOut, multi: false, memo, emulatorFor: () => ({ async begin() {}, end() {} }), spawnChild: (a) => { spawned.push(a); return fakeChild(a); } });
+  ok('single mode ignores the memo: main at once', spawned.join() === 'main');
 }
 
 console.log(`\n${pass} ok, ${fail} failures`);
