@@ -151,7 +151,19 @@ stop_external() {
 }
 
 # --- start / stop ------------------------------------------------------------------
+# On macOS Chrome lives on without windows; elsewhere (Linux, Windows) not measured: it may quit, so keep the page.
+# TANDEM_MULTISESSION=0: the agent drives Chrome's first page, it needs one.
+no_startup_window_ok() {
+  [ "$(uname -s)" = Darwin ] && [ "${TANDEM_MULTISESSION:-}" != 0 ]
+}
+
+# start_chrome [--no-window]: --no-window is for autostart. An agent is about to open its own window in the
+# background (cdp-relay.mjs), so a first page would be a second, empty window that also takes the front
+# (measured on macOS: Chrome in front with it, Ghostty stays in front without). No flag = the human asked
+# for the browser (/tandem:browser-start): they get a window.
 start_chrome() {
+  local want_window=1
+  [ "${1:-}" = --no-window ] && no_startup_window_ok && want_window=0
   if external_mode; then mkdir -p "$LOGDIR"; chmod 700 "$DATA" 2>/dev/null || true; start_external; return; fi
   # Guard: locatable Chrome binary. Clear error instead of an opaque CDP timeout.
   if [ ! -x "$CHROME_BIN" ]; then
@@ -166,7 +178,12 @@ start_chrome() {
   # Idempotent: if CDP already responds AND it is our profile, nothing to do.
   if cdp_healthy; then
     case "$(cdp_owner)" in
-      ours)    echo "tandem: Chrome already running (CDP at 127.0.0.1:${port})."; return 0 ;;
+      ours)
+        # Started without a window, or the agents' windows are gone: a human asking for the browser gets one.
+        if [ "$want_window" = 1 ] && [ "$(curl -s --max-time 2 "http://127.0.0.1:${port}/json/list" | grep -c '"type": "page"')" = 0 ]; then
+          curl -s --max-time 2 -X PUT "http://127.0.0.1:${port}/json/new?about:blank" >/dev/null 2>&1 || true
+        fi
+        echo "tandem: Chrome already running (CDP at 127.0.0.1:${port})."; return 0 ;;
       unknown) echo "tandem: a browser already answers CDP at 127.0.0.1:${port} (its process is not visible here — e.g. Windows Chrome from WSL); using it."; return 0 ;;
     esac
     echo "tandem: ERROR — port ${port} answers CDP but it is NOT tandem's Chrome (profile $PROFILE)." >&2
@@ -209,12 +226,14 @@ start_chrome() {
   # and logs in here, and that flag also stops Safe Browsing and component (e.g. Widevine) updates.
   # --disable-back-forward-cache: a tab that goes through N sites otherwise keeps a live renderer per site
   # visited (R08: 10 real sites in one tab, 1700 → 940 MB of renderers). Price: going back reloads.
+  local -a first_page=(about:blank)
+  [ "$want_window" = 1 ] || first_page=(--no-startup-window)
   nohup "$CHROME_BIN" \
     --remote-debugging-port="${port}" \
     --user-data-dir="$PROFILE" \
     --no-first-run --no-default-browser-check --disable-sync --disable-back-forward-cache \
     ${extra[@]+"${extra[@]}"} \
-    about:blank \
+    "${first_page[@]}" \
     >>"$LOGDIR/chrome.log" 2>&1 &
   echo "$!" > "$PIDFILE"
   disown 2>/dev/null || true

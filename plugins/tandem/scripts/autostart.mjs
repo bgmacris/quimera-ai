@@ -119,10 +119,10 @@ if (isCli) {
     try {
       // bash explicitly: Windows can't exec a .sh. 40 s stays under the hook's 45 s; a TANDEM_CDP_WAIT
       // beyond that is cut here (Chrome keeps starting, nohup) — the next call then finds it up.
-      execFileSync('bash', [daemon, 'start'], { stdio: 'ignore', timeout: 40000 });
+      execFileSync('bash', [daemon, 'start', '--no-window'], { stdio: 'ignore', timeout: 40000 });
     } catch { /* reported below */ }
     if (await cdpUp(port)) {
-      out({ additionalContext: `tandem: the shared Chrome was not running; started it (CDP 127.0.0.1:${port}). The human may need to log in again in that window.` });
+      out({ additionalContext: `tandem: the shared Chrome was not running; started it (CDP 127.0.0.1:${port}). The human may need to log in again, in the window your first page opens.` });
     }
     out({ permissionDecision: 'deny', permissionDecisionReason: `tandem: Chrome is not running at 127.0.0.1:${port} and starting it failed. Ask the human to run /tandem:browser-start and check its output.` });
   }

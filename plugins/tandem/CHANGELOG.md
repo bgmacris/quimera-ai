@@ -4,6 +4,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/); semantic versio
 
 ## [Unreleased]
 
+### Fixed
+- **Two windows when tandem's Chrome started on its own, one of them empty and unused** (since 0.10.0, on macOS).
+  Autostart launched Chrome with a first page, and the agent's first page opened a window of its own. Autostart
+  now starts Chrome with `--no-startup-window`: one window, opened in the background, and Chrome no longer jumps
+  to the front when it starts (measured headful with Claude Code: 1 window, the terminal stayed in front).
+  `/tandem:browser-start` still opens a window, also if Chrome was running without one. Linux and Windows keep
+  the first page: whether Chrome survives there without windows is not measured. So does `TANDEM_MULTISESSION=0`,
+  where the agent drives that page.
+
 ## [0.10.0] — 2026-11-04
 
 ### Changed
