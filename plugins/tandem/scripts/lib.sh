@@ -50,6 +50,7 @@ PROFILE="$DATA/chrome-profile"
 PIDFILE="$DATA/chrome.pid"
 PORTFILE="$DATA/cdp-port"
 LOGDIR="$DATA/logs"
+STARTUP_PAGE="$DATA/startup-page"   # the window opened for the human: cdp-relay.mjs closes it if still blank
 
 # CDP port: env TANDEM_CDP_PORT, else the cdp-port file of the last start, else 9222.
 # The env wins: an explicit override must not be shadowed by a stale file (same rule as paths.mjs).
@@ -151,23 +152,31 @@ stop_external() {
 }
 
 # --- start / stop ------------------------------------------------------------------
-# Chrome runs with no page (started without one, or the agents' windows are gone) and a human asked for the
-# browser: give them a window. On Windows (Git Bash) the owner reads "unknown", so both cases come here.
+# A human asked for the browser and Chrome has no page: give them a window. Its id goes to STARTUP_PAGE: when an
+# agent opens its own window the relay closes this one if it is still blank, so it never stays as a second, unused
+# window. On Windows (Git Bash) the owner reads "unknown", so both owner cases come here.
 ensure_human_window() {
   [ "$1" = 1 ] || return 0
   [ "$(curl -s --max-time 2 "http://127.0.0.1:$2/json/list" | grep -c '"type": "page"')" = 0 ] || return 0
-  curl -s --max-time 2 -X PUT "http://127.0.0.1:$2/json/new?about:blank" >/dev/null 2>&1 || true
+  local out id
+  if ! out="$(curl -s --max-time 5 -X PUT "http://127.0.0.1:$2/json/new?about:blank")"; then
+    echo "tandem: WARNING — could not open a window; open one from Chrome (it is running without any)." >&2
+    return 0
+  fi
+  [ "${TANDEM_MULTISESSION:-}" != 0 ] || return 0
+  id="$(printf '%s\n' "$out" | sed -n 's/.*"id": *"\([A-Fa-f0-9]*\)".*/\1/p' | head -n 1)"
+  [ -z "$id" ] || printf '%s\n' "$id" > "$STARTUP_PAGE"
 }
 
-# start_chrome [--no-window]: --no-window is for autostart. An agent is about to open its own window in the
-# background (cdp-relay.mjs), so a first page would be a second, empty window that also takes the front
-# (measured on macOS: Chrome in front with it, Ghostty stays in front without). No flag = the human asked
-# for the browser (/tandem:browser-start): they get a window. The flag also keeps Chrome alive with no windows
-# left, which a first page does not on Linux and Windows (measured, Chrome 156: exit 0 when the last one closes).
+# start_chrome [--no-window]: Chrome always starts with --no-startup-window. An agent opens its own window in the
+# background (cdp-relay.mjs), so a first page would be a second, empty window that also takes the front (measured
+# on macOS: Chrome in front with it, Ghostty stays in front without). The flag also keeps Chrome alive with no
+# windows left, which a first page does not on Linux and Windows (measured, Chrome 156: exit 0 when the last one
+# closes). No --no-window = the human asked for the browser (/tandem:browser-start): they get a window.
 # TANDEM_MULTISESSION=0: the agent drives Chrome's first page, it needs one.
 start_chrome() {
   local want_window=1
-  [ "${1:-}" = --no-window ] && [ "${TANDEM_MULTISESSION:-}" != 0 ] && want_window=0
+  [ "${1:-}" = --no-window ] && want_window=0
   if external_mode; then mkdir -p "$LOGDIR"; chmod 700 "$DATA" 2>/dev/null || true; start_external; return; fi
   # Guard: locatable Chrome binary. Clear error instead of an opaque CDP timeout.
   if [ ! -x "$CHROME_BIN" ]; then
@@ -225,8 +234,9 @@ start_chrome() {
   # and logs in here, and that flag also stops Safe Browsing and component (e.g. Widevine) updates.
   # --disable-back-forward-cache: a tab that goes through N sites otherwise keeps a live renderer per site
   # visited (R08: 10 real sites in one tab, 1700 → 940 MB of renderers). Price: going back reloads.
-  local -a first_page=(about:blank)
-  [ "$want_window" = 1 ] || first_page=(--no-startup-window)
+  local -a first_page=(--no-startup-window)
+  [ "${TANDEM_MULTISESSION:-}" != 0 ] || first_page=(about:blank)
+  rm -f "$STARTUP_PAGE"
   nohup "$CHROME_BIN" \
     --remote-debugging-port="${port}" \
     --user-data-dir="$PROFILE" \
@@ -241,7 +251,10 @@ start_chrome() {
   # Under heavy load (load1 ~20 in the bench) Chrome took 8–42 s just to reach its first log line.
   local _ wait="${TANDEM_CDP_WAIT:-15}"
   for _ in $(seq 1 $((wait * 2))); do
-    cdp_healthy && { echo "tandem: Chrome ready (CDP 127.0.0.1:${port})."; return 0; }
+    if cdp_healthy; then
+      [ "${TANDEM_MULTISESSION:-}" = 0 ] || ensure_human_window "$want_window" "$port"
+      echo "tandem: Chrome ready (CDP 127.0.0.1:${port})."; return 0
+    fi
     sleep 0.5
   done
   echo "tandem: ERROR — Chrome did not expose CDP in ${wait}s. Check $LOGDIR/chrome.log (slow machine? TANDEM_CDP_WAIT)" >&2
@@ -268,7 +281,7 @@ stop_chrome() {
     sleep 0.25
   done
   pkill -9 -f -- "--user-data-dir=$PROFILE" 2>/dev/null || true
-  rm -f "$PIDFILE"
+  rm -f "$PIDFILE" "$STARTUP_PAGE"
   if [ "$stopped" -eq 0 ]; then echo "tandem: Chrome stopped."; else echo "tandem: no active tandem Chrome found."; fi
 }
 

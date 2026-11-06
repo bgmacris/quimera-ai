@@ -11,8 +11,11 @@
 //      session refused, Browser.close refused
 //   R8 the shared registry: our pages claimed (mine), the human's unclaimed; a big message (full-page
 //      screenshot) crosses the relay
+//   R10 the window /tandem:browser-start opened: closed when an agent gets its own, only if still unused
 // Needs Chrome on TANDEM_CDP_PORT (tests/e2e.sh starts it) and TANDEM_DATA_DIR. Exit 0 = green.
 import { spawn } from 'node:child_process';
+import { existsSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { createServer } from 'node:http';
 import { startRelay } from '../scripts/cdp-relay.mjs';
 import { cdpPort, dataDir } from '../scripts/paths.mjs';
@@ -202,6 +205,45 @@ try {
     if (onPageMs === Infinity) ok(`R9 ${label}: counted as a hold timeout`, r9.stats.holdTimeouts === 1, JSON.stringify(r9.stats));
     if (tid) await send('Target.closeTarget', { targetId: tid });
     ws.close(); r9.close();
+  }
+  // R10 the window /tandem:browser-start opened for the human: closed when an agent gets its own, only if unused.
+  {
+    const mark = join(DATA, 'startup-page');
+    const open = async (url) => (await (await fetch(`${CDP}/json/new?${url}`, { method: 'PUT' })).json()).id;
+    const exists = async (id) => (await chromePages()).some((p) => p.id === id);
+    const agentPage = async (name) => {   // a raw client through the relay, as Playwright's createTarget
+      const ws = new WebSocket(relay.endpoint(name));
+      await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
+      const done = new Promise((r) => { ws.onmessage = (e) => { const m = JSON.parse(e.data); if (m.id === 1) r(m); }; });
+      ws.send(JSON.stringify({ id: 1, method: 'Target.createTarget', params: { url: 'about:blank' } }));
+      const id = (await done).result?.targetId;
+      await sleep(800);
+      return { id, close: async () => { ws.close(); await fetch(`${CDP}/json/close/${id}`).catch(() => {}); } };
+    };
+    const blank = await open('about:blank');
+    writeFileSync(mark, `${blank}\n`);
+    let a = await agentPage('R10a');
+    ok('R10 a blank startup window closes when the agent gets its own', !(await exists(blank)) && await exists(a.id));
+    ok('R10 …and the mark is gone', !existsSync(mark));
+    await a.close();
+
+    const used = await open(encodeURIComponent(U('/')));
+    writeFileSync(mark, `${used}\n`);
+    a = await agentPage('R10b');
+    ok('R10 a window the human used stays', await exists(used) && !existsSync(mark));
+    await a.close(); await fetch(`${CDP}/json/close/${used}`);
+
+    const claimed = await open('about:blank');
+    tabOwners(DATA, { pid: process.ppid }).claim(claimed, 'other', { adopted: true });
+    writeFileSync(mark, `${claimed}\n`);
+    a = await agentPage('R10c');
+    ok('R10 a blank window another session holds stays', await exists(claimed));
+    await a.close(); tabOwners(DATA, { pid: process.ppid }).release(claimed); await fetch(`${CDP}/json/close/${claimed}`);
+
+    const other = await open('about:blank');
+    a = await agentPage('R10d');
+    ok('R10 with no mark, no blank page is touched', await exists(other));
+    await a.close(); await fetch(`${CDP}/json/close/${other}`);
   }
 } catch (e) {
   ok(`no exception: ${e.message}`, false);

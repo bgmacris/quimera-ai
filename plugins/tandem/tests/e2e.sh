@@ -174,7 +174,16 @@ check "start --no-window: $AUTO_PAGES page(s)" "[ \"\$(pages)\" = $AUTO_PAGES ]"
 check "then start: one page for the human" "[ \"\$(pages)\" = 1 ]"
 "$ROOT/scripts/chrome-daemon.sh" start >/dev/null
 check "start again: still one" "[ \"\$(pages)\" = 1 ]"
+if [ "${TANDEM_MULTISESSION:-}" != 0 ]; then
+  check "the human's window is marked for the relay" "[ -s '$TANDEM_DATA_DIR/startup-page' ]"
+fi
 "$ROOT/scripts/chrome-daemon.sh" stop >/dev/null
+check "stop clears the mark" "[ ! -e '$TANDEM_DATA_DIR/startup-page' ]"
+if [ "${TANDEM_MULTISESSION:-}" != 0 ]; then
+  "$ROOT/scripts/chrome-daemon.sh" start >/dev/null
+  check "start from cold: one page for the human, marked" "[ \"\$(pages)\" = 1 ] && [ -s '$TANDEM_DATA_DIR/startup-page' ]"
+  "$ROOT/scripts/chrome-daemon.sh" stop >/dev/null
+fi
 
 
 echo "[5] external browser mode (TANDEM_BROWSER=external) — after tandem's own Chrome is gone"

@@ -43,7 +43,9 @@
 // navigation is already seen (R05 §15.4: a createTarget page is not paused, but Playwright navigates only
 // after the attach and the createTarget response, both held here; a popup is paused until Playwright resumes it).
 
-import { browserWsUrl, connect } from './cdp.mjs';
+import { readFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { browserWsUrl, connect, listPages } from './cdp.mjs';
 import { tabOwners } from './tab-owners.mjs';
 import { newToken, startWsServer } from './ws-server.mjs';
 
@@ -73,6 +75,19 @@ export async function startRelay({ port, dataDir = null, newWindow = true, log =
     return { reaped: dead.length, closed: n };
   };
   const reaping = reapDead();
+  // The window /tandem:browser-start opened for the human (lib.sh, <dataDir>/startup-page): an agent has just got
+  // its own window, so if the human never used this one it would stay as a second, empty window. Only that id,
+  // only if still blank and nobody's: any other page in Chrome may be someone's. One try: the file goes first.
+  const closeStartupPage = async () => {
+    if (!dataDir) return;
+    const file = join(dataDir, 'startup-page');
+    let id;
+    try { id = readFileSync(file, 'utf8').trim(); rmSync(file); } catch { return; }
+    try {
+      const page = (await listPages(port, 1000)).find((p) => p.id === id);
+      if (page?.url === 'about:blank' && registry.classify(id) === 'human') await closeTargets([id]);
+    } catch (e) { log(`startup page: ${e.message}`); }
+  };
   const owner = new Map();          // targetId → agent | FOREIGN
   const adopted = new Set();        // targetIds handed over to an agent (the human's): closing = release
   const kind = new Map();           // targetId → target type, as seen in any event
@@ -182,7 +197,10 @@ export async function startRelay({ port, dataDir = null, newWindow = true, log =
         }
         if (creates.delete(m.id)) {
           pendingCreates--;
-          if (m.result?.targetId) { setOwner(m.result.targetId, agent); kind.set(m.result.targetId, 'page'); }
+          if (m.result?.targetId) {
+            setOwner(m.result.targetId, agent); kind.set(m.result.targetId, 'page');
+            if (newWindow) closeStartupPage();
+          }
           resolveAll();                                     // flushes our own attach BEFORE the response
         } else if (getTargets.delete(m.id) && m.result?.targetInfos) {
           m.result.targetInfos = m.result.targetInfos.filter((t) => t.type !== 'page' || ownerOf(t) === agent);

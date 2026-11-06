@@ -4,6 +4,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/); semantic versio
 
 ## [Unreleased]
 
+## [0.10.2] — 2026-11-06
+
+### Fixed
+- **`/tandem:browser-start` left a second, empty window once an agent navigated.** It is the usual way to start
+  under WSL, where autostart is off. Its window now closes by itself when an agent opens its own, if it is still
+  blank. If you navigated in it, it stays.
+  On macOS that close can bring Chrome to the front (2 of 3 tries, with AeroSpace running; cause not attributed).
+  Autostart opens no such window, so it doesn't happen there.
+
+### Changed
+- **Chrome always starts with `--no-startup-window`**, also from `/tandem:browser-start`, which opens your window
+  right after. So on Linux and Windows, closing the last window no longer quits Chrome: it keeps running until the
+  last session using it ends, or `/tandem:browser-stop`. Agents can open windows again without a restart.
+  `TANDEM_MULTISESSION=0` still starts with a first page. External browser mode doesn't change: you start that one.
+
+### Checked since 0.10.1
+- One window on desktops, reported by people running it, calling `chrome-daemon.sh` and the relay's CDP call by
+  hand, not a real `browser_*`: Linux Mint on X11 with Chrome 157, and WSL2 + WSLg with Chromium 156 (snap).
+
 ## [0.10.1] — 2026-11-06
 
 ### Fixed
