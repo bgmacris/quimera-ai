@@ -151,19 +151,23 @@ stop_external() {
 }
 
 # --- start / stop ------------------------------------------------------------------
-# On macOS Chrome lives on without windows; elsewhere (Linux, Windows) not measured: it may quit, so keep the page.
-# TANDEM_MULTISESSION=0: the agent drives Chrome's first page, it needs one.
-no_startup_window_ok() {
-  [ "$(uname -s)" = Darwin ] && [ "${TANDEM_MULTISESSION:-}" != 0 ]
+# Chrome runs with no page (started without one, or the agents' windows are gone) and a human asked for the
+# browser: give them a window. On Windows (Git Bash) the owner reads "unknown", so both cases come here.
+ensure_human_window() {
+  [ "$1" = 1 ] || return 0
+  [ "$(curl -s --max-time 2 "http://127.0.0.1:$2/json/list" | grep -c '"type": "page"')" = 0 ] || return 0
+  curl -s --max-time 2 -X PUT "http://127.0.0.1:$2/json/new?about:blank" >/dev/null 2>&1 || true
 }
 
 # start_chrome [--no-window]: --no-window is for autostart. An agent is about to open its own window in the
 # background (cdp-relay.mjs), so a first page would be a second, empty window that also takes the front
 # (measured on macOS: Chrome in front with it, Ghostty stays in front without). No flag = the human asked
-# for the browser (/tandem:browser-start): they get a window.
+# for the browser (/tandem:browser-start): they get a window. The flag also keeps Chrome alive with no windows
+# left, which a first page does not on Linux and Windows (measured, Chrome 156: exit 0 when the last one closes).
+# TANDEM_MULTISESSION=0: the agent drives Chrome's first page, it needs one.
 start_chrome() {
   local want_window=1
-  [ "${1:-}" = --no-window ] && no_startup_window_ok && want_window=0
+  [ "${1:-}" = --no-window ] && [ "${TANDEM_MULTISESSION:-}" != 0 ] && want_window=0
   if external_mode; then mkdir -p "$LOGDIR"; chmod 700 "$DATA" 2>/dev/null || true; start_external; return; fi
   # Guard: locatable Chrome binary. Clear error instead of an opaque CDP timeout.
   if [ ! -x "$CHROME_BIN" ]; then
@@ -178,13 +182,8 @@ start_chrome() {
   # Idempotent: if CDP already responds AND it is our profile, nothing to do.
   if cdp_healthy; then
     case "$(cdp_owner)" in
-      ours)
-        # Started without a window, or the agents' windows are gone: a human asking for the browser gets one.
-        if [ "$want_window" = 1 ] && [ "$(curl -s --max-time 2 "http://127.0.0.1:${port}/json/list" | grep -c '"type": "page"')" = 0 ]; then
-          curl -s --max-time 2 -X PUT "http://127.0.0.1:${port}/json/new?about:blank" >/dev/null 2>&1 || true
-        fi
-        echo "tandem: Chrome already running (CDP at 127.0.0.1:${port})."; return 0 ;;
-      unknown) echo "tandem: a browser already answers CDP at 127.0.0.1:${port} (its process is not visible here — e.g. Windows Chrome from WSL); using it."; return 0 ;;
+      ours)    ensure_human_window "$want_window" "$port"; echo "tandem: Chrome already running (CDP at 127.0.0.1:${port})."; return 0 ;;
+      unknown) ensure_human_window "$want_window" "$port"; echo "tandem: a browser already answers CDP at 127.0.0.1:${port} (its process is not visible here — e.g. Windows Chrome from WSL); using it."; return 0 ;;
     esac
     echo "tandem: ERROR — port ${port} answers CDP but it is NOT tandem's Chrome (profile $PROFILE)." >&2
     echo "        Another browser (or another tandem data dir) owns it. Close it or set TANDEM_CDP_PORT." >&2

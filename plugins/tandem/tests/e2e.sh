@@ -164,13 +164,12 @@ GATE_IN="{\"tool_name\":\"mcp__plugin_tandem_tandem__browser_evaluate\",\"permis
 check "autostart: gate asks AND Chrome was started first" \
   "printf '%s' '$GATE_IN' | TANDEM_MULTISESSION=1 TANDEM_AUTOSTART=1 node '$ROOT/scripts/autostart.mjs' | grep '\"ask\"' | grep -q '\"agent\":\"main\"' && curl -s --max-time 2 http://127.0.0.1:$TANDEM_CDP_PORT/json/version >/dev/null"
 "$ROOT/scripts/chrome-daemon.sh" stop >/dev/null
-# Autostart: no first page where Chrome can live without windows (macOS), or the agent's own window would be
-# the second one. Elsewhere, and with TANDEM_MULTISESSION=0, the first page stays. A human who then asks for the
-# browser gets a window, and only one.
+# Autostart: no first page, or the agent's own window would be the second one. With TANDEM_MULTISESSION=0 the
+# first page stays. A human who then asks for the browser gets a window, and only one.
 pages() { curl -s --max-time 2 "http://127.0.0.1:$TANDEM_CDP_PORT/json/list" | grep -c '"type": "page"'; }
-AUTO_PAGES=1; [ "$(uname -s)" = Darwin ] && [ "${TANDEM_MULTISESSION:-}" != 0 ] && AUTO_PAGES=0
+AUTO_PAGES=0; [ "${TANDEM_MULTISESSION:-}" != 0 ] || AUTO_PAGES=1
 "$ROOT/scripts/chrome-daemon.sh" start --no-window >/dev/null
-check "start --no-window: $AUTO_PAGES page(s) on this platform" "[ \"\$(pages)\" = $AUTO_PAGES ]"
+check "start --no-window: $AUTO_PAGES page(s)" "[ \"\$(pages)\" = $AUTO_PAGES ]"
 "$ROOT/scripts/chrome-daemon.sh" start >/dev/null
 check "then start: one page for the human" "[ \"\$(pages)\" = 1 ]"
 "$ROOT/scripts/chrome-daemon.sh" start >/dev/null

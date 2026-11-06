@@ -4,14 +4,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/); semantic versio
 
 ## [Unreleased]
 
+## [0.10.1] — 2026-11-06
+
 ### Fixed
-- **Two windows when tandem's Chrome started on its own, one of them empty and unused** (since 0.10.0, on macOS).
-  Autostart launched Chrome with a first page, and the agent's first page opened a window of its own. Autostart
-  now starts Chrome with `--no-startup-window`: one window, opened in the background, and Chrome no longer jumps
-  to the front when it starts (measured headful with Claude Code: 1 window, the terminal stayed in front).
-  `/tandem:browser-start` still opens a window, also if Chrome was running without one. Linux and Windows keep
-  the first page: whether Chrome survives there without windows is not measured. So does `TANDEM_MULTISESSION=0`,
-  where the agent drives that page.
+- **Two windows when tandem's Chrome started on its own, one of them empty and unused** (since 0.10.0, on every OS).
+  Autostart launched Chrome with a first page, and the agent's first page opens a window of its own. Autostart now
+  starts Chrome with `--no-startup-window`: one window, opened in the background. On macOS Chrome also no longer
+  jumps to the front when it starts (measured headful with Claude Code: 1 window, the terminal stayed in front).
+  The flag also keeps Chrome alive with no windows left, which a first page does not on Linux and Windows: there
+  it exits when the last window closes. Measured on Chrome 156, GitHub runners (Windows, and Linux under xvfb);
+  not on a Linux or Windows desktop. Without windows Chrome keeps running until the last session using it ends,
+  or `/tandem:browser-stop`.
+  `/tandem:browser-start` still opens a window, also if Chrome was running without one: if an agent then
+  navigates, that is still two. `TANDEM_MULTISESSION=0` keeps the first page: the agent drives it.
 
 ## [0.10.0] — 2026-11-04
 
