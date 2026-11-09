@@ -4,6 +4,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/); semantic versio
 
 ## [Unreleased]
 
+## [0.11.1] — 2026-11-09
+
+### Fixed
+- **On Node 24, a CDP message over ~4 MB cut the agent off from the browser.** Node's built-in WebSocket always
+  negotiates permessage-deflate, and Node 24.16 closes the whole connection (1006) on a compressed message over
+  ~4 MB: a full-page screenshot or a big PDF left the agent without a browser and with no clear error. Measured
+  with Chrome 157: 3 MB ok, 4.5 MB closed; Node 26.8.1 was not affected. tandem now talks to Chrome with its own
+  minimal WebSocket client (`ws-client.mjs`, no compression, no dependencies): 32 MB through on Node 24.16 and 26.
+  The e2e suite on Node 24.16 went from 2 failures (relay capture hung, big PDF not captured) to 58/58. Reported by
+  a teammate on Linux Mint.
+- Receiving a big message no longer copies it once per network chunk (the relay's server side too).
+
 ## [0.11.0] — 2026-11-09
 
 ### Changed

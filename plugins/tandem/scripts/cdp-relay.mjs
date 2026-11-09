@@ -50,6 +50,7 @@ import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { browserWsUrl, connect, listPages } from './cdp.mjs';
 import { tabOwners } from './tab-owners.mjs';
+import { WsClient } from './ws-client.mjs';
 import { newToken, startWsServer } from './ws-server.mjs';
 
 const RELAY_ID = 1_000_000_000;   // ids of the relay's own upstream commands
@@ -287,7 +288,7 @@ export async function startRelay({ port, dataDir = null, newWindow = false, log 
 
     browserWsUrl(port).then((url) => {
       if (closed) return;
-      const ws = new WebSocket(url);
+      const ws = new WsClient(url);   // not the built-in one: it drops messages over ~4 MB on Node 24 (ws-client.mjs)
       ws.onopen = () => { up = ws; for (const s of early.splice(0)) ws.send(s); };
       ws.onmessage = (e) => { try { fromUp(e.data); } catch (err) { log(`relay ${agent}: ${err.message}`); } };
       ws.onclose = close; ws.onerror = close;

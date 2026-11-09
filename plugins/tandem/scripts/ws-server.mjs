@@ -1,5 +1,5 @@
-// ws-server.mjs — minimal WebSocket server (RFC 6455), no deps: Node 22+ has a WebSocket CLIENT built in,
-// not a server, and tandem ships without node_modules. Just what the CDP relay (cdp-relay.mjs) needs:
+// ws-server.mjs — minimal WebSocket server (RFC 6455), no deps: tandem ships without node_modules. Its Conn
+// (the framing) also serves ws-client.mjs, the client side. Just what the CDP relay (cdp-relay.mjs) needs:
 // text/binary messages (fragmented or not, up to maxPayload), ping/pong, close. No extensions
 // (permessage-deflate is never negotiated), no subprotocols.
 //
@@ -25,36 +25,54 @@ export const DEFAULT_MAX_PAYLOAD = 256 * 1024 * 1024;   // a full-page screensho
 
 export const newToken = () => randomBytes(18).toString('base64url');
 
-function frame(opcode, payload) {
+// A frame: FIN + opcode. Server frames are never masked; client frames always are (RFC 6455 §5.3).
+function frame(opcode, payload, masked = false) {
   const len = payload.length;
-  const head = len < 126 ? Buffer.alloc(2) : len < 65536 ? Buffer.alloc(4) : Buffer.alloc(10);
-  head[0] = 0x80 | opcode;   // FIN + opcode; server frames are never masked
+  const n = len < 126 ? 2 : len < 65536 ? 4 : 10;
+  const head = Buffer.alloc(n + (masked ? 4 : 0));
+  head[0] = 0x80 | opcode;
   if (len < 126) head[1] = len;
   else if (len < 65536) { head[1] = 126; head.writeUInt16BE(len, 2); }
   else { head[1] = 127; head.writeBigUInt64BE(BigInt(len), 2); }
-  return Buffer.concat([head, payload]);
+  if (!masked) return Buffer.concat([head, payload]);
+  head[1] |= 0x80;
+  const mask = randomBytes(4); mask.copy(head, n);
+  const body = Buffer.from(payload);
+  for (let i = 0; i < body.length; i++) body[i] ^= mask[i & 3];
+  return Buffer.concat([head, body]);
 }
 
-class Conn extends EventEmitter {
-  constructor(socket, maxPayload) {
+// One open WebSocket over a socket, either side: client:true = the frames we send are masked and the ones we
+// receive must not be (ws-client.mjs); otherwise the server's rules.
+export class Conn extends EventEmitter {
+  constructor(socket, maxPayload, { client = false } = {}) {
     super();
-    this.socket = socket; this.maxPayload = maxPayload; this.readyState = 1;
+    this.socket = socket; this.maxPayload = maxPayload; this.client = client; this.readyState = 1;
     this.buf = Buffer.alloc(0); this.parts = []; this.partsLen = 0; this.partsOp = 0;
+    // Incoming data is kept as chunks and joined only once a whole frame is there: joining at every chunk
+    // copies a 32 MB message hundreds of times (a full-page screenshot comes in ~64 KB chunks).
+    this.chunks = []; this.chunksLen = 0; this.need = 0;
     socket.setNoDelay(true);
-    socket.on('data', (d) => { this.buf = this.buf.length ? Buffer.concat([this.buf, d]) : d; this.parse(); });
+    socket.on('data', (d) => {
+      this.chunks.push(d); this.chunksLen += d.length;
+      if (this.chunksLen < this.need) return;
+      this.buf = Buffer.concat([this.buf, ...this.chunks], this.buf.length + this.chunksLen);
+      this.chunks = []; this.chunksLen = 0; this.need = 0;
+      this.parse();
+    });
     socket.on('close', () => this.closed());
     socket.on('error', () => this.closed());
   }
   send(data) {
     if (this.readyState !== 1) return;
     const text = typeof data === 'string';
-    this.socket.write(frame(text ? 0x1 : 0x2, text ? Buffer.from(data) : data));
+    this.socket.write(frame(text ? 0x1 : 0x2, text ? Buffer.from(data) : data, this.client));
   }
   close(code = 1000) {
     if (this.readyState !== 1) return;
-    this.readyState = 2;
+    this.readyState = 2; this.code = code;
     const p = Buffer.alloc(2); p.writeUInt16BE(code);
-    this.socket.end(frame(0x8, p));
+    this.socket.end(frame(0x8, p, this.client));
     // The peer closes its side after our close frame; if it doesn't, don't keep the socket around.
     setTimeout(() => this.closed(), 1000).unref();
   }
@@ -71,7 +89,8 @@ class Conn extends EventEmitter {
       if (b.length < 2) return;
       const fin = (b[0] & 0x80) !== 0; const op = b[0] & 0x0f;
       if (b[0] & 0x70) return this.fail(1002);            // RSV bits: no extension was negotiated
-      if (!(b[1] & 0x80)) return this.fail(1002);         // client frames MUST be masked
+      const masked = (b[1] & 0x80) !== 0;
+      if (masked === this.client) return this.fail(1002); // client frames MUST be masked, server frames MUST NOT
       let len = b[1] & 0x7f; let off = 2;
       if (len === 126) { if (b.length < 4) return; len = b.readUInt16BE(2); off = 4; }
       else if (len === 127) {
@@ -81,15 +100,19 @@ class Conn extends EventEmitter {
         len = Number(big); off = 10;
       }
       if (len > this.maxPayload) return this.fail(1009);
-      if (b.length < off + 4 + len) return;
-      const mask = b.subarray(off, off + 4);
-      const payload = Buffer.from(b.subarray(off + 4, off + 4 + len));
-      for (let i = 0; i < payload.length; i++) payload[i] ^= mask[i & 3];
-      this.buf = b.subarray(off + 4 + len);
+      const start = off + (masked ? 4 : 0);
+      if (b.length < start + len) { this.need = start + len - b.length; return; }
+      let payload;
+      if (masked) {
+        const mask = b.subarray(off, off + 4);
+        payload = Buffer.from(b.subarray(start, start + len));
+        for (let i = 0; i < payload.length; i++) payload[i] ^= mask[i & 3];
+      } else payload = b.subarray(start, start + len);
+      this.buf = b.subarray(start + len);
       if (op >= 0x8) {                                     // control frames: unfragmented, ≤ 125 bytes
         if (!fin || len > 125) return this.fail(1002);
         if (op === 0x8) { this.close(payload.length >= 2 ? payload.readUInt16BE(0) : 1000); return; }
-        if (op === 0x9) { this.socket.write(frame(0xa, payload)); continue; }
+        if (op === 0x9) { this.socket.write(frame(0xa, payload, this.client)); continue; }
         if (op === 0xa) continue;
         return this.fail(1002);
       }

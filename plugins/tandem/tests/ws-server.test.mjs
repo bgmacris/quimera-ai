@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // ws-server.test.mjs — the relay's WebSocket server (scripts/ws-server.mjs), no Chrome needed.
 // Who may connect (token, Origin, Host), framing (sizes, fragments, masking, ping, close, maxPayload), and a
-// real client: Node's built-in WebSocket. Playwright against the relay is covered by the relay tests.
+// real client: Node's built-in WebSocket; and ws-client.mjs, tandem's own client. Playwright against the relay is
+// covered by the relay tests.
 // No dependencies: mini-runner. Usage: node tests/ws-server.test.mjs
 
 import { randomBytes } from 'node:crypto';
@@ -153,6 +154,75 @@ console.log('real client (Node WebSocket)');
   const closed = new Promise((r) => { ws.onclose = (e) => r(e.code); });
   srv.close();
   ok('server close drops open connections', [1001, 1005, 1006].includes(await closed));
+}
+
+// --- ws-client.mjs: the client side (tandem → Chrome), never compressed ---------------------------
+process.stdout.write('[ws-client]\n');
+{
+  const { WsClient } = await import('../scripts/ws-client.mjs');
+  const { createServer } = await import('node:net');
+  const { createHash } = await import('node:crypto');
+  const s2 = await startWsServer({ token });
+  s2.on('connection', (c) => c.on('message', (m) => c.send(m === 'big' ? 'x'.repeat(20 * 1024 * 1024) : `echo:${m}`)));
+  const open = (url) => new Promise((resolve) => { const ws = new WsClient(url); ws.onopen = () => resolve(ws); ws.onerror = (e) => resolve({ error: e.message }); });
+  const next = (ws) => new Promise((r) => { ws.onmessage = (e) => r(e.data); });
+  const ws = await open(`ws://127.0.0.1:${s2.port}/${token}/c`);
+  ok('client: opens against our server', ws.readyState === 1);
+  let reply = next(ws); ws.send('hi');
+  ok('client: masked frames accepted by the server, reply read', (await reply) === 'echo:hi');
+  reply = next(ws); ws.send('big');
+  ok('client: a 20 MB message arrives whole (Node 24\'s built-in client closes at ~4 MB compressed)', (await reply)?.length === 20 * 1024 * 1024);
+  const utf = 'ñ€😀'.repeat(40000);
+  reply = next(ws); ws.send(utf);
+  ok('client: multi-byte UTF-8 split across chunks survives', (await reply) === `echo:${utf}`);
+  const listened = []; ws.addEventListener('message', (e) => listened.push(e.data));
+  reply = next(ws); ws.send('l');
+  await reply;
+  ok('client: addEventListener sees messages too', listened.includes('echo:l'));
+  const closed = new Promise((r) => { ws.onclose = (e) => r(e.code); });
+  ws.close(1000);
+  ok('client: clean close', (await closed) === 1000 && ws.readyState === 3);
+  let threw = false; try { ws.send('late'); } catch { threw = true; }
+  ok('client: send after close is dropped, not thrown (as the WHATWG one)', !threw);
+  const conn = new WsClient(`ws://127.0.0.1:${s2.port}/${token}/c`);
+  threw = false; try { conn.send('early'); } catch { threw = true; }
+  ok('client: send while connecting throws', threw);
+  conn.close();
+  const bad = await open(`ws://127.0.0.1:${s2.port}/wrong-token/c`);
+  ok('client: a refused handshake is an error, not an open', !!bad.error && /404/.test(bad.error));
+  const nobody = await open('ws://127.0.0.1:1/x');
+  ok('client: nobody listening → error', !!nobody.error);
+  const wss = await open('wss://127.0.0.1:1/x');
+  ok('client: wss:// refused clearly', /only ws/.test(wss.error || ''));
+  // A fake server: wrong accept / an extension it was not offered / a masked server frame / its close code.
+  const fake = (respond) => new Promise((resolve) => {
+    const srv = createServer((sock) => {
+      let b = ''; sock.on('data', (d) => {
+        b += d; if (!b.includes('\r\n\r\n')) return;
+        const key = b.match(/Sec-WebSocket-Key: (\S+)/i)[1];
+        respond(sock, createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64'));
+      });
+    });
+    srv.listen(0, '127.0.0.1', () => resolve(srv));
+  });
+  const head = (accept, extra = '') => `HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n${extra}\r\n`;
+  let f = await fake((sock) => sock.write(head('bogus')));
+  ok('client: a wrong Sec-WebSocket-Accept is refused', /Accept/.test((await open(`ws://127.0.0.1:${f.address().port}/`)).error || ''));
+  f.close();
+  f = await fake((sock, acc) => sock.write(head(acc, 'Sec-WebSocket-Extensions: permessage-deflate\r\n')));
+  ok('client: an extension it never offered is refused', /extension/.test((await open(`ws://127.0.0.1:${f.address().port}/`)).error || ''));
+  f.close();
+  f = await fake((sock, acc) => { sock.write(head(acc)); sock.write(cframe(0x1, Buffer.from('masked'))); });
+  let w = await open(`ws://127.0.0.1:${f.address().port}/`);
+  let code = await new Promise((r) => { w.onclose = (e) => r(e.code); });
+  ok('client: a masked frame from the server closes with 1002', code === 1002);
+  f.close();
+  f = await fake((sock, acc) => { sock.write(Buffer.concat([Buffer.from(head(acc)), cframe(0x1, Buffer.from('first'), { masked: false })])); });
+  w = new WsClient(`ws://127.0.0.1:${f.address().port}/`);
+  const first = await new Promise((r) => { w.onmessage = (e) => r(e.data); });
+  ok('client: a frame in the same packet as the 101 is not lost', first === 'first');
+  w.close(); f.close();
+  s2.close();
 }
 
 console.log(`\nresult: ${pass} ok, ${fail} failures`);
