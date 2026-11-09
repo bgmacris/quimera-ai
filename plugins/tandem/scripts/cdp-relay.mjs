@@ -16,10 +16,13 @@
 // any agent has a createTarget in flight, attachments of unknown owner are buffered and decided when the
 // response names the target.
 //
-// newWindow: the relay adds newWindow+background to each createTarget: every agent page opens in a window
-// of its own, without taking the keyboard focus from the human (measured R05 §9: newWindow alone took it).
-// CDP can't put a new tab in a given window (no windowId in createTarget, Chrome 156), so a second
-// `browser_tabs new` of the same agent gets another window; its popups open in the opener's window.
+// Where an agent's pages open (0.11): the relay adds background:true to each createTarget, so the page is a
+// tab that does not come to the front, in Chrome's last active window — one window for everyone, not one per
+// agent (0.10 opened a window per page: tiresome). Clicks on a background tab work because the agent's tab
+// gets focus emulation while its tools run (R05 §10; focus-emulation.mjs). newWindow:true (TANDEM_AGENT_WINDOWS=1)
+// brings back 0.10's window per page, in the background too (R05 §9: newWindow alone took the keyboard).
+// CDP can't put a new tab in a given window (no windowId in createTarget), so with newWindow a second
+// `browser_tabs new` of the same agent gets another window. Popups open in the opener's window either way.
 //
 // Ownership is also written to tab-owners.mjs (shared by all sessions), so a foreign page can be told apart
 // as the human's or another session's.
@@ -55,7 +58,7 @@ const AGENT = /^[\w.-]{1,64}$/;
 const DENY_BROWSER = new Set(['Browser.close', 'Browser.crash', 'Browser.crashGpuProcess']);
 const BY_TARGET = new Set(['Target.closeTarget', 'Target.activateTarget', 'Target.attachToTarget', 'Target.getTargetInfo']);
 
-export async function startRelay({ port, dataDir = null, newWindow = true, log = () => {}, callTimeoutMs = 10_000, onPage = null, holdMs = 1000 }) {
+export async function startRelay({ port, dataDir = null, newWindow = false, log = () => {}, callTimeoutMs = 10_000, onPage = null, holdMs = 1000 }) {
   const token = newToken();
   const srv = await startWsServer({ token });
   const registry = dataDir ? tabOwners(dataDir) : null;
@@ -75,8 +78,9 @@ export async function startRelay({ port, dataDir = null, newWindow = true, log =
     return { reaped: dead.length, closed: n };
   };
   const reaping = reapDead();
-  // The window /tandem:browser-start opened for the human (lib.sh, <dataDir>/startup-page): an agent has just got
-  // its own window, so if the human never used this one it would stay as a second, empty window. Only that id,
+  // The page /tandem:browser-start opened for the human (lib.sh, <dataDir>/startup-page): an agent has just got
+  // its first page, so if the human never used this one it would stay as an empty tab — or, with
+  // TANDEM_AGENT_WINDOWS=1, a second, empty window. Only that id,
   // only if still blank and nobody's: any other page in Chrome may be someone's. One try: the file goes first.
   const closeStartupPage = async () => {
     if (!dataDir) return;
@@ -199,7 +203,7 @@ export async function startRelay({ port, dataDir = null, newWindow = true, log =
           pendingCreates--;
           if (m.result?.targetId) {
             setOwner(m.result.targetId, agent); kind.set(m.result.targetId, 'page');
-            if (newWindow) closeStartupPage();
+            closeStartupPage();
           }
           resolveAll();                                     // flushes our own attach BEFORE the response
         } else if (getTargets.delete(m.id) && m.result?.targetInfos) {
@@ -252,8 +256,8 @@ export async function startRelay({ port, dataDir = null, newWindow = true, log =
       }
       if (m.method === 'Target.createTarget') {
         creates.add(m.id); pendingCreates++;
-        if (newWindow && m.params?.newWindow === undefined) {
-          m.params = { ...m.params, newWindow: true, background: true };
+        if (m.params?.newWindow === undefined && m.params?.background === undefined) {
+          m.params = { ...m.params, background: true, ...(newWindow ? { newWindow: true } : {}) };
           return toUp(JSON.stringify(m));
         }
       } else if (m.method === 'Target.getTargets') getTargets.add(m.id);

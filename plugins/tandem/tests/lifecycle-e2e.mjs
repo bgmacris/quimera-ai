@@ -6,8 +6,8 @@
 //      one given back, the launcher exits
 //   L4 leftovers of a dead session (claims of a pid that is gone): the next launcher closes the agent's
 //      own tab and leaves the handed-over one open (the human's)
-//   L5 a subagent finishes (the real SubagentStop hook): its MCP is stopped at once, its tab stays, its next
-//      call (resumed) sees it
+//   L5 a subagent finishes (the real SubagentStop hook): its MCP is stopped and its tab closed at once; resumed,
+//      its next call starts clean
 // Needs a DISPOSABLE Chrome on TANDEM_CDP_PORT (tests/e2e.sh). Usage: node tests/lifecycle-e2e.mjs
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -113,9 +113,9 @@ try {
   await sleep(1000);
   ok('L5 its MCP is stopped without waiting for the idle timer', L3.stderr.some((l) => l.includes(`stopped the MCP of agent ${F} (subagent finished)`)), L3.stderr.slice(-5).join(' | '));
   ok('L5 …the mark is consumed', !existsSync(join(DATA, 'agents-finished', F)));
-  ok('L5 …its tab stays open: it may come back', await has('/finished-own'));
+  ok('L5 …and its tab is closed: a finished task leaves nothing behind', !(await has('/finished-own')), JSON.stringify((await pages()).map((t) => t.url)));
   const resumed = await tabsOf(L3, F);
-  ok('L5 resumed: a new MCP sees its tab', resumed.includes(U('/finished-own')), JSON.stringify(resumed));
+  ok('L5 resumed: a new MCP starts clean (the old tab is gone)', !resumed.includes(U('/finished-own')), JSON.stringify(resumed));
   L3.p.kill('SIGINT'); await Promise.race([L3.exited, sleep(5000)]);
 } catch (e) {
   ok(`no exception: ${e.stack}`, false);

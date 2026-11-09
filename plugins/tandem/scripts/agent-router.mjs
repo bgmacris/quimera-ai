@@ -30,8 +30,9 @@
 // tabs) — and is started again by its next call, seeing its tabs; after lifecycle.tabsMs (30 min)
 // onTabsIdle(agent) closes its tabs too. A subagent may come back: Claude Code resumes one with the same
 // agent_id (measured), so "it stopped" is never final. A subagent that finished (lifecycle.finished, from
-// the SubagentStop hook) has its MCP stopped on the next tick, not 10 min later; its tabs wait for tabsMs, since it
-// may come back, and a call from it clears the mark. At most lifecycle.maxAgents subagents' MCPs live at
+// the SubagentStop hook) has its MCP stopped AND its tabs closed on the next tick (0.11: a finished task leaves
+// no tabs behind; if it is resumed, it opens a new one — cookies live in the profile, only the page is lost);
+// a call from it before that tick clears the mark. At most lifecycle.maxAgents subagents' MCPs live at
 // once: a new one stops the least recently used idle one (none idle → over the cap, logged). "main" is
 // never stopped: the client's handshake lives in it.
 //
@@ -236,17 +237,19 @@ export function routeStdio({ clientIn, clientOut, spawnChild, emulatorFor, multi
     if (!lifecycle) return;
     const t = now();
     for (const l of [...lanes.values()]) {
-      if (l.agent === MAIN || !l.idle()) continue;
-      if (lifecycle.finished?.(l.agent)) { retire(l, 'subagent finished'); lifecycle.clearFinished?.(l.agent); continue; }
+      if (l.agent === MAIN || !l.idle() || lifecycle.finished?.(l.agent)) continue;   // finished: below
       if (lifecycle.stopMs && t - (lastUsed.get(l.agent) ?? t) >= lifecycle.stopMs) retire(l, `idle ${Math.round((t - lastUsed.get(l.agent)) / 60_000)} min`);
     }
     for (const [agent, at] of [...lastUsed]) {
-      if (agent === MAIN || !lifecycle.tabsMs || t - at < lifecycle.tabsMs) continue;
+      if (agent === MAIN) continue;
+      const done = !!lifecycle.finished?.(agent);
+      if (!done && (!lifecycle.tabsMs || t - at < lifecycle.tabsMs)) continue;
       const l = lanes.get(agent);
       if (l && !l.idle()) continue;
-      if (l) retire(l, 'idle, closing its tabs');
+      if (l) retire(l, done ? 'subagent finished' : 'idle, closing its tabs');
       lastUsed.delete(agent);
-      try { await lifecycle.onTabsIdle?.(agent); log(`router: closed the tabs of agent ${agent} (idle)`); }
+      if (done) lifecycle.clearFinished?.(agent);
+      try { await lifecycle.onTabsIdle?.(agent); log(`router: closed the tabs of agent ${agent} (${done ? 'finished' : 'idle'})`); }
       catch (e) { log(`router: onTabsIdle ${agent}: ${e.message}`); }
     }
   };

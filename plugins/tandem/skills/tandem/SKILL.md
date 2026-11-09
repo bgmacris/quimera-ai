@@ -41,9 +41,9 @@ There are two ways to navigate; choose by the task, not one by default:
 ## Tab choreography (don't steal focus)
 - **You only see your own tabs** (multi-session, the default in Claude Code since 0.10): the ones you opened
   and their popups. The human's tabs, another subagent's and another session's are invisible to you. Your
-  first navigation opens your own tab, in a window of its own opened in the BACKGROUND.
+  first navigation opens your own tab, in the BACKGROUND (not the one in front), in Chrome's window.
 - When you hand a wall to the human (captcha, login, 2FA), your tab is NOT the window in front of them:
-  tell them its title and URL so they can find it in Chrome (Window menu).
+  tell them its title and URL so they can find it among Chrome's tabs.
 - To work in a tab of the HUMAN (one where they are logged in, say): ask them to bring it to the front,
   then call `browser_tab_adopt` (with `url`, part of its URL, if several are in view). Only a tab in
   view can be taken. Closing it gives it back to them: it is not closed. Never adopt a tab the human did
@@ -70,7 +70,8 @@ There are two ways to navigate; choose by the task, not one by default:
 - Every Claude session on this machine shares the SAME Chrome (one port). Each session that uses a
   `browser_*` tool holds a lease; closing a session stops Chrome only if no other live lease remains.
 - The other session may be acting in another tab: don't close tabs you didn't open.
-- Your tabs live as long as you need them: a subagent that finishes or sits idle for 10 min has its browser process stopped
+- Your tabs live as long as you need them: a subagent that FINISHES has its tabs closed at once (so hand the
+  human anything they need from a page before you finish); one idle for 10 min has its browser process stopped
   (its next call brings it back, with its tabs); after 30 min its tabs are closed. When the session ends,
   its agents' tabs are closed; `/clear` keeps them. Don't count on a tab outliving the session.
 

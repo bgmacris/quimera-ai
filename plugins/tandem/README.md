@@ -108,16 +108,19 @@ Design and research: [`docs/01-navigation-memory.md`](docs/01-navigation-memory.
 
 Claude Code's main agent and each of its subagents — and every other session on the machine — drive
 the same Chrome. Since 0.10 **each agent has its own tabs**: it sees and drives only the tabs it opened
-(and their popups), each in a window of its own opened in the background (in our tests it didn't take keyboard focus).
+(and their popups). Since 0.11 they are **background tabs in one Chrome window** (0.10 opened a window per page);
+Chrome is not brought to the front (measured on macOS). `TANDEM_AGENT_WINDOWS=1` brings back a window per page.
 Your tabs and other agents' tabs are invisible to it.
 
 - **Handing a tab over.** To let an agent work in one of your tabs (say, one where you are logged in),
   bring it to the front and tell the agent; it calls `browser_tab_adopt`. Only a tab of yours that is in
   view can be taken — what you did with the mouse is the consent, so a page telling the agent to adopt
   another tab can't point anywhere else. When the agent closes it, it is **given back**, not closed.
-- **Life cycle.** A subagent that finishes, or hasn't used the browser for 10 min, has its browser process stopped (it
-  comes back with its tabs on its next call); after 30 min its tabs are closed and the ones you handed
-  over are given back. When a session ends, its agents' tabs are closed; `/clear` keeps them.
+- **Life cycle.** A subagent that **finishes** has its browser process stopped and its tabs closed at once — a
+  finished task leaves no tabs behind (resumed, it starts in a new tab; logins live in the profile). One idle
+  for 10 min has its process stopped (it comes back with its tabs on its next call); after 30 min its tabs are
+  closed. The tabs you handed over are always given back, not closed. When a session ends, its agents' tabs
+  are closed; `/clear` keeps them.
 - **How.** tandem's `PreToolUse` hook writes the calling agent into each browser call; the launcher runs one
   `@playwright/mcp` per agent behind a CDP relay that shows each one only its own tabs.
 - `TANDEM_MULTISESSION=0` brings back the 0.9 behaviour: one MCP per session that sees every tab. The
@@ -195,6 +198,7 @@ That needs a pilot with templates where the plain arms fail.
 | `TANDEM_MULTISESSION` | on (off in the adapters) | `0`: one MCP per session that sees every tab, as in 0.9 (no per-agent tabs, no `browser_tab_adopt`) |
 | `TANDEM_AGENT_IDLE_MS` | `600000` | a subagent's browser process is stopped after this long without browser calls (its tabs stay) |
 | `TANDEM_AGENT_TABS_IDLE_MS` | `1800000` | …and its tabs are closed after this long (the ones you handed over are given back) |
+| `TANDEM_AGENT_WINDOWS` | off | `1`: each agent page in a window of its own (in the background), as in 0.10, instead of a background tab |
 | `TANDEM_MAX_AGENTS` | `8` | subagents' browser processes alive at once (`0` = no cap); a new one stops the least recently used idle one |
 | `TANDEM_FOCUS_LINGER_MS` | `15000` | how long the agent's tab keeps painting after its last tool call |
 | `TANDEM_BROWSER`    | — | `external`: tandem only talks to the CDP port (e.g. Windows Chrome from WSL); start/stop via `TANDEM_BROWSER_START_CMD` / `_STOP_CMD` |

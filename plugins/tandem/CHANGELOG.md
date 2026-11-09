@@ -4,6 +4,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/); semantic versio
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-11-09
+
+### Changed
+- **Agents' pages open as background tabs in one window, not a window each.** Since 0.10 every page an agent
+  opened (the main agent's, each subagent's, each `browser_tabs new`) was a window of its own: tiresome with
+  subagents. Now the relay creates them as background tabs in Chrome's last active window; with no window at all
+  (autostart) Chrome opens one and every agent's tab goes there. Measured on macOS with a disposable Chrome: 3 pages
+  of 2 agents → 1 window, Chrome not brought to the front. Clicking on a background tab works because the agent's
+  tab gets focus emulation while its tools run (since 0.9.5). `TANDEM_AGENT_WINDOWS=1` brings back a window per page.
+- **A subagent that finishes closes its tabs at once** (on `SubagentStop`), instead of 30 min later. Resumed, it
+  starts in a new tab; logins are in the profile. Tabs you handed over are given back, as always. The main agent's
+  tabs still last until the session ends.
+
 ## [0.10.2] — 2026-11-06
 
 ### Fixed

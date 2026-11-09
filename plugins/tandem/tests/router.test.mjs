@@ -281,12 +281,13 @@ console.log('life cycle (idle stop at stopMs, tabs closed at tabsMs, cap of agen
   ok('its idle time starts again from that call (29 min later: tabs not closed yet)', !tabsClosed.length);
   t = 11 * 60_000 + 30 * 60_000; await r.tick();
   ok('30 min idle: its tabs are closed', tabsClosed.join() === 's1');
-  // Finished (SubagentStop): stopped on the next tick, tabs kept; a call clears the mark; busy → waits; main → never.
+  // Finished (SubagentStop): stopped and its tabs closed on the next tick; a call clears the mark; busy → waits; main → never.
   stopped.length = 0; tabsClosed.length = 0;
   clientIn.write(call(40, 'browser_snapshot', { agent: 'f1' })); await answer('f1', 40);
   done.add('f1'); await r.tick();
   ok('a finished subagent: its MCP stopped at once, not after 10 min', stopped.join() === 'f1' && !r.agents().includes('f1') && !done.has('f1'));
-  ok('…its tabs are not closed: it may come back', !tabsClosed.length);
+  ok('…and its tabs closed at once: a finished task leaves none behind', tabsClosed.join() === 'f1');
+  tabsClosed.length = 0;
   stopped.length = 0;
   clientIn.write(call(41, 'browser_snapshot', { agent: 'f2' })); await answer('f2', 41);
   done.add('f2'); clientIn.write(call(42, 'browser_snapshot', { agent: 'f2' })); await answer('f2', 42);
@@ -296,7 +297,7 @@ console.log('life cycle (idle stop at stopMs, tabs closed at tabsMs, cap of agen
   done.add('f2'); await r.tick();
   ok('busy: not stopped, the mark stays for a later tick', r.agents().includes('f2') && done.has('f2') && !stopped.length);
   await answer('f2', 43); await r.tick();
-  ok('…stopped once idle', !r.agents().includes('f2') && stopped.join() === 'f2');
+  ok('…stopped once idle, its tabs closed', !r.agents().includes('f2') && stopped.join() === 'f2' && tabsClosed.join() === 'f2');
   done.add('main'); await r.tick();
   ok('main: a mark never stops it', r.agents().includes('main'));
   done.clear();

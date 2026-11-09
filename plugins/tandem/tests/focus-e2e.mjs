@@ -54,8 +54,8 @@ async function run(label, env) {
     const url = `${SITE}/focus?run=${label}`;
     await m.call('browser_navigate', { url });
     // Another tab in front IN ITS WINDOW: ours goes to the background, as when the human switches tabs.
-    // Multi-session: each agent's tab is in a window of its own (cdp-relay.mjs, newWindow) — activating it
-    // first makes that the window a new tab opens in. Single mode: it already is.
+    // Activating the agent's tab first makes its window the one a new tab opens in (the last active), whatever
+    // window the relay put it in (cdp-relay.mjs: background tab, or its own window with TANDEM_AGENT_WINDOWS=1).
     const { targetInfos } = await cdp.call('Target.getTargets');
     const mine = targetInfos.find((x) => x.type === 'page' && x.url === url);
     if (mine) await cdp.call('Target.activateTarget', { targetId: mine.targetId });

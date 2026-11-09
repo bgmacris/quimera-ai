@@ -160,7 +160,7 @@ if (isCli) {
   };
 
   if (multiSession()) {
-    try { relay = await startRelay({ port: cdpPort(), dataDir: dataDir(), log: (m) => log(`relay: ${m}`), onPage }); }
+    try { relay = await startRelay({ port: cdpPort(), dataDir: dataDir(), newWindow: process.env.TANDEM_AGENT_WINDOWS === '1', log: (m) => log(`relay: ${m}`), onPage }); }
     catch (e) { process.stderr.write(`tandem: multi-session relay could not start (${e.message}); one MCP for the whole session, as before.\n`); }
   }
 
