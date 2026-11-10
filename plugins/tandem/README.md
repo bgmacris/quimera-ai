@@ -206,6 +206,7 @@ That needs a pilot with templates where the plain arms fail.
 | `TANDEM_AGENT_TABS_IDLE_MS` | `1800000` | …and its tabs are closed after this long (the ones you handed over are given back) |
 | `TANDEM_AGENT_GROUPS` | on | `0`: no tab groups (agents' tabs loose in the window, as in 0.11) |
 | `TANDEM_AGENT_WINDOWS` | off | `1`: each agent page in a window of its own (in the background), as in 0.10, instead of a background tab |
+| `TANDEM_START_WINDOW` | — | `minimized` or `background`: the window `/tandem:browser-start` opens for you comes up minimized / behind, without taking the focus (measured on Linux X11; not with `TANDEM_MULTISESSION=0` from cold, where Chrome opens its own window) |
 | `TANDEM_MAX_AGENTS` | `8` | subagents' browser processes alive at once (`0` = no cap); a new one stops the least recently used idle one |
 | `TANDEM_FOCUS_LINGER_MS` | `15000` | how long the agent's tab keeps painting after its last tool call |
 | `TANDEM_BROWSER`    | — | `external`: tandem only talks to the CDP port (e.g. Windows Chrome from WSL); start/stop via `TANDEM_BROWSER_START_CMD` / `_STOP_CMD` |

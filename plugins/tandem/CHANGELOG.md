@@ -4,6 +4,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/); semantic versio
 
 ## [Unreleased]
 
+## [0.12.1] — 2026-11-10
+
+### Added
+- `TANDEM_START_WINDOW=minimized|background`: the window `/tandem:browser-start` opens for you comes up minimized
+  (or behind) instead of in front. On Linux X11 the plain `PUT /json/new` sometimes took the focus from the
+  terminal; with this the window stays iconic and the active window does not change (measured by David on Linux
+  Mint, Cinnamon/Muffin, Chrome 157). Unset, nothing changes. An unknown value is ignored with a warning; if the
+  background window cannot be opened, the normal one is. Not used with `TANDEM_MULTISESSION=0` from cold (Chrome
+  opens its own first window there). Contributed by David (`scripts/open-window.mjs`).
+
 ## [0.12.0] — 2026-11-10
 
 ### Added

@@ -159,6 +159,18 @@ ensure_human_window() {
   [ "$1" = 1 ] || return 0
   [ "$(curl -s --max-time 2 "http://127.0.0.1:$2/json/list" | grep -c '"type": "page"')" = 0 ] || return 0
   local out id
+  # TANDEM_START_WINDOW=background|minimized: open it without taking the focus (see open-window.mjs).
+  case "${TANDEM_START_WINDOW:-}" in
+    '') ;;
+    background|minimized)
+      local flag=""; [ "$TANDEM_START_WINDOW" = minimized ] && flag=--minimized
+      if id="$(node "$(dirname "${BASH_SOURCE[0]}")/open-window.mjs" "$2" $flag)" && [ -n "$id" ]; then
+        [ "${TANDEM_MULTISESSION:-}" != 0 ] && printf '%s\n' "$id" > "$STARTUP_PAGE"
+        return 0
+      fi
+      echo "tandem: WARNING — could not open the window in the background; opening it normally." >&2 ;;
+    *) echo "tandem: WARNING — TANDEM_START_WINDOW=$TANDEM_START_WINDOW is not background or minimized; ignored." >&2 ;;
+  esac
   if ! out="$(curl -s --max-time 5 -X PUT "http://127.0.0.1:$2/json/new?about:blank")"; then
     echo "tandem: WARNING — could not open a window; open one from Chrome (it is running without any)." >&2
     return 0

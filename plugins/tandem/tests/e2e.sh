@@ -190,6 +190,20 @@ if [ "${TANDEM_MULTISESSION:-}" != 0 ]; then
   "$ROOT/scripts/chrome-daemon.sh" start >/dev/null
   check "start from cold: one page for the human, marked" "[ \"\$(pages)\" = 1 ] && [ -s '$TANDEM_DATA_DIR/startup-page' ]"
   "$ROOT/scripts/chrome-daemon.sh" stop >/dev/null
+  # TANDEM_START_WINDOW (0.12.1, David's patch): the human's window opened without taking the focus.
+  state_of_mark() { node --input-type=module -e "
+import { readFileSync } from 'node:fs'; import { connect, browserWsUrl } from '$ROOT/scripts/cdp.mjs';
+const c = await connect(await browserWsUrl());
+const { bounds } = await c.call('Browser.getWindowBounds', await c.call('Browser.getWindowForTarget', { targetId: readFileSync('$TANDEM_DATA_DIR/startup-page', 'utf8').trim() }));
+console.log(bounds.windowState); c.close();"; }
+  for mode in background minimized; do
+    "$ROOT/scripts/chrome-daemon.sh" start --no-window >/dev/null
+    TANDEM_START_WINDOW=$mode "$ROOT/scripts/chrome-daemon.sh" start >/dev/null 2>"$TMP/sw.err"
+    check "TANDEM_START_WINDOW=$mode: one page for the human, marked, no warning" "[ \"\$(pages)\" = 1 ] && [ -s '$TANDEM_DATA_DIR/startup-page' ] && [ ! -s '$TMP/sw.err' ]"
+    want=normal; [ $mode = minimized ] && want=minimized
+    check "TANDEM_START_WINDOW=$mode: its window is $want" "[ \"\$(state_of_mark)\" = $want ]"
+    "$ROOT/scripts/chrome-daemon.sh" stop >/dev/null
+  done
 fi
 
 
