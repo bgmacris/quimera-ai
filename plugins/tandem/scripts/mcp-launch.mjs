@@ -42,6 +42,7 @@ import { tabOwners } from './tab-owners.mjs';
 import { pdfCapturer } from './pdf-capture.mjs';
 import { clearFinished, isFinished } from './agents-finished.mjs';
 import { isMain } from './is-main.mjs';
+import { groupsEnabled, tabGrouper } from './tab-groups.mjs';
 
 export const MCP_VERSION_PIN = '0.0.83';
 
@@ -148,7 +149,13 @@ if (isCli) {
     emulators.set(agent, e);
     return e;
   };
-  const onPage = (agent, info) => emulators.get(agent)?.adopt({ id: info.targetId, url: info.url, type: info.type }) ?? null;
+  // Each agent's tabs in a group of its own (tab-groups.mjs): never awaited, never in the way of the page.
+  const groups = multiSession() && groupsEnabled() ? tabGrouper({ port: cdpPort(), log: (m) => log(`groups: ${m}`) }) : null;
+  const onPage = (agent, info) => {
+    if (groups && (info.type ?? 'page') === 'page') groups.add(agent, info.targetId);
+    return emulators.get(agent)?.adopt({ id: info.targetId, url: info.url, type: info.type }) ?? null;
+  };
+  const onHandover = groups ? (agent, targetId, how) => (how === 'adopt' ? groups.adopt(agent, targetId) : groups.release(agent, targetId)) : null;
   // Windows: npx is a .cmd shim; Node refuses to spawn .cmd/.bat without a shell (CVE-2024-27980),
   // so go through cmd.exe with explicit quoting. Elsewhere: plain spawn, no shell.
   const spawnNpx = (a, stdio) => (win
@@ -160,7 +167,7 @@ if (isCli) {
   };
 
   if (multiSession()) {
-    try { relay = await startRelay({ port: cdpPort(), dataDir: dataDir(), newWindow: process.env.TANDEM_AGENT_WINDOWS === '1', log: (m) => log(`relay: ${m}`), onPage }); }
+    try { relay = await startRelay({ port: cdpPort(), dataDir: dataDir(), newWindow: process.env.TANDEM_AGENT_WINDOWS === '1', log: (m) => log(`relay: ${m}`), onPage, onHandover }); }
     catch (e) { process.stderr.write(`tandem: multi-session relay could not start (${e.message}); one MCP for the whole session, as before.\n`); }
   }
 

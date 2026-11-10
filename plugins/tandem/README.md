@@ -110,6 +110,12 @@ Claude Code's main agent and each of its subagents — and every other session o
 the same Chrome. Since 0.10 **each agent has its own tabs**: it sees and drives only the tabs it opened
 (and their popups). Since 0.11 they are **background tabs in one Chrome window** (0.10 opened a window per page);
 Chrome is not brought to the front (measured on macOS). `TANDEM_AGENT_WINDOWS=1` brings back a window per page.
+Since 0.12 **each agent's tabs are in a tab group of its own**: `main · <project>` open, `sub <id> · <project>`
+collapsed, one color per session — so you can tell your tabs from theirs at a glance. tandem loads a tiny extension
+into its own Chrome for this (CDP has no tab groups; `extension/`, permissions `tabs`, `tabGroups`, `debugger`, no
+access to page content); it is gone when Chrome restarts. A tab you hand over joins the agent's group and leaves it
+when given back. A group disappears with its last tab. `TANDEM_AGENT_GROUPS=0` turns it off; never in external
+browser mode.
 Your tabs and other agents' tabs are invisible to it.
 
 - **Handing a tab over.** To let an agent work in one of your tabs (say, one where you are logged in),
@@ -198,6 +204,7 @@ That needs a pilot with templates where the plain arms fail.
 | `TANDEM_MULTISESSION` | on (off in the adapters) | `0`: one MCP per session that sees every tab, as in 0.9 (no per-agent tabs, no `browser_tab_adopt`) |
 | `TANDEM_AGENT_IDLE_MS` | `600000` | a subagent's browser process is stopped after this long without browser calls (its tabs stay) |
 | `TANDEM_AGENT_TABS_IDLE_MS` | `1800000` | …and its tabs are closed after this long (the ones you handed over are given back) |
+| `TANDEM_AGENT_GROUPS` | on | `0`: no tab groups (agents' tabs loose in the window, as in 0.11) |
 | `TANDEM_AGENT_WINDOWS` | off | `1`: each agent page in a window of its own (in the background), as in 0.10, instead of a background tab |
 | `TANDEM_MAX_AGENTS` | `8` | subagents' browser processes alive at once (`0` = no cap); a new one stops the least recently used idle one |
 | `TANDEM_FOCUS_LINGER_MS` | `15000` | how long the agent's tab keeps painting after its last tool call |

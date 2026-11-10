@@ -277,6 +277,13 @@ else
   bad "router.test.mjs"
 fi
 
+echo "[21] tab groups, pure parts + the extension's manifest (node tests/tab-groups.test.mjs)"
+if run_suite "$HERE/tab-groups.test.mjs"; then
+  ok "tab-groups.test.mjs green"
+else
+  bad "tab-groups.test.mjs"
+fi
+
 # hooks.json must parse and point only at scripts that exist and are executable.
 check "hooks.json is valid JSON" "node -e 'JSON.parse(require(\"fs\").readFileSync(\"$ROOT/hooks/hooks.json\",\"utf8\"))'"
 # Every "${CLAUDE_PLUGIN_ROOT}"/… in a command (also inside a `sh -c` prefilter) must be executable.

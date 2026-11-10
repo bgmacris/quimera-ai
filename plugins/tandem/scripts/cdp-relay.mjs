@@ -40,6 +40,9 @@
 // whole session (the launcher, on Claude Code's SIGINT: ~400 ms). What a session could not close is reaped
 // by the next relay: claims of dead sessions → their agents' own tabs closed, handed-over ones given back.
 //
+// onHandover(agent, targetId, 'adopt'|'release') — after a page of the human's is handed to an agent / given back
+// (tab-groups.mjs moves it into the agent's group and out again).
+//
 // onPage(agent, targetInfo) — called when a page is shown to an agent (one it created, or its popup). If it
 // returns a promise, everything for that client waits behind it, in order, at most holdMs: the launcher arms
 // the agent's PDF capture and focus emulation on the page BEFORE Playwright learns of it, so the page's first
@@ -59,7 +62,7 @@ const AGENT = /^[\w.-]{1,64}$/;
 const DENY_BROWSER = new Set(['Browser.close', 'Browser.crash', 'Browser.crashGpuProcess']);
 const BY_TARGET = new Set(['Target.closeTarget', 'Target.activateTarget', 'Target.attachToTarget', 'Target.getTargetInfo']);
 
-export async function startRelay({ port, dataDir = null, newWindow = false, log = () => {}, callTimeoutMs = 10_000, onPage = null, holdMs = 1000 }) {
+export async function startRelay({ port, dataDir = null, newWindow = false, log = () => {}, callTimeoutMs = 10_000, onPage = null, onHandover = null, holdMs = 1000 }) {
   const token = newToken();
   const srv = await startWsServer({ token });
   const registry = dataDir ? tabOwners(dataDir) : null;
@@ -311,11 +314,14 @@ export async function startRelay({ port, dataDir = null, newWindow = false, log 
       adopted.add(targetId); setOwner(targetId, agent); kind.set(targetId, 'page');
       try { await c.call('Target.attachToTarget', { targetId, flatten: true }); }
       catch (e) { adopted.delete(targetId); if (prev) owner.set(targetId, prev); else owner.delete(targetId); try { registry?.release(targetId); } catch {} throw e; }
+      try { onHandover?.(agent, targetId, 'adopt'); } catch (e) { log(`onHandover: ${e.message}`); }
     },
     // Give it back: nobody's (the human's) again, and the agents that saw it stop seeing it.
     release: async (targetId) => {
+      const was = owner.get(targetId);
       adopted.delete(targetId);
       owner.set(targetId, FOREIGN);
+      if (was && was !== FOREIGN) { try { onHandover?.(was, targetId, 'release'); } catch (e) { log(`onHandover: ${e.message}`); } }
       try { registry?.release(targetId); } catch {}
       await Promise.all([...conns].flatMap((c) => [...c.pages].filter(([, t]) => t === targetId)
         .map(([sessionId]) => c.call('Target.detachFromTarget', { sessionId }).catch(() => {}))));

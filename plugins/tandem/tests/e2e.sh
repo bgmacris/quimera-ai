@@ -147,6 +147,13 @@ else
   echo "  - skipped: TANDEM_MULTISESSION=0 (no relay)"
 fi
 
+echo "[3i] tab groups: each agent's tabs in a group of its own (multi-session, 0.12)"
+if [ "${TANDEM_MULTISESSION:-1}" != 0 ]; then
+  check "groups-e2e.mjs green" "node '$HERE/groups-e2e.mjs'"
+else
+  echo "  - skipped: TANDEM_MULTISESSION=0 (no relay)"
+fi
+
 echo "[4] stop"
 check "stop" "'$ROOT/scripts/chrome-daemon.sh' stop | grep -q stopped"
 check "no Chrome left on our profile" "! pgrep -f -- '--user-data-dir=$TANDEM_DATA_DIR/chrome-profile' >/dev/null"

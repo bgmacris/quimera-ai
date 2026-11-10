@@ -4,6 +4,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/); semantic versio
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-11-10
+
+### Added
+- **Each agent's tabs in a tab group of its own.** Since 0.11 agents' pages are background tabs in one window, and
+  nothing told yours from theirs. Now the main agent's tabs are in `main · <project>` (open) and each subagent's in
+  `sub <id> · <project>` (collapsed); one color per session. A tab you hand over (`browser_tab_adopt`) joins the
+  agent's group — only if it is loose and in the same window — and leaves it when given back. A group goes away with
+  its last tab. CDP has no tab groups: tandem loads a tiny extension (`extension/`) into its own Chrome over CDP
+  (`Extensions.loadUnpacked`, no flag needed in Chrome 157), which is gone when Chrome restarts; if Chrome outlived a
+  plugin update, the loaded extension is replaced when its version differs. Checked headful on macOS with Chrome 157
+  (groups-e2e 13/13 against a disposable Chrome, groups seen on screen): groups with title and color, no "debugging
+  this browser" bar, Chrome not brought to the front. `TANDEM_AGENT_GROUPS=0` turns it off; never in external
+  browser mode or in the adapters (single mode). Not yet checked on a Linux or Windows desktop. Research R09.
+- Known: Chrome saves every tab group on its own; when the group's last tab closes, the saved group is deleted, but
+  one entry for one of its tabs stays in the profile's `Sync Data` (the same URLs are in its history anyway).
+
 ## [0.11.1] — 2026-11-09
 
 ### Fixed
