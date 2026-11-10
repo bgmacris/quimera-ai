@@ -36,7 +36,8 @@ export function groupsEnabled(env = process.env) {
   return env.TANDEM_AGENT_GROUPS !== '0' && env.TANDEM_BROWSER !== 'external';
 }
 
-export function tabGrouper({ port, project = basename(process.cwd()), seed = String(process.pid), extDir = EXTENSION_DIR, log = () => {}, timeoutMs = 5000 }) {
+// titleOf(agent) → a readable title (0.13, session-titles.mjs) or null: then the 0.12 one, groupTitle().
+export function tabGrouper({ port, project = basename(process.cwd()), seed = String(process.pid), extDir = EXTENSION_DIR, log = () => {}, timeoutMs = 5000, titleOf = () => null }) {
   const color = sessionColor(seed);
   // The extension's version on disk (= the plugin's: tab-groups.test.mjs checks it). Unreadable → always reload.
   let diskVersion;
@@ -94,20 +95,24 @@ export function tabGrouper({ port, project = basename(process.cwd()), seed = Str
     }
   });
 
+  const nameOf = (agent) => { try { return titleOf(agent) || groupTitle(agent, project); } catch { return groupTitle(agent, project); } };
+
   return {
     color,
     // A page the agent created, or a popup of one of its pages.
     add: (agent, targetId) => guarded(`group ${targetId} for ${agent}`, async () => {
-      const r = await run('group', { targetIds: [targetId], groupId: groupOf.get(agent) ?? null, title: groupTitle(agent, project), color, collapsed: agent !== 'main' });
+      const r = await run('group', { targetIds: [targetId], groupId: groupOf.get(agent) ?? null, title: nameOf(agent), color, collapsed: agent !== 'main' });
       if (r?.groupId != null) groupOf.set(agent, r.groupId);
       return r;
     }),
     // A tab of the human's handed over: into the agent's group only if loose and in the same window.
     adopt: (agent, targetId) => guarded(`group handed-over ${targetId} for ${agent}`, async () => {
-      const r = await run('group', { targetIds: [targetId], groupId: groupOf.get(agent) ?? null, title: groupTitle(agent, project), color, collapsed: agent !== 'main', onlyLoose: true });
+      const r = await run('group', { targetIds: [targetId], groupId: groupOf.get(agent) ?? null, title: nameOf(agent), color, collapsed: agent !== 'main', onlyLoose: true });
       if (r?.groupId != null) groupOf.set(agent, r.groupId);
       return r;
     }),
+    // The agent's title changed (a /rename): its group, if any, takes the new one.
+    retitle: (agent) => (groupOf.has(agent) ? guarded(`retitle ${agent}`, () => run('retitle', { groupId: groupOf.get(agent), title: nameOf(agent) })) : Promise.resolve(null)),
     // Given back to the human: out of the agent's group.
     release: (agent, targetId) => guarded(`ungroup ${targetId}`, () => run('ungroup', { targetIds: [targetId], groupId: groupOf.get(agent) ?? null })),
     list: () => serial(() => run('list', {})),

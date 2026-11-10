@@ -284,6 +284,13 @@ else
   bad "tab-groups.test.mjs"
 fi
 
+echo "[22] readable tab-group titles from Claude Code's files (node tests/session-titles.test.mjs)"
+if run_suite "$HERE/session-titles.test.mjs"; then
+  ok "session-titles.test.mjs green"
+else
+  bad "session-titles.test.mjs"
+fi
+
 # hooks.json must parse and point only at scripts that exist and are executable.
 check "hooks.json is valid JSON" "node -e 'JSON.parse(require(\"fs\").readFileSync(\"$ROOT/hooks/hooks.json\",\"utf8\"))'"
 # Every "${CLAUDE_PLUGIN_ROOT}"/… in a command (also inside a `sh -c` prefilter) must be executable.

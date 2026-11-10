@@ -110,8 +110,12 @@ Claude Code's main agent and each of its subagents — and every other session o
 the same Chrome. Since 0.10 **each agent has its own tabs**: it sees and drives only the tabs it opened
 (and their popups). Since 0.11 they are **background tabs in one Chrome window** (0.10 opened a window per page);
 Chrome is not brought to the front (measured on macOS). `TANDEM_AGENT_WINDOWS=1` brings back a window per page.
-Since 0.12 **each agent's tabs are in a tab group of its own**: `main · <project>` open, `sub <id> · <project>`
-collapsed, one color per session — so you can tell your tabs from theirs at a glance. tandem loads a tiny extension
+Since 0.12 **each agent's tabs are in a tab group of its own**, the main agent's open, each subagent's collapsed,
+one color per session. Since 0.13 the groups have readable names: the main agent's is the session's title (the one
+`/resume` shows, or yours from `/rename`, which reaches the group on the agent's next browser call), a subagent's
+is `↳ ` + the description it was launched with. tandem reads them from Claude Code's own files next to the
+transcript, which are not an API: if they can't be read, the names are the 0.12 ones, `main · <project>` and
+`sub <id> · <project>` — so you can tell your tabs from theirs at a glance. tandem loads a tiny extension
 into its own Chrome for this (CDP has no tab groups; `extension/`, permissions `tabs`, `tabGroups`, `debugger`, no
 access to page content); it is gone when Chrome restarts. A tab you hand over joins the agent's group and leaves it
 when given back. A group disappears with its last tab. `TANDEM_AGENT_GROUPS=0` turns it off; never in external

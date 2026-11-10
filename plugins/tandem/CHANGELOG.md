@@ -4,6 +4,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/); semantic versio
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-11-10
+
+### Changed
+- **Readable tab-group names** (idea from Edu). 0.12 named the groups `main · <folder>` and `sub b7c2 · <folder>`,
+  which says little about what each one is doing. Now the main agent's group takes the session's title — yours
+  from `/rename` if you gave one, else Claude Code's own (the one `/resume` shows) — and a subagent's is `↳ ` + the
+  description it was launched with (e.g. `↳ Write final report`). Cut at 28 characters. A `/rename` reaches the
+  group on the agent's next browser call (titles re-read at most every 30 s). Before a session has a title, and
+  whenever Claude Code's files can't be read, the 0.12 names stay.
+- How: the PreToolUse hook (`autostart.mjs`) adds the session's `transcript_path` to every browser call as
+  `agent_transcript`, next to `agent` (both always from the hook, never from the model; the router takes both
+  out). The launcher reads the last `custom-title`/`ai-title` lines of the transcript, and
+  `<session>/subagents/agent-<id>.meta.json` for a subagent (`scripts/session-titles.mjs`). Only a `.jsonl`
+  under Claude Code's `projects` folder is read. These files are **not an API** (seen in Claude Code 2.1.322):
+  if a version changes them, the names fall back, nothing breaks.
+- The group's title is now about the session's content and Chrome saves tab groups in the profile (R09 §5); the
+  profile is tandem's own, local, and Chrome runs with `--disable-sync`. The saved group is deleted with its last tab.
+
 ## [0.12.1] — 2026-11-10
 
 ### Added

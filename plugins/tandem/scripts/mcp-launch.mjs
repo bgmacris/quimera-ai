@@ -43,6 +43,7 @@ import { pdfCapturer } from './pdf-capture.mjs';
 import { clearFinished, isFinished } from './agents-finished.mjs';
 import { isMain } from './is-main.mjs';
 import { groupsEnabled, tabGrouper } from './tab-groups.mjs';
+import { titler } from './session-titles.mjs';
 
 export const MCP_VERSION_PIN = '0.0.83';
 
@@ -150,7 +151,10 @@ if (isCli) {
     return e;
   };
   // Each agent's tabs in a group of its own (tab-groups.mjs): never awaited, never in the way of the page.
-  const groups = multiSession() && groupsEnabled() ? tabGrouper({ port: cdpPort(), log: (m) => log(`groups: ${m}`) }) : null;
+  // Group titles (0.13): the session's title for main, the subagent's description for a subagent (session-titles.mjs).
+  const titles = titler({ ttlMs: Number(process.env.TANDEM_TITLE_TTL_MS) || 30_000 });   // env: tests
+  const groups = multiSession() && groupsEnabled() ? tabGrouper({ port: cdpPort(), log: (m) => log(`groups: ${m}`), titleOf: titles.title }) : null;
+  const onCaller = groups ? (agent, transcript) => { titles.note(agent, transcript); if (titles.changed(agent)) groups.retitle(agent); } : null;
   const onPage = (agent, info) => {
     if (groups && (info.type ?? 'page') === 'page') groups.add(agent, info.targetId);
     return emulators.get(agent)?.adopt({ id: info.targetId, url: info.url, type: info.type }) ?? null;
@@ -208,7 +212,7 @@ if (isCli) {
       finished: (agent) => isFinished(dataDir(), agent),
       clearFinished: (agent) => clearFinished(dataDir(), agent),
     };
-    routeStdio({ clientIn: process.stdin, clientOut: process.stdout, spawnChild, emulatorFor, multi: true, log, localTools, lifecycle });
+    routeStdio({ clientIn: process.stdin, clientOut: process.stdout, spawnChild, emulatorFor, multi: true, log, localTools, lifecycle, onCaller });
     // Leftovers of sessions that died without closing their tabs (crash, SIGKILL before the 300 ms).
     setInterval(() => { relay.reapDead().catch(() => {}); }, 60_000).unref();
     for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, async () => { await shutdown(); for (const c of children) { try { c.kill(sig); } catch {} } });

@@ -60,6 +60,9 @@ console.log('takeAgent');
   const bad = takeAgent({ params: { arguments: { agent: '../x', url: 'u' } } });
   ok('an agent that is not an id → main, and still taken out', bad.agent === 'main' && bad.stripped && !('agent' in bad.m.params.arguments));
   ok('a non-string agent → main, taken out', takeAgent({ params: { arguments: { agent: 7 } } }).agent === 'main');
+  const t = takeAgent({ params: { arguments: { url: 'u', agent: 'a01', agent_transcript: '/p/s.jsonl' } } });
+  ok('0.13: agent_transcript taken out and returned', t.transcript === '/p/s.jsonl' && !('agent_transcript' in t.m.params.arguments) && t.m.params.arguments.url === 'u');
+  ok('0.13: no agent_transcript → transcript null', a.transcript === null);
 }
 
 console.log('routing');

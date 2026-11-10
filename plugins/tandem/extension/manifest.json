@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "tandem (agents)",
-  "version": "0.12.1",
+  "version": "0.13.0",
   "description": "tandem: puts each agent's tabs in a tab group of its own. Loaded by tandem over CDP, only in tandem's Chrome; gone when Chrome restarts.",
   "permissions": ["tabGroups", "tabs", "debugger"],
   "background": { "service_worker": "sw.js" }

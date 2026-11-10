@@ -53,11 +53,16 @@ export function autostartEnabled(env = process.env) {
 // takes `agent` out. Measured on Claude Code 2.1.317 (R05 §15.2): updatedInput reaches the MCP with this
 // same hook saying nothing, allow, or ask (approved; bypass too), in the main agent and in subagents, and it
 // is not checked against the tool's schema. TANDEM_MULTISESSION=0: no tag (the launcher has no router then).
+// 0.13: also `agent_transcript`, the session's transcript path, from which the launcher reads a readable name for
+// the agent's tab group (session-titles.mjs). Like `agent`, never what the model wrote: dropped if the hook has none.
 export function agentTag(input, env = process.env) {
   if (env.TANDEM_MULTISESSION === '0') return null;
   const ti = input?.tool_input;
   if (!ti || typeof ti !== 'object' || Array.isArray(ti)) return null;
-  return { ...ti, agent: typeof input.agent_id === 'string' && input.agent_id ? input.agent_id : 'main' };
+  const { agent_transcript: _, ...rest } = ti;
+  const tag = { ...rest, agent: typeof input.agent_id === 'string' && input.agent_id ? input.agent_id : 'main' };
+  if (typeof input.transcript_path === 'string' && input.transcript_path) tag.agent_transcript = input.transcript_path;
+  return tag;
 }
 
 // The hook's output with the tag added, unless it denies (nothing to run). res: hook output or null.

@@ -147,7 +147,7 @@ else
   echo "  - skipped: TANDEM_MULTISESSION=0 (no relay)"
 fi
 
-echo "[3i] tab groups: each agent's tabs in a group of its own (multi-session, 0.12)"
+echo "[3i] tab groups: each agent's tabs in a group of its own, readable titles (multi-session, 0.12/0.13)"
 if [ "${TANDEM_MULTISESSION:-1}" != 0 ]; then
   check "groups-e2e.mjs green" "node '$HERE/groups-e2e.mjs'"
 else

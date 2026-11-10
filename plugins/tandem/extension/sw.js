@@ -24,6 +24,13 @@ self.tandem = {
     await chrome.tabGroups.update(id, { title, color, collapsed });
     return { groupId: id, grouped: tabIds.length, created: true };
   },
+  // A new title for a group that still exists (0.13: the session was renamed).
+  async retitle({ groupId, title }) {
+    const g = await groupExists(groupId);
+    if (!g || g.title === title) return { retitled: false };
+    await chrome.tabGroups.update(g.id, { title });
+    return { retitled: true };
+  },
   // Take the pages out of whatever group they are in, if it is this one (a handed-over tab going back).
   async ungroup({ targetIds, groupId }) {
     const tabs = await Promise.all((await tabIdsOf(targetIds)).map((id) => chrome.tabs.get(id)));

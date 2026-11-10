@@ -42,7 +42,9 @@ There are two ways to navigate; choose by the task, not one by default:
 - **You only see your own tabs** (multi-session, the default in Claude Code since 0.10): the ones you opened
   and their popups. The human's tabs, another subagent's and another session's are invisible to you. Your
   first navigation opens your own tab, in the BACKGROUND (not the one in front), in Chrome's window, inside
-  your tab group: `main · <project>` (open) or `sub <first 4 of your id> · <project>` (collapsed).
+  your tab group. Its name: for the main agent, the session's title (the one /resume shows, or the human's
+  /rename); for a subagent, `↳ ` + the description it was launched with (collapsed). If Claude Code's files
+  can't be read, the old names: `main · <project>` / `sub <first 4 of your id> · <project>`.
 - When you hand a wall to the human (captcha, login, 2FA), your tab is NOT the window in front of them:
   tell them the name of your tab group and the tab's title so they can find it (a subagent's group is collapsed:
   they click it to open it).

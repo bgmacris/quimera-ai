@@ -47,13 +47,15 @@ const MAIN = 'main';
 const LIST_CHANGED = /^notifications\/(tools|resources|prompts)\/list_changed$/;
 const DEFAULT_INIT = { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'tandem', version: '0' } };
 
-// tools/call message → { agent, m } with `agent` taken out of the arguments (always: the child would refuse it).
+// tools/call message → { agent, transcript, m } with `agent` and `agent_transcript` taken out of the arguments
+// (always: the child would refuse them).
 export function takeAgent(m) {
   const a = m?.params?.arguments;
-  if (!a || typeof a !== 'object' || !Object.hasOwn(a, 'agent')) return { agent: MAIN, m, stripped: false };
-  const { agent, ...rest } = a;
+  if (!a || typeof a !== 'object' || (!Object.hasOwn(a, 'agent') && !Object.hasOwn(a, 'agent_transcript'))) return { agent: MAIN, transcript: null, m, stripped: false };
+  const { agent, agent_transcript: transcript, ...rest } = a;
   return {
     agent: typeof agent === 'string' && AGENT_ID.test(agent) ? agent : MAIN,
+    transcript: typeof transcript === 'string' ? transcript : null,
     m: { ...m, params: { ...m.params, arguments: rest } },
     stripped: true,
   };
@@ -61,7 +63,7 @@ export function takeAgent(m) {
 
 // spawnChild(agent) → { stdin, stdout, on?(event, fn) } (a ChildProcess fits). emulatorFor(agent) → emulator.
 // initTimeoutMs: a new child's handshake (npx may install on its first run).
-export function routeStdio({ clientIn, clientOut, spawnChild, emulatorFor, multi = true, initTimeoutMs = 120_000, log = () => {}, localTools = {}, lifecycle = null, now = Date.now }) {
+export function routeStdio({ clientIn, clientOut, spawnChild, emulatorFor, multi = true, initTimeoutMs = 120_000, log = () => {}, localTools = {}, lifecycle = null, onCaller = null, now = Date.now }) {
   const lastUsed = new Map();       // agent → last time it used the browser (call queued or answered)
   const local = multi ? localTools : {};
   const listIds = new Set();        // client tools/list request ids: main's answer gets the local tools
@@ -261,7 +263,8 @@ export function routeStdio({ clientIn, clientOut, spawnChild, emulatorFor, multi
     let m = null; try { m = JSON.parse(line); } catch { /* forward as is */ }
     const main = laneFor(MAIN);
     if (m?.method === 'tools/call' && m.id !== undefined) {
-      const { agent, m: out, stripped } = multi ? takeAgent(m) : { agent: MAIN, m, stripped: false };
+      const { agent, transcript, m: out, stripped } = multi ? takeAgent(m) : { agent: MAIN, transcript: null, m, stripped: false };
+      if (transcript) try { onCaller?.(agent, transcript); } catch (e) { log(`router: onCaller ${agent}: ${e.message}`); }
       const l = laneFor(agent);
       const fwd = stripped ? JSON.stringify(out) : line;
       callLane.set(m.id, l);   // now, not when its turn comes: a cancel may arrive while it waits

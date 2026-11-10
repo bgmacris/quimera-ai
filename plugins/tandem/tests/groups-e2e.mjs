@@ -7,9 +7,14 @@
 //   G4 a tab of the human's handed over → into main's group; given back → out of it, still open
 //   G5 the subagent finishes (SubagentStop hook) → its tab closed, its group gone
 //   G6 TANDEM_AGENT_GROUPS=0 → no group
+//   G8 0.13: readable titles — main's group takes the session's title, a subagent's "↳ <description>", from
+//      Claude Code's files (a fixture CLAUDE_CONFIG_DIR); a /rename reaches main's group on its next call
 //   G7 end of the session → main's tabs closed, no group left
 // Needs a DISPOSABLE Chrome on TANDEM_CDP_PORT (tests/e2e.sh). Usage: node tests/groups-e2e.mjs
 import { spawn, spawnSync } from 'node:child_process';
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { connect, browserWsUrl } from '../scripts/cdp.mjs';
@@ -110,6 +115,31 @@ try {
   v = await view();
   ok('G6 TANDEM_AGENT_GROUPS=0: no group', tabAt(v, '/off')?.groupId === -1, JSON.stringify(tabAt(v, '/off')));
   L2.p.kill('SIGINT'); await Promise.race([L2.exited, sleep(5000)]);
+
+  // G8: readable titles (0.13). A fixture of Claude Code's files: the session's transcript + a subagent's meta.
+  const cfg = mkdtempSync(join(tmpdir(), 'tandem-g8-'));
+  try {
+    const proj = join(cfg, 'projects', '-x-app'); const S = 'g8000000-0000-0000-0000-000000000000'; const A = 'ae1e6f53f7683bf93';
+    const tr = join(proj, `${S}.jsonl`);
+    mkdirSync(join(proj, S, 'subagents'), { recursive: true });
+    writeFileSync(tr, `${JSON.stringify({ type: 'ai-title', aiTitle: 'Grupos legibles', sessionId: S })}\n`);
+    writeFileSync(join(proj, S, 'subagents', `agent-${A}.meta.json`), JSON.stringify({ agentType: 'general-purpose', description: 'Leer la documentación' }));
+    const L3 = launch({ CLAUDE_CONFIG_DIR: cfg, TANDEM_TITLE_TTL_MS: '300' });
+    await L3.init();
+    await L3.call('main', 'browser_navigate', { url: U('/t-main'), agent_transcript: tr });
+    await L3.call(A, 'browser_navigate', { url: U('/t-sub'), agent_transcript: tr });
+    v = await view();
+    const tm = groupOf(v, tabAt(v, '/t-main')); const ts = groupOf(v, tabAt(v, '/t-sub'));
+    ok('G8 main\'s group: the session\'s title', tm?.title === 'Grupos legibles' && tm.collapsed === false, JSON.stringify(tm));
+    ok('G8 the subagent\'s group: "↳ <description>", collapsed', ts?.title === '↳ Leer la documentación' && ts.collapsed === true, JSON.stringify(ts));
+    appendFileSync(tr, `${JSON.stringify({ type: 'custom-title', customTitle: 'Renombrada', sessionId: S })}\n`);
+    await sleep(500);
+    await L3.call('main', 'browser_tabs', { action: 'list', agent_transcript: tr });
+    v = await view();
+    ok('G8 /rename → main\'s group takes the new title on its next call', groupOf(v, tabAt(v, '/t-main'))?.title === 'Renombrada', JSON.stringify(groupOf(v, tabAt(v, '/t-main'))));
+    L3.p.kill('SIGINT'); await Promise.race([L3.exited, sleep(5000)]);
+    ok('G8 no "groups:" errors in its launcher log', !L3.stderr.some((l) => /groups: .*(failures|Error|error)/.test(l)), L3.stderr.filter((l) => /groups:/.test(l)).join(' | '));
+  } finally { rmSync(cfg, { recursive: true, force: true }); }
 
   // G7: end of the session.
   L.p.kill('SIGINT'); await Promise.race([L.exited, sleep(5000)]);
